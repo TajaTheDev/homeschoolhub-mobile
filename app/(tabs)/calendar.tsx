@@ -1,31 +1,39 @@
 /**
  * Calendar Screen
- * Shows lessons organized by date with month navigation
+ * Modern, colorful calendar inspired by Pinterest examples
+ * Matching onboarding aesthetic with vibrant colors and pill-style badges
  */
 
 import Colors from '@/constants/Colors';
+import { getSubjectColor } from '@/constants/Subjects';
+import Typography from '@/constants/Typography';
 import { useLessonStore } from '@/store/lessonStore';
 import { useStudentStore } from '@/store/studentStore';
 import {
-    addMonths,
-    endOfMonth,
-    format,
-    isSameDay,
-    isSameMonth,
-    isToday,
-    startOfMonth,
-    subMonths,
+  addMonths,
+  endOfMonth,
+  format,
+  isSameDay,
+  isSameMonth,
+  isToday,
+  startOfMonth,
+  subMonths,
 } from 'date-fns';
 import { useRouter } from 'expo-router';
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react-native';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Dimensions,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
+import ConfettiCannon from 'react-native-confetti-cannon';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const getCalendarDays = (date: Date) => {
   const start = startOfMonth(date);
@@ -49,24 +57,15 @@ const getCalendarDays = (date: Date) => {
   return days;
 };
 
-const getSubjectColor = (subject: string): string => {
-  const colors: Record<string, string> = {
-    Math: '#EF4444',
-    Reading: '#3B82F6',
-    Science: '#10B981',
-    History: '#F59E0B',
-    Writing: '#8B5CF6',
-    Art: '#EC4899',
-  };
-  return colors[subject] || Colors.ui.textLight;
-};
-
 export default function CalendarScreen() {
   const router = useRouter();
   const { students, fetchStudents } = useStudentStore();
-  const { lessons, fetchLessons, toggleComplete } = useLessonStore();
+  const lessonStore = useLessonStore();
+  const { lessons, fetchLessons, toggleCompleteOptimistic } = lessonStore;
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [showConfetti, setShowConfetti] = useState(false);
+  const confettiRef = useRef<any>(null);
 
   useEffect(() => {
     fetchStudents();
@@ -80,23 +79,43 @@ export default function CalendarScreen() {
     return lessons.filter((l) => l.date === dateStr);
   };
 
-  const hasLessonsOnDate = (date: Date) => {
-    return getLessonsForDate(date).length > 0;
-  };
-
   const selectedDateLessons = useMemo(() => {
     if (!selectedDate) return [];
     return getLessonsForDate(selectedDate);
   }, [selectedDate, lessons]);
 
+  const handleLessonComplete = (lessonId: string, isCurrentlyComplete: boolean) => {
+    const newStatus = !isCurrentlyComplete;
+    
+    // Show confetti immediately if marking complete
+    if (newStatus) {
+      setShowConfetti(true);
+      setTimeout(() => {
+        if (confettiRef.current) {
+          confettiRef.current.start();
+        }
+      }, 100);
+      setTimeout(() => {
+        setShowConfetti(false);
+      }, 2000);
+    }
+    
+    // Call the optimistic toggle (updates UI instantly, database in background)
+    lessonStore.toggleCompleteOptimistic(lessonId);
+  };
+
   return (
-    <View style={styles.container}>
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.contentContainer}>
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
         {/* Month Navigation Header */}
-        <View style={styles.header}>
+        <View style={styles.monthHeader}>
           <TouchableOpacity
             onPress={() => setCurrentDate(subMonths(currentDate, 1))}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            style={styles.navButton}
           >
             <ChevronLeft size={24} color={Colors.ui.text} />
           </TouchableOpacity>
@@ -119,75 +138,87 @@ export default function CalendarScreen() {
           <TouchableOpacity
             onPress={() => setCurrentDate(addMonths(currentDate, 1))}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            style={styles.navButton}
           >
             <ChevronRight size={24} color={Colors.ui.text} />
           </TouchableOpacity>
         </View>
 
-        {/* Weekday Headers */}
-        <View style={styles.weekdayRow}>
-          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
-            <Text key={day} style={styles.weekdayLabel}>
-              {day}
-            </Text>
-          ))}
-        </View>
+        {/* Calendar Container */}
+        <View style={styles.calendar}>
+          {/* Weekday Headers */}
+          <View style={styles.weekdayRow}>
+            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+              <Text key={day} style={styles.weekdayLabel}>
+                {day}
+              </Text>
+            ))}
+          </View>
 
-        {/* Calendar Grid */}
-        <View style={styles.calendarGrid}>
-          {calendarDays.map((day, index) => {
-            const dayLessons = getLessonsForDate(day);
-            const isSelected = selectedDate && isSameDay(day, selectedDate);
+          {/* Calendar Grid */}
+          <View style={styles.calendarGrid}>
+            {calendarDays.map((day, index) => {
+              const dayLessons = getLessonsForDate(day);
+              const isSelected = selectedDate && isSameDay(day, selectedDate);
+              const isTodayDate = isToday(day);
+              const isOtherMonth = !isSameMonth(day, currentDate);
 
-            return (
-              <TouchableOpacity
-                key={index}
-                style={[
-                  styles.dayCell,
-                  isToday(day) && styles.todayCell,
-                  isSelected && styles.selectedCell,
-                  !isSameMonth(day, currentDate) && styles.otherMonthCell,
-                ]}
-                onPress={() => setSelectedDate(day)}
-              >
-                <Text
-                  style={[
-                    styles.dayNumber,
-                    isToday(day) && styles.todayText,
-                    isSelected && styles.selectedText,
-                    !isSameMonth(day, currentDate) && styles.otherMonthText,
-                  ]}
+              return (
+                <TouchableOpacity
+                  key={index}
+                  style={styles.dayCell}
+                  onPress={() => setSelectedDate(day)}
+                  activeOpacity={0.7}
                 >
-                  {format(day, 'd')}
-                </Text>
-
-                {/* Lesson Indicators */}
-                {hasLessonsOnDate(day) && (
-                  <View style={styles.indicatorRow}>
-                    {dayLessons
-                      .slice(0, 3) // Max 3 dots
-                      .map((lesson, lessonIndex) => (
-                        <View
-                          key={lessonIndex}
-                          style={[
-                            styles.indicator,
-                            { backgroundColor: getSubjectColor(lesson.subject) },
-                          ]}
-                        />
-                      ))}
-                    {dayLessons.length > 3 && (
-                      <Text style={styles.moreIndicator}>+</Text>
-                    )}
+                  <View
+                    style={[
+                      styles.dayCellInner,
+                      dayLessons.length > 0 && !isTodayDate && !isSelected && styles.dayCellWithLessons,
+                      isTodayDate && styles.todayCell,
+                      isSelected && !isTodayDate && styles.selectedCell,
+                      isOtherMonth && styles.otherMonthCell,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.dayNumber,
+                        isTodayDate && styles.dayNumberToday,
+                        isSelected && !isTodayDate && styles.dayNumberSelected,
+                        isOtherMonth && styles.otherMonthText,
+                      ]}
+                    >
+                      {format(day, 'd')}
+                    </Text>
                   </View>
-                )}
-              </TouchableOpacity>
-            );
-          })}
+
+                  {/* Lesson Indicators */}
+                  {dayLessons.length > 0 && (
+                    <View style={styles.lessonIndicators}>
+                      {dayLessons
+                        .slice(0, 3)
+                        .map((lesson, idx) => (
+                          <View
+                            key={idx}
+                            style={[
+                              styles.lessonDot,
+                              { backgroundColor: getSubjectColor(lesson.subject) }
+                            ]}
+                          />
+                        ))}
+                      {dayLessons.length > 3 && (
+                        <Text style={styles.moreIndicator}>+</Text>
+                      )}
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
         </View>
 
         {/* Selected Date Lessons Section */}
         {selectedDate && (
-          <View style={styles.lessonSection}>
+          <View style={styles.selectedDateSection}>
             <Text style={styles.selectedDateTitle}>
               {format(selectedDate, 'EEEE, MMMM d, yyyy')}
             </Text>
@@ -196,49 +227,71 @@ export default function CalendarScreen() {
               <View style={styles.lessonList}>
                 {selectedDateLessons.map((lesson) => {
                   const student = students.find((s) => s.id === lesson.student_id);
+                  const subjectColor = getSubjectColor(lesson.subject);
 
                   return (
                     <TouchableOpacity
                       key={lesson.id}
-                      style={styles.lessonCard}
+                      style={[
+                        styles.lessonCard,
+                        { borderLeftColor: subjectColor }
+                      ]}
                       onPress={() => {
-                        // Open lesson detail modal (reuse LessonModal from dashboard)
-                        // For now, just log
+                        // Open lesson detail modal
                         console.log('Tap to edit lesson:', lesson.id);
                       }}
+                      activeOpacity={0.8}
                     >
                       <View style={styles.lessonHeader}>
-                        <Text style={styles.studentName}>
-                          {student?.name || 'Unknown'}
-                        </Text>
+                        <View style={styles.lessonHeaderLeft}>
+                          {/* Subject Pill */}
+                          <View
+                            style={[
+                              styles.subjectPill,
+                              { backgroundColor: subjectColor }
+                            ]}
+                          >
+                            <Text style={styles.subjectPillText}>{lesson.subject}</Text>
+                          </View>
+
+                          {/* Student Pill */}
+                          <View style={styles.studentPill}>
+                            <Text style={styles.studentPillText}>
+                              {student?.name || 'Unknown'}
+                            </Text>
+                          </View>
+                        </View>
+
+                        {/* Completion Checkbox + Status */}
                         <TouchableOpacity
-                          onPress={async (e) => {
+                          onPress={(e) => {
                             e.stopPropagation();
-                            await toggleComplete(lesson.id);
-                            await fetchLessons();
+                            handleLessonComplete(lesson.id, lesson.completed);
                           }}
+                          style={styles.completionRow}
+                          activeOpacity={0.7}
                         >
-                          {lesson.completed ? (
-                            <View style={styles.checkbox}>
+                          {/* Checkbox */}
+                          <View style={[
+                            styles.checkbox,
+                            lesson.completed && styles.checkboxChecked
+                          ]}>
+                            {lesson.completed && (
                               <Text style={styles.checkmark}>✓</Text>
-                            </View>
-                          ) : (
-                            <View style={[styles.checkbox, styles.checkboxEmpty]} />
-                          )}
+                            )}
+                          </View>
+                          
+                          {/* Status Text */}
+                          <Text style={[
+                            styles.statusText,
+                            lesson.completed && styles.statusTextComplete
+                          ]}>
+                            {lesson.completed ? 'Done' : 'Todo'}
+                          </Text>
                         </TouchableOpacity>
                       </View>
 
-                      <View style={styles.lessonContent}>
-                        <View
-                          style={[
-                            styles.subjectBadge,
-                            { backgroundColor: getSubjectColor(lesson.subject) },
-                          ]}
-                        >
-                          <Text style={styles.subjectText}>{lesson.subject}</Text>
-                        </View>
-                        <Text style={styles.lessonTitle}>{lesson.title}</Text>
-                      </View>
+                      <Text style={styles.lessonTitle}>{lesson.title}</Text>
 
                       {lesson.notes && (
                         <Text style={styles.lessonNotes} numberOfLines={2}>
@@ -270,116 +323,166 @@ export default function CalendarScreen() {
       <TouchableOpacity
         style={styles.fab}
         onPress={() => router.push('/add-lesson' as any)}
+        activeOpacity={0.8}
       >
         <Plus size={28} color="white" />
       </TouchableOpacity>
-    </View>
+
+      {/* Confetti - ABSOLUTELY LAST, after everything else */}
+      {showConfetti && (
+        <View style={styles.confettiWrapper}>
+          <ConfettiCannon
+            ref={confettiRef}
+            count={40}
+            origin={{ x: SCREEN_WIDTH / 2, y: 0 }}
+            autoStart={false}
+            fadeOut={true}
+            explosionSpeed={350}
+            fallSpeed={2000}
+            colors={['#7C3AED', '#F97316', '#10B981', '#F59E0B', '#EC4899', '#3B82F6']}
+          />
+        </View>
+      )}
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
-    position: 'relative',
+    backgroundColor: Colors.ui.background,
+    position: 'relative', // Important!
   },
-  scrollView: {
-    flex: 1,
+  confettiWrapper: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 99999,
+    elevation: 99999,
+    pointerEvents: 'none', // Allow taps to pass through
   },
-  contentContainer: {
-    paddingHorizontal: 16,
-    paddingTop: 60,
-    paddingBottom: 100, // Space for FAB
+  scrollContent: {
+    padding: 16,
+    paddingBottom: 100,
   },
-  header: {
+  monthHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 24,
-    paddingHorizontal: 4,
+    marginBottom: 20,
+    paddingHorizontal: 8,
+  },
+  navButton: {
+    padding: 4,
   },
   headerCenter: {
     flex: 1,
     alignItems: 'center',
-    gap: 4,
+    gap: 8,
   },
   monthTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: Colors.ui.text,
+    ...Typography.h3,
+    fontSize: 20,
   },
   todayButton: {
     paddingHorizontal: 12,
-    paddingVertical: 4,
+    paddingVertical: 6,
     backgroundColor: Colors.brand[100],
-    borderRadius: 12,
+    borderRadius: 16,
   },
   todayButtonText: {
+    fontFamily: 'Quicksand_600SemiBold',
     fontSize: 12,
-    fontWeight: '600',
     color: Colors.brand[700],
+  },
+  calendar: {
+    backgroundColor: Colors.background.card,
+    borderRadius: 20,
+    padding: 16,
+    marginHorizontal: 0,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
   },
   weekdayRow: {
     flexDirection: 'row',
-    marginBottom: 8,
+    marginBottom: 12,
   },
   weekdayLabel: {
-    flex: 1,
-    fontSize: 12,
-    fontWeight: '600',
-    color: Colors.ui.textLight,
+    width: '14.28%',
     textAlign: 'center',
-    paddingVertical: 8,
+    ...Typography.caption,
+    color: Colors.ui.textLight,
+    fontWeight: '600',
+    fontSize: 11,
+    textTransform: 'uppercase',
   },
   calendarGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginBottom: 16,
   },
   dayCell: {
-    width: '14.28%', // 100% / 7 days
+    width: '14.28%',
     aspectRatio: 1,
-    padding: 4,
-    alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: Colors.ui.border,
+    alignItems: 'center',
+    marginBottom: 4,
+    position: 'relative',
+  },
+  dayCellInner: {
+    width: '85%',
+    height: '85%',
+    borderRadius: 20, // Circular
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'transparent',
+  },
+  dayCellWithLessons: {
+    backgroundColor: Colors.brand[100], // Light purple tint
   },
   todayCell: {
-    backgroundColor: Colors.brand[50],
-    borderColor: Colors.brand[400],
+    backgroundColor: Colors.brand[400],
     borderWidth: 2,
+    borderColor: Colors.brand[600],
   },
   selectedCell: {
-    backgroundColor: Colors.brand[100],
+    backgroundColor: Colors.brand[300],
+    borderWidth: 2,
+    borderColor: Colors.brand[500],
   },
   otherMonthCell: {
     opacity: 0.3,
   },
   dayNumber: {
-    fontSize: 14,
-    fontWeight: '500',
+    fontFamily: 'Quicksand_700Bold',
+    fontSize: 16,
     color: Colors.ui.text,
-    marginBottom: 2,
   },
-  todayText: {
+  dayNumberToday: {
+    color: 'white',
     fontWeight: 'bold',
-    color: Colors.brand[700],
   },
-  selectedText: {
+  dayNumberSelected: {
+    color: 'white',
     fontWeight: 'bold',
   },
   otherMonthText: {
     color: Colors.ui.textLight,
   },
-  indicatorRow: {
+  lessonIndicators: {
+    position: 'absolute',
+    bottom: 2,
     flexDirection: 'row',
     gap: 2,
-    marginTop: 2,
-    alignItems: 'center',
     justifyContent: 'center',
+    alignItems: 'center',
   },
-  indicator: {
+  lessonDot: {
     width: 4,
     height: 4,
     borderRadius: 2,
@@ -388,88 +491,118 @@ const styles = StyleSheet.create({
     fontSize: 8,
     color: Colors.ui.textLight,
     fontWeight: 'bold',
+    marginLeft: 2,
   },
-  lessonSection: {
-    marginTop: 16,
+  selectedDateSection: {
+    paddingHorizontal: 0,
   },
   selectedDateTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: Colors.ui.text,
-    marginBottom: 12,
+    ...Typography.h3,
+    marginBottom: 16,
   },
   lessonList: {
     gap: 12,
   },
   lessonCard: {
-    backgroundColor: 'white',
-    borderRadius: 12,
+    backgroundColor: Colors.background.card,
+    borderRadius: 16,
     padding: 16,
-    borderWidth: 1,
-    borderColor: Colors.ui.border,
+    marginBottom: 12,
+    borderLeftWidth: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
   },
   lessonHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 8,
   },
-  studentName: {
-    fontSize: 14,
-    fontWeight: '600',
+  lessonHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+    flexWrap: 'wrap',
+  },
+  subjectPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  subjectPillText: {
+    fontFamily: 'Quicksand_600SemiBold',
+    fontSize: 12,
+    color: 'white',
+  },
+  studentPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: Colors.ui.border,
+  },
+  studentPillText: {
+    fontFamily: 'Quicksand_600SemiBold',
+    fontSize: 11,
     color: Colors.ui.text,
+  },
+  lessonTitle: {
+    ...Typography.body,
+    marginBottom: 4,
+  },
+  lessonNotes: {
+    ...Typography.bodySmall,
+    color: Colors.ui.textLight,
+    marginTop: 4,
+  },
+  completionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: Colors.background.light,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.ui.border,
   },
   checkbox: {
     width: 24,
     height: 24,
-    borderRadius: 12,
-    backgroundColor: Colors.ui.success,
+    borderRadius: 6, // Slightly rounded square
+    borderWidth: 2,
+    borderColor: Colors.ui.border,
+    backgroundColor: 'white',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  checkboxEmpty: {
-    backgroundColor: 'white',
-    borderWidth: 2,
-    borderColor: Colors.ui.border,
+  checkboxChecked: {
+    backgroundColor: Colors.accent[400],
+    borderColor: Colors.accent[400],
   },
   checkmark: {
     color: 'white',
     fontSize: 16,
     fontWeight: 'bold',
   },
-  lessonContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 4,
-  },
-  subjectBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  subjectText: {
-    color: 'white',
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  lessonTitle: {
-    fontSize: 15,
-    color: Colors.ui.text,
-    flex: 1,
-  },
-  lessonNotes: {
-    fontSize: 13,
+  statusText: {
+    fontFamily: 'Quicksand_600SemiBold',
+    fontSize: 14,
     color: Colors.ui.textLight,
-    marginTop: 4,
+  },
+  statusTextComplete: {
+    color: Colors.accent[600],
+    fontWeight: '600',
   },
   emptyState: {
     padding: 32,
     alignItems: 'center',
   },
   emptyText: {
-    fontSize: 16,
-    color: Colors.ui.textLight,
+    ...Typography.bodyLarge,
     textAlign: 'center',
     marginBottom: 16,
   },
@@ -477,12 +610,10 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.brand[500],
     paddingVertical: 12,
     paddingHorizontal: 24,
-    borderRadius: 12,
+    borderRadius: 16,
   },
   addButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
+    ...Typography.button,
   },
   fab: {
     position: 'absolute',

@@ -6,17 +6,21 @@ import type { Lesson } from '@/types';
 import { Trash2, X } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
 import {
-    Alert,
-    KeyboardAvoidingView,
-    Modal,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  Alert,
+  Dimensions,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
+import ConfettiCannon from 'react-native-confetti-cannon';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 interface LessonModalProps {
   visible: boolean;
@@ -47,6 +51,8 @@ export default function LessonModal({ visible, lesson, onClose, onSave }: Lesson
   const [notes, setNotes] = useState('');
   const [completed, setCompleted] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [showConfetti, setShowConfetti] = useState(false);
+  const [confettiKey, setConfettiKey] = useState(0);
 
   const lessonStore = useLessonStore();
   const { students, subjects, fetchSubjects } = useStudentStore();
@@ -123,11 +129,25 @@ export default function LessonModal({ visible, lesson, onClose, onSave }: Lesson
   };
 
   const handleToggleComplete = async () => {
+    const wasCompleted = completed;
     setLoading(true);
     const result = await lessonStore.toggleComplete(lesson.id);
     setLoading(false);
     if (result.success) {
-      setCompleted(!completed);
+      const newCompleted = !wasCompleted;
+      setCompleted(newCompleted);
+      
+      // If marking as complete (was false, now true), show confetti
+      if (!wasCompleted && newCompleted) {
+        setShowConfetti(true);
+        setConfettiKey(prev => prev + 1); // Force new confetti instance
+        
+        // Hide confetti after animation
+        setTimeout(() => {
+          setShowConfetti(false);
+        }, 3000);
+      }
+      
       onSave();
     } else {
       Alert.alert('Error', result.error || 'Failed to update completion status');
@@ -141,6 +161,16 @@ export default function LessonModal({ visible, lesson, onClose, onSave }: Lesson
       animationType="fade"
       onRequestClose={onClose}
     >
+      {showConfetti && (
+        <ConfettiCannon
+          key={confettiKey}
+          count={30}
+          origin={{ x: SCREEN_WIDTH / 2, y: 100 }}
+          autoStart={true}
+          fadeOut={true}
+          fallSpeed={2500}
+        />
+      )}
       <KeyboardAvoidingView
         style={styles.modalOverlay}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}

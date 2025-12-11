@@ -8,17 +8,26 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors.brand[600],
+        tabBarActiveTintColor: Colors.brand[400],
         tabBarInactiveTintColor: Colors.ui.textLight,
+        headerShown: false,
         tabBarStyle: {
-          backgroundColor: '#FFFFFF',
+          backgroundColor: Colors.background.card,
           borderTopWidth: 1,
           borderTopColor: Colors.ui.border,
           paddingBottom: 8,
           paddingTop: 8,
-          height: 60,
+          height: 70,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: -2 },
+          shadowOpacity: 0.1,
+          shadowRadius: 8,
+          elevation: 8,
         },
-        headerShown: false,
+        tabBarLabelStyle: {
+          fontFamily: 'Quicksand_600SemiBold',
+          fontSize: 11,
+        },
       }}>
       <Tabs.Screen
         name="index"

@@ -20,6 +20,8 @@ interface LessonState {
   ) => Promise<{ success: boolean; error?: string }>;
   deleteLesson: (id: string) => Promise<{ success: boolean; error?: string }>;
   toggleComplete: (id: string) => Promise<{ success: boolean; error?: string }>;
+  toggleCompleteOptimistic: (id: string) => void;
+  updateLessonOptimistic: (id: string, updates: Partial<Lesson>) => void;
 }
 
 export const useLessonStore = create<LessonState>((set, get) => ({
@@ -159,6 +161,46 @@ export const useLessonStore = create<LessonState>((set, get) => ({
         error: error instanceof Error ? error.message : 'An unexpected error occurred',
       };
     }
+  },
+
+  toggleCompleteOptimistic: (id) => {
+    const lesson = get().lessons.find((l) => l.id === id);
+    if (!lesson) return;
+
+    const newStatus = !lesson.completed;
+    const oldStatus = lesson.completed;
+
+    // Update UI immediately
+    set((state) => ({
+      lessons: state.lessons.map((l) =>
+        l.id === id ? { ...l, completed: newStatus } : l
+      ),
+    }));
+
+    // Update database in background
+    supabase
+      .from('lessons')
+      .update({ completed: newStatus })
+      .eq('id', id)
+      .then(({ error }) => {
+        if (error) {
+          console.error('Error updating lesson:', error);
+          // Revert on error
+          set((state) => ({
+            lessons: state.lessons.map((l) =>
+              l.id === id ? { ...l, completed: oldStatus } : l
+            ),
+          }));
+        }
+      });
+  },
+
+  updateLessonOptimistic: (id, updates) => {
+    set((state) => ({
+      lessons: state.lessons.map((lesson) =>
+        lesson.id === id ? { ...lesson, ...updates } : lesson
+      ),
+    }));
   },
 }));
 

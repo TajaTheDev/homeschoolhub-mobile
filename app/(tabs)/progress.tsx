@@ -5,6 +5,7 @@
 
 import EditGoalModal from '@/components/lessons/EditGoalModal';
 import Colors from '@/constants/Colors';
+import { getSubjectColor } from '@/constants/Subjects';
 import { useLessonStore } from '@/store/lessonStore';
 import { useStudentStore } from '@/store/studentStore';
 import type { Lesson, StudentSubject } from '@/types';
@@ -13,6 +14,7 @@ import { BarChart3, Calendar, Edit2, TrendingUp, X } from 'lucide-react-native';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
+  Dimensions,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -23,6 +25,10 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import ConfettiCannon from 'react-native-confetti-cannon';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 // Helper functions
 const getLessonsForStudent = (lessons: Lesson[], studentId: string) => {
@@ -80,18 +86,6 @@ const formatDate = (dateString: string) => {
   });
 };
 
-const getSubjectColor = (subjectName: string): string => {
-  const subjectColors: Record<string, string> = {
-    'Math': '#EF4444',
-    'Reading': '#3B82F6',
-    'Science': '#10B981',
-    'History': '#F59E0B',
-    'Writing': '#8B5CF6',
-    'Art': '#EC4899',
-  };
-  
-  return subjectColors[subjectName] || Colors.ui.textLight;
-};
 
 const getSubjectEmoji = (subject: string): string => {
   const emojis: Record<string, string> = {
@@ -396,10 +390,8 @@ export default function ProgressScreen() {
 
   if (students.length === 0) {
     return (
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={styles.contentContainer}
-      >
+      <SafeAreaView style={{ flex: 1, backgroundColor: Colors.ui.background }} edges={['top']}>
+        <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 100 }}>
         <View style={styles.header}>
           <Text style={styles.title}>Progress Tracking 📊</Text>
         </View>
@@ -410,31 +402,29 @@ export default function ProgressScreen() {
             Add a student from the Home tab to start tracking progress!
           </Text>
         </View>
-      </ScrollView>
+        </ScrollView>
+      </SafeAreaView>
     );
   }
 
   if (!selectedStudentId) {
     return (
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={styles.contentContainer}
-      >
+      <SafeAreaView style={{ flex: 1, backgroundColor: Colors.ui.background }} edges={['top']}>
+        <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 100 }}>
         <View style={styles.header}>
           <Text style={styles.title}>Progress Tracking 📊</Text>
         </View>
         <View style={styles.emptyState}>
           <Text style={styles.emptyStateText}>Loading...</Text>
         </View>
-      </ScrollView>
+        </ScrollView>
+      </SafeAreaView>
     );
   }
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.contentContainer}
-    >
+    <SafeAreaView style={{ flex: 1, backgroundColor: Colors.ui.background }} edges={['top']}>
+      <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 100 }}>
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Progress Tracking 📊</Text>
@@ -565,12 +555,21 @@ export default function ProgressScreen() {
                 activeOpacity={0.7}
               >
                 {/* Subject Header */}
-                <View style={styles.subjectHeader}>
-                  <View style={styles.subjectNameRow}>
-                    <Text style={styles.subjectEmoji}>{subjectEmoji}</Text>
-                    <Text style={styles.subjectName}>{subjectRecord.subject}</Text>
+                <View style={[styles.subjectHeader, { backgroundColor: subjectColor + '20' }]}>
+                  <View style={[styles.subjectPill, { backgroundColor: subjectColor }]}>
+                    <Text style={styles.subjectPillText}>
+                      {subjectEmoji} {subjectRecord.subject}
+                    </Text>
                   </View>
-                  <Edit2 size={16} color={Colors.ui.textLight} />
+                  <TouchableOpacity
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      handleEditGoal(subjectRecord.subject, goal || 0);
+                    }}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Edit2 size={16} color={Colors.ui.textLight} />
+                  </TouchableOpacity>
                 </View>
 
                 {/* Lesson Stats */}
@@ -621,8 +620,19 @@ export default function ProgressScreen() {
                           : subjectColor
                       }
                     />
-                    {goalPercentage && goalPercentage >= 100 ? (
-                      <Text style={styles.goalAchieved}>🎉 Goal reached!</Text>
+                    {completedCount >= goal ? (
+                      <>
+                        <ConfettiCannon
+                          count={50}
+                          origin={{ x: SCREEN_WIDTH / 2, y: 0 }}
+                          autoStart={true}
+                          fadeOut={true}
+                          colors={['#7C3AED', '#F97316', '#10B981', '#F59E0B', '#EC4899', '#3B82F6']}
+                        />
+                        <View style={styles.goalReachedPill}>
+                          <Text style={styles.goalReachedText}>🎉 Goal Reached!</Text>
+                        </View>
+                      </>
                     ) : (
                       <Text style={styles.goalRemaining}>
                         {remaining} more to reach goal
@@ -796,14 +806,15 @@ export default function ProgressScreen() {
         }}
         onSave={handleSaveEditGoal}
       />
-    </ScrollView>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: Colors.ui.background,
   },
   contentContainer: {
     paddingHorizontal: 20,
@@ -929,19 +940,18 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 16,
+    padding: 12,
+    borderRadius: 16,
   },
-  subjectNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  subjectPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
   },
-  subjectEmoji: {
-    fontSize: 24,
-  },
-  subjectName: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: Colors.ui.text,
+  subjectPillText: {
+    fontFamily: 'Quicksand_600SemiBold',
+    fontSize: 13,
+    color: 'white',
   },
   statsRow: {
     flexDirection: 'row',
@@ -953,6 +963,16 @@ const styles = StyleSheet.create({
   },
   stat: {
     alignItems: 'center',
+    backgroundColor: Colors.background.card,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    minWidth: 100,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   subjectStatValue: {
     fontSize: 20,
@@ -1011,6 +1031,19 @@ const styles = StyleSheet.create({
     color: Colors.ui.success,
     fontWeight: '600',
     marginTop: 6,
+  },
+  goalReachedPill: {
+    backgroundColor: Colors.accent[400],
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    alignSelf: 'flex-start',
+    marginTop: 8,
+  },
+  goalReachedText: {
+    fontFamily: 'Quicksand_600SemiBold',
+    fontSize: 12,
+    color: 'white',
   },
   goalRemaining: {
     fontSize: 11,

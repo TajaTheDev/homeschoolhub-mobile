@@ -2,25 +2,35 @@
  * Main Dashboard Screen
  */
 
+import WeeklySummaryCard from '@/components/dashboard/WeeklySummaryCard';
 import LessonModal from '@/components/lessons/LessonModal';
 import EditSubjectsModal from '@/components/students/EditSubjectsModal';
 import StudentModal from '@/components/students/StudentModal';
+import DatePicker from '@/components/ui/DatePicker';
 import Colors from '@/constants/Colors';
+import { getSubjectColor } from '@/constants/Subjects';
+import Typography from '@/constants/Typography';
 import { useAuthStore } from '@/store/authStore';
 import { useLessonStore } from '@/store/lessonStore';
 import { useStudentStore } from '@/store/studentStore';
 import type { Lesson, Student } from '@/types';
+import { format, isSameDay } from 'date-fns';
 import { useRouter } from 'expo-router';
 import { Edit2, Plus, Trash2 } from 'lucide-react-native';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  Dimensions,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import ConfettiCannon from 'react-native-confetti-cannon';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const formatDate = (dateString: string) => {
   const date = new Date(dateString);
@@ -37,22 +47,11 @@ const formatDate = (dateString: string) => {
   });
 };
 
-const getSubjectColor = (subject: string) => {
-  const colors: Record<string, string> = {
-    'Math': '#EF4444',
-    'Reading': '#3B82F6',
-    'Science': '#10B981',
-    'History': '#F59E0B',
-    'Writing': '#8B5CF6',
-    'Art': '#EC4899',
-  };
-  return colors[subject] || Colors.ui.textLight;
-};
-
 export default function Dashboard() {
   const router = useRouter();
   const { students, fetchStudents, deleteStudent, subjects, fetchSubjects, loading } = useStudentStore();
-  const { lessons, fetchLessons } = useLessonStore();
+  const lessonStore = useLessonStore();
+  const { lessons, fetchLessons, toggleCompleteOptimistic } = lessonStore;
   const { user, signOut } = useAuthStore();
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -60,6 +59,9 @@ export default function Dashboard() {
   const [showSubjectsModal, setShowSubjectsModal] = useState(false);
   const [selectedLesson, setSelectedLesson] = useState<Lesson | null>(null);
   const [showLessonModal, setShowLessonModal] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [showConfetti, setShowConfetti] = useState(false);
+  const confettiRef = useRef<any>(null);
 
   useEffect(() => {
     fetchStudents();
@@ -146,6 +148,62 @@ export default function Dashboard() {
     return subjects.filter((s) => s.student_id === studentId).length;
   };
 
+  // Weekly stats calculations
+  const weeklyStats = useMemo(() => {
+    const weekAgo = new Date();
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    
+    const thisWeekLessons = lessons.filter(
+      (l) => new Date(l.date) >= weekAgo
+    );
+    
+    const completedThisWeek = thisWeekLessons.filter((l) => l.completed).length;
+    const completionRate = thisWeekLessons.length > 0
+      ? Math.round((completedThisWeek / thisWeekLessons.length) * 100)
+      : 0;
+    
+    // Calculate streak (consecutive days with completed lessons)
+    let streak = 0;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    for (let i = 0; i < 30; i++) {
+      const checkDate = new Date(today);
+      checkDate.setDate(today.getDate() - i);
+      const dateStr = format(checkDate, 'yyyy-MM-dd');
+      const hasLesson = lessons.some((l) => l.date === dateStr && l.completed);
+      if (hasLesson) {
+        streak++;
+      } else {
+        break;
+      }
+    }
+    
+    return {
+      thisWeekCount: thisWeekLessons.length,
+      completionRate,
+      streak,
+    };
+  }, [lessons]);
+
+  // Filter lessons by selected date or get recent lessons
+  const selectedDateStr = format(selectedDate, 'yyyy-MM-dd');
+  const isTodaySelected = isSameDay(selectedDate, new Date());
+  const lessonsForSelectedDate = useMemo(() => {
+    if (isTodaySelected) {
+      // Show most recent 5 lessons when today is selected
+      return lessons.slice(0, 5);
+    } else {
+      // Show lessons for the selected date
+      return lessons.filter((l) => l.date === selectedDateStr);
+    }
+  }, [lessons, selectedDateStr, isTodaySelected]);
+
+  // Get unique lesson dates for date picker indicators
+  const lessonDates = useMemo(() => {
+    return [...new Set(lessons.map((l) => l.date))];
+  }, [lessons]);
+
   const handleDeleteStudent = (student: Student) => {
     Alert.alert(
       'Delete Student',
@@ -168,12 +226,51 @@ export default function Dashboard() {
     );
   };
 
+  const handleLessonComplete = (lessonId: string, isCurrentlyComplete: boolean) => {
+    const newStatus = !isCurrentlyComplete;
+    
+    // Show confetti immediately if marking complete
+    if (newStatus) {
+      setShowConfetti(true);
+      setTimeout(() => {
+        if (confettiRef.current) {
+          confettiRef.current.start();
+        }
+      }, 100);
+      setTimeout(() => {
+        setShowConfetti(false);
+      }, 2000);
+    }
+    
+    // Call the optimistic toggle (updates UI instantly, database in background)
+    lessonStore.toggleCompleteOptimistic(lessonId);
+  };
+
   return (
     <>
-      <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+      <SafeAreaView style={styles.container} edges={['top']}>
+        {showConfetti && (
+          <View style={styles.confettiContainer}>
+            <ConfettiCannon
+              ref={confettiRef}
+              count={40}
+              origin={{ x: SCREEN_WIDTH / 2, y: 0 }}
+              autoStart={false}
+              fadeOut={true}
+              explosionSpeed={350}
+              fallSpeed={2000}
+              colors={['#7C3AED', '#F97316', '#10B981', '#F59E0B', '#EC4899', '#3B82F6']}
+            />
+          </View>
+        )}
+        <ScrollView 
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
         {/* Header Section */}
         <View style={styles.header}>
-          <View style={styles.headerContent}>
+          <View style={styles.welcomeSection}>
             <Text style={styles.welcomeText}>Welcome back! 👋</Text>
             {user?.email && (
               <Text style={styles.emailText}>{user.email}</Text>
@@ -184,14 +281,135 @@ export default function Dashboard() {
             onPress={handleSignOut}
             activeOpacity={0.7}
           >
-            <Text style={styles.signOutButtonText}>Sign Out</Text>
+            <Text style={styles.signOutText}>Sign Out</Text>
           </TouchableOpacity>
+        </View>
+
+        {/* Horizontal Date Picker */}
+        <DatePicker
+          selectedDate={selectedDate}
+          onDateSelect={setSelectedDate}
+          lessonDates={lessonDates}
+        />
+
+        {/* Weekly Summary Card */}
+        <WeeklySummaryCard
+          thisWeekCount={weeklyStats.thisWeekCount}
+          completionRate={weeklyStats.completionRate}
+          streak={weeklyStats.streak}
+        />
+
+        {/* Recent Lessons Section (or Selected Date Lessons) */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={[Typography.h3, { marginBottom: 0 }]}>
+              {isSameDay(selectedDate, new Date()) 
+                ? 'Recent Lessons' 
+                : format(selectedDate, 'EEEE, MMM d')}
+            </Text>
+            {lessonsForSelectedDate.length > 0 && (
+              <TouchableOpacity
+                onPress={() => router.push('/(tabs)/calendar' as any)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.viewAllText}>View All</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          
+          {lessonsForSelectedDate.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Text style={[Typography.body, { color: Colors.ui.textLight, textAlign: 'center' }]}>
+                {isSameDay(selectedDate, new Date())
+                  ? 'No lessons yet. Tap "Add Lesson" to get started! 📚'
+                  : 'No lessons for this day'}
+              </Text>
+            </View>
+          ) : (
+            lessonsForSelectedDate.slice(0, 5).map((lesson) => {
+              // Find student for this lesson
+              const student = students.find(s => s.id === lesson.student_id);
+              const subjectColor = getSubjectColor(lesson.subject);
+              
+              return (
+                <TouchableOpacity
+                  key={lesson.id}
+                  style={[
+                    styles.lessonCard,
+                    { borderLeftColor: subjectColor }
+                  ]}
+                  onPress={() => {
+                    setSelectedLesson(lesson);
+                    setShowLessonModal(true);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.lessonHeader}>
+                    <View style={styles.lessonHeaderLeft}>
+                      {/* Student Name Pill */}
+                      {student && (
+                        <View style={styles.studentPill}>
+                          <Text style={styles.studentPillText}>
+                            {student.name}
+                          </Text>
+                        </View>
+                      )}
+                      
+                      {/* Subject Pill */}
+                      <View
+                        style={[
+                          styles.subjectPill,
+                          { backgroundColor: subjectColor }
+                        ]}
+                      >
+                        <Text style={styles.subjectPillText}>{lesson.subject}</Text>
+                      </View>
+                    </View>
+                    
+                    {/* Completion Checkbox + Status */}
+                    <TouchableOpacity
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        handleLessonComplete(lesson.id, lesson.completed);
+                      }}
+                      style={styles.completionRow}
+                      activeOpacity={0.7}
+                    >
+                      {/* Checkbox */}
+                      <View style={[
+                        styles.checkbox,
+                        lesson.completed && styles.checkboxChecked
+                      ]}>
+                        {lesson.completed && (
+                          <Text style={styles.checkmark}>✓</Text>
+                        )}
+                      </View>
+                      
+                      {/* Status Text */}
+                      <Text style={[
+                        styles.statusText,
+                        lesson.completed && styles.statusTextComplete
+                      ]}>
+                        {lesson.completed ? 'Done' : 'Todo'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                  
+                  <Text style={styles.lessonTitle}>{lesson.title}</Text>
+                  
+                  <Text style={styles.lessonDate}>
+                    {formatDate(lesson.date)}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })
+          )}
         </View>
 
         {/* Your Students Section */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Your Students</Text>
+            <Text style={[Typography.h3, { marginBottom: 16 }]}>Your Students</Text>
             <TouchableOpacity
               style={styles.addButton}
               onPress={() => router.push('/add-student' as any)}
@@ -246,8 +464,8 @@ export default function Dashboard() {
                       console.log('Student tapped:', student.name);
                     }}
                   >
-                    <Text style={styles.studentName}>{student.name}</Text>
-                    <Text style={styles.studentGrade}>{student.grade}</Text>
+                    <Text style={[Typography.h4, { color: 'white', marginBottom: 4 }]}>{student.name}</Text>
+                    <Text style={[Typography.bodySmall, { color: 'white', opacity: 0.9, marginBottom: 12 }]}>{student.grade}</Text>
                   </TouchableOpacity>
 
                   {/* Edit/Add Subjects Button - Always visible */}
@@ -272,67 +490,8 @@ export default function Dashboard() {
           )}
         </View>
 
-        {/* Recent Lessons Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Recent Lessons</Text>
-          
-          {lessons.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyStateText}>
-                No lessons yet. Tap "Add Lesson" to get started! 📚
-              </Text>
-            </View>
-          ) : (
-            lessons.slice(0, 5).map((lesson) => {
-              // Find student for this lesson
-              const student = students.find(s => s.id === lesson.student_id);
-              
-              return (
-                <TouchableOpacity
-                  key={lesson.id}
-                  style={styles.lessonCard}
-                  onPress={() => {
-                    setSelectedLesson(lesson);
-                    setShowLessonModal(true);
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.lessonHeader}>
-                    <Text style={styles.lessonStudent}>
-                      {student?.name || 'Unknown'}
-                    </Text>
-                    <Text style={styles.lessonDate}>
-                      {formatDate(lesson.date)}
-                    </Text>
-                  </View>
-                  
-                  <View style={styles.lessonContent}>
-                    <View 
-                      style={[
-                        styles.subjectBadge, 
-                        { backgroundColor: getSubjectColor(lesson.subject) }
-                      ]}
-                    >
-                      <Text style={styles.subjectBadgeText}>{lesson.subject}</Text>
-                    </View>
-                    
-                    <Text style={styles.lessonTitle}>{lesson.title}</Text>
-                  </View>
-                  
-                  {lesson.completed && (
-                    <Text style={styles.completedBadge}>✓ Completed</Text>
-                  )}
-                </TouchableOpacity>
-              );
-            })
-          )}
-        </View>
-
         {/* Quick Actions Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Quick Actions</Text>
-          
-          {/* Prominent Add Lesson Button */}
           <TouchableOpacity
             style={styles.addLessonButton}
             onPress={() => router.push('/add-lesson' as any)}
@@ -341,33 +500,18 @@ export default function Dashboard() {
             <Plus size={24} color="white" />
             <Text style={styles.addLessonButtonText}>Add Lesson</Text>
           </TouchableOpacity>
-
-          <View style={styles.actionsContainer}>
-
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={() => {
-                // Navigate to calendar tab
-                router.push('/calendar' as any);
-              }}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.actionButtonText}>View Calendar</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={() => {
-                // Navigate to progress tab
-                router.push('/progress' as any);
-              }}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.actionButtonText}>Check Progress</Text>
-            </TouchableOpacity>
-          </View>
         </View>
-      </ScrollView>
+        </ScrollView>
+
+        {/* Floating Action Button */}
+        <TouchableOpacity
+          style={styles.fab}
+          onPress={() => router.push('/add-lesson' as any)}
+          activeOpacity={0.8}
+        >
+          <Plus size={28} color="white" />
+        </TouchableOpacity>
+      </SafeAreaView>
 
       {/* Student Edit Modal - Outside ScrollView for proper rendering */}
       <StudentModal
@@ -411,51 +555,70 @@ export default function Dashboard() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: Colors.ui.background,
+    position: 'relative', // Add this for confetti positioning
   },
-  contentContainer: {
-    paddingHorizontal: 20,
-    paddingTop: 60,
-    paddingBottom: 40,
+  confettiContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 9999,
+    elevation: 9999, // For Android
+    pointerEvents: 'none', // Allow touches to pass through
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: 20,
+    paddingBottom: 100,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 32,
+    alignItems: 'center',
+    marginBottom: 24,
+    paddingTop: 8,
   },
-  headerContent: {
+  welcomeSection: {
     flex: 1,
   },
   welcomeText: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: Colors.brand[900],
-    marginBottom: 4,
+    ...Typography.h3,
+    marginBottom: 2,
   },
   emailText: {
-    fontSize: 16,
+    ...Typography.caption,
     color: Colors.ui.textLight,
   },
   signOutButton: {
     paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    backgroundColor: Colors.ui.backgroundLight,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: Colors.background.card,
+    borderWidth: 1,
+    borderColor: Colors.ui.border,
   },
-  signOutButtonText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: Colors.brand[700],
+  signOutText: {
+    ...Typography.caption,
+    color: Colors.ui.text,
+    fontWeight: '600',
   },
   section: {
     marginBottom: 32,
+  },
+  viewAllText: {
+    ...Typography.caption,
+    color: Colors.brand[400],
+    fontWeight: '600',
   },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   sectionTitle: {
     fontSize: 22,
@@ -496,10 +659,16 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   studentCard: {
-    borderRadius: 16,
+    backgroundColor: Colors.background.card,
+    borderRadius: 20,
     padding: 20,
-    minHeight: 80,
-    justifyContent: 'center',
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
+    borderWidth: 0,
     position: 'relative',
   },
   cardActions: {
@@ -541,69 +710,121 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   editSubjectsButton: {
-    backgroundColor: Colors.brand[500],
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
     paddingVertical: 10,
     paddingHorizontal: 16,
     borderRadius: 12,
-    marginTop: 8,
+    marginTop: 12,
     minHeight: 44,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   editSubjectsButtonText: {
+    ...Typography.buttonSmall,
     color: 'white',
-    fontSize: 14,
-    fontWeight: '600',
     textAlign: 'center',
   },
   lessonCard: {
-    backgroundColor: 'white',
-    borderRadius: 12,
+    backgroundColor: Colors.background.card,
+    borderRadius: 16,
     padding: 16,
     marginBottom: 12,
-    borderWidth: 1,
-    borderColor: Colors.ui.border,
+    borderLeftWidth: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
   },
   lessonHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 8,
   },
-  lessonStudent: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.ui.text,
-  },
-  lessonDate: {
-    fontSize: 12,
-    color: Colors.ui.textLight,
-  },
-  lessonContent: {
+  lessonHeaderLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginBottom: 4,
+    flex: 1,
+    flexWrap: 'wrap',
   },
-  subjectBadge: {
-    paddingHorizontal: 8,
+  studentPill: {
+    paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 6,
+    borderRadius: 12,
+    backgroundColor: Colors.ui.border,
+    marginRight: 8,
   },
-  subjectBadgeText: {
-    color: 'white',
+  studentPillText: {
+    fontFamily: 'Quicksand_600SemiBold',
     fontSize: 11,
-    fontWeight: '600',
+    color: Colors.ui.text,
+  },
+  subjectPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    alignSelf: 'flex-start',
+  },
+  subjectPillText: {
+    fontFamily: 'Quicksand_600SemiBold',
+    fontSize: 12,
+    color: 'white',
   },
   lessonTitle: {
-    fontSize: 15,
-    color: Colors.ui.text,
-    flex: 1,
+    ...Typography.body,
+    marginBottom: 4,
   },
-  completedBadge: {
-    fontSize: 12,
-    color: Colors.ui.success,
-    fontWeight: '600',
+  lessonDate: {
+    ...Typography.caption,
+    color: Colors.ui.textLight,
+  },
+  lessonNotes: {
+    ...Typography.bodySmall,
+    color: Colors.ui.textLight,
     marginTop: 4,
+  },
+  completionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: Colors.background.light,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.ui.border,
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 6, // Slightly rounded square
+    borderWidth: 2,
+    borderColor: Colors.ui.border,
+    backgroundColor: 'white',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  checkboxChecked: {
+    backgroundColor: Colors.accent[400],
+    borderColor: Colors.accent[400],
+  },
+  checkmark: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  statusText: {
+    fontFamily: 'Quicksand_600SemiBold',
+    fontSize: 14,
+    color: Colors.ui.textLight,
+  },
+  statusTextComplete: {
+    color: Colors.accent[600],
+    fontWeight: '600',
   },
   emptyState: {
     padding: 32,
@@ -649,5 +870,21 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: Colors.brand[700],
+  },
+  fab: {
+    position: 'absolute',
+    bottom: 90,
+    right: 20,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: Colors.brand[400],
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
   },
 });
