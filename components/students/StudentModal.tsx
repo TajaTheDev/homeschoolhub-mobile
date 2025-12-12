@@ -1,19 +1,22 @@
+import AvatarPicker from '@/components/students/AvatarPicker';
+import Avatar from '@/components/ui/Avatar';
 import Colors from '@/constants/Colors';
 import { useStudentStore } from '@/store/studentStore';
 import { GradeLevel, Student, StudentColor } from '@/types';
 import { Trash2, X } from 'lucide-react-native';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-    Alert,
-    KeyboardAvoidingView,
-    Modal,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  Alert,
+  Animated,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 
 interface StudentModalProps {
@@ -37,19 +40,43 @@ export default function StudentModal({ visible, student, onClose, onSave }: Stud
   const [name, setName] = useState('');
   const [grade, setGrade] = useState<GradeLevel>('1st');
   const [colorTheme, setColorTheme] = useState<StudentColor>('purple');
+  const [avatarType, setAvatarType] = useState<'initial' | 'photo' | 'illustration'>('initial');
+  const [avatarValue, setAvatarValue] = useState<string | null>(null);
+  const [showAvatarPicker, setShowAvatarPicker] = useState(false);
   const [loading, setLoading] = useState(false);
   
   const studentStore = useStudentStore();
+  const slideAnim = useRef(new Animated.Value(300)).current;
+
+  useEffect(() => {
+    if (visible) {
+      Animated.spring(slideAnim, {
+        toValue: 0,
+        friction: 8,
+        tension: 40,
+        useNativeDriver: true,
+      }).start();
+    } else {
+      slideAnim.setValue(300);
+    }
+  }, [visible]);
 
   useEffect(() => {
     if (student) {
       setName(student.name);
       setGrade(student.grade as GradeLevel);
       setColorTheme(student.color_theme as StudentColor);
+      setAvatarType(student.avatar_type || 'initial');
+      setAvatarValue(student.avatar_value || null);
     }
   }, [student]);
 
   if (!visible || !student) return null;
+
+  const handleAvatarSelect = (type: 'initial' | 'photo' | 'illustration', value?: string) => {
+    setAvatarType(type);
+    setAvatarValue(value || null);
+  };
 
   const handleSave = async () => {
     if (!name.trim()) {
@@ -62,6 +89,8 @@ export default function StudentModal({ visible, student, onClose, onSave }: Stud
       name,
       grade,
       color_theme: colorTheme,
+      avatar_type: avatarType,
+      avatar_value: avatarValue || undefined,
     });
     setLoading(false);
 
@@ -108,13 +137,38 @@ export default function StudentModal({ visible, student, onClose, onSave }: Stud
         style={styles.modalOverlay}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <View style={styles.modalContent}>
+        <Animated.View 
+          style={[
+            styles.modalContent,
+            { transform: [{ translateY: slideAnim }] }
+          ]}
+        >
           <ScrollView showsVerticalScrollIndicator={false}>
             {/* Header */}
             <View style={styles.header}>
               <Text style={styles.title}>Edit Student</Text>
               <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                 <X size={24} color={Colors.ui.text} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Avatar Selection */}
+            <View style={styles.avatarSection}>
+              <Text style={styles.sectionLabel}>Student Avatar</Text>
+              <TouchableOpacity
+                style={styles.avatarContainer}
+                onPress={() => setShowAvatarPicker(true)}
+              >
+                <Avatar
+                  type={avatarType}
+                  value={avatarValue}
+                  name={name || 'Student'}
+                  color={Colors.student[colorTheme]}
+                  size={80}
+                />
+                <View style={styles.avatarEditBadge}>
+                  <Text style={styles.avatarEditText}>Change</Text>
+                </View>
               </TouchableOpacity>
             </View>
 
@@ -196,8 +250,18 @@ export default function StudentModal({ visible, student, onClose, onSave }: Stud
               </TouchableOpacity>
             </View>
           </ScrollView>
-        </View>
+        </Animated.View>
       </KeyboardAvoidingView>
+
+      {/* Avatar Picker Modal */}
+      <AvatarPicker
+        visible={showAvatarPicker}
+        onClose={() => setShowAvatarPicker(false)}
+        onSelect={handleAvatarSelect}
+        currentType={avatarType}
+        currentValue={avatarValue}
+        studentName={name || 'Student'}
+      />
     </Modal>
   );
 }
@@ -228,6 +292,36 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: 'bold',
     color: Colors.ui.text,
+  },
+  avatarSection: {
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  sectionLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.ui.text,
+    marginBottom: 12,
+    alignSelf: 'flex-start',
+  },
+  avatarContainer: {
+    position: 'relative',
+  },
+  avatarEditBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    backgroundColor: Colors.brand[500],
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: 'white',
+  },
+  avatarEditText: {
+    fontFamily: 'Quicksand_600SemiBold',
+    fontSize: 11,
+    color: 'white',
   },
   section: {
     marginBottom: 24,

@@ -41,15 +41,42 @@ export const useLessonStore = create<LessonState>((set, get) => ({
         query = query.eq('date', date);
       }
 
-      const { data, error } = await query.order('date', { ascending: false });
+      const { data: lessonsData, error: lessonsError } = await query.order('date', { ascending: false });
 
-      if (error) {
-        console.error('Error fetching lessons:', error);
+      if (lessonsError) {
+        console.error('Error fetching lessons:', lessonsError);
         set({ loading: false });
         return;
       }
 
-      set({ lessons: data || [], loading: false });
+      // TODO: Re-enable photo attachments in v2.0
+      // - Issue: Supabase Storage permission problems
+      // - Alternative: Use Cloudinary or other service
+      // - Database tables exist: lesson_photos
+      // - Storage bucket exists: student-avatars (or lesson-photos)
+      // const lessonIds = lessonsData?.map(l => l.id) || [];
+      // let photosData: any[] = [];
+      // 
+      // if (lessonIds.length > 0) {
+      //   const { data, error: photosError } = await supabase
+      //     .from('lesson_photos')
+      //     .select('*')
+      //     .in('lesson_id', lessonIds);
+
+      //   if (photosError) {
+      //     console.error('Error fetching photos:', photosError);
+      //   } else {
+      //     photosData = data || [];
+      //   }
+      // }
+
+      // Combine lessons with their photos
+      const lessonsWithPhotos = lessonsData?.map(lesson => ({
+        ...lesson,
+        // photos: photosData.filter(p => p.lesson_id === lesson.id) || [],
+      })) || [];
+
+      set({ lessons: lessonsWithPhotos, loading: false });
     } catch (error) {
       console.error('Error fetching lessons:', error);
       set({ loading: false });

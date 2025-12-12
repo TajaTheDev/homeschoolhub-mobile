@@ -3,7 +3,9 @@
  */
 
 import Colors from '@/constants/Colors';
+import { supabase } from '@/lib/supabase/client';
 import { useAuthStore } from '@/store/authStore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
@@ -32,7 +34,19 @@ export default function LoginScreen() {
     const result = await signIn(email.trim(), password);
 
     if (result.success) {
-      router.replace('/onboarding/step1');
+      // Check if session exists
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (session) {
+        // Mark onboarding as seen (in case they went straight to login)
+        await AsyncStorage.setItem('hasSeenOnboarding', 'true');
+        
+        // Navigate to dashboard
+        router.replace('/(tabs)');
+      } else {
+        // Fallback to onboarding if no session
+        router.replace('/onboarding/step1');
+      }
     } else {
       Alert.alert('Login Failed', result.error || 'An error occurred');
     }

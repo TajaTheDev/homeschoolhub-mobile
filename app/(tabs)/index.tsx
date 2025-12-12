@@ -3,29 +3,40 @@
  */
 
 import WeeklySummaryCard from '@/components/dashboard/WeeklySummaryCard';
+import WeeklySummaryModal from '@/components/dashboard/WeeklySummaryModal';
 import LessonModal from '@/components/lessons/LessonModal';
+// PhotoGallery disabled for now
+// import PhotoGallery from '@/components/lessons/PhotoGallery';
 import EditSubjectsModal from '@/components/students/EditSubjectsModal';
 import StudentModal from '@/components/students/StudentModal';
+import StudentSummaryModal from '@/components/students/StudentSummaryModal';
+import Avatar from '@/components/ui/Avatar';
 import DatePicker from '@/components/ui/DatePicker';
+import EmptyState from '@/components/ui/EmptyState';
+import Skeleton from '@/components/ui/Skeleton';
 import Colors from '@/constants/Colors';
 import { getSubjectColor } from '@/constants/Subjects';
 import Typography from '@/constants/Typography';
+import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/store/authStore';
 import { useLessonStore } from '@/store/lessonStore';
 import { useStudentStore } from '@/store/studentStore';
 import type { Lesson, Student } from '@/types';
-import { format, isSameDay } from 'date-fns';
+// import { LessonPhoto } from '@/types/database';
+import { addDays, format, subDays } from 'date-fns';
 import { useRouter } from 'expo-router';
-import { Edit2, Plus, Trash2 } from 'lucide-react-native';
+import { BookOpen, Edit2, Plus, Settings, Users } from 'lucide-react-native';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  Animated,
   Dimensions,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
 import ConfettiCannon from 'react-native-confetti-cannon';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -47,26 +58,118 @@ const formatDate = (dateString: string) => {
   });
 };
 
+// Photo upload disabled for now
+// const getPhotoUrl = (path: string) => {
+//   if (!path) return '';
+//   
+//   const { data } = supabase.storage
+//     .from('student-avatars')
+//     .getPublicUrl(path);
+//   
+//   return data.publicUrl;
+// };
+
+// Animated Card Component with scale animation
+const AnimatedCard = ({ children, onPress, style }: any) => {
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    Animated.spring(scaleAnim, {
+      toValue: 0.97,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(scaleAnim, {
+      toValue: 1,
+      friction: 3,
+      tension: 40,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  return (
+    <Pressable
+      onPress={onPress}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+    >
+      <Animated.View style={[style, { transform: [{ scale: scaleAnim }] }]}>
+        {children}
+      </Animated.View>
+    </Pressable>
+  );
+};
+
 export default function Dashboard() {
   const router = useRouter();
-  const { students, fetchStudents, deleteStudent, subjects, fetchSubjects, loading } = useStudentStore();
+  const { students, fetchStudents, deleteStudent, subjects, fetchSubjects, loading: studentsLoading } = useStudentStore();
   const lessonStore = useLessonStore();
   const { lessons, fetchLessons, toggleCompleteOptimistic } = lessonStore;
   const { user, signOut } = useAuthStore();
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showStudentForm, setShowStudentForm] = useState(false);
   const [selectedStudentForSubjects, setSelectedStudentForSubjects] = useState<Student | null>(null);
   const [showSubjectsModal, setShowSubjectsModal] = useState(false);
   const [selectedLesson, setSelectedLesson] = useState<Lesson | null>(null);
   const [showLessonModal, setShowLessonModal] = useState(false);
+  const [showWeeklySummaryModal, setShowWeeklySummaryModal] = useState(false);
+  const [showStudentSummary, setShowStudentSummary] = useState(false);
+  const [selectedStudentForSummary, setSelectedStudentForSummary] = useState<Student | null>(null);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showConfetti, setShowConfetti] = useState(false);
   const confettiRef = useRef<any>(null);
+  const [parentAvatar, setParentAvatar] = useState<{
+    type: 'initial' | 'photo' | 'illustration';
+    value?: string | null;
+    name: string;
+  }>({
+    type: 'initial',
+    value: null,
+    name: '',
+  });
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  // Photo gallery disabled for now
+  // const [galleryVisible, setGalleryVisible] = useState(false);
+  // const [galleryPhotos, setGalleryPhotos] = useState<LessonPhoto[]>([]);
+  // const [galleryIndex, setGalleryIndex] = useState(0);
 
   useEffect(() => {
-    fetchStudents();
-    fetchLessons();
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
+  }, []);
+
+  useEffect(() => {
+    const loadData = async () => {
+      setIsInitialLoading(true);
+      await Promise.all([
+        fetchStudents(),
+        fetchLessons(),
+        loadParentData(),
+      ]);
+      setIsInitialLoading(false);
+    };
+    
+    loadData();
   }, [fetchStudents, fetchLessons]);
+
+  const loadParentData = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const metadata = user.user_metadata || {};
+      setParentAvatar({
+        type: metadata.avatar_type || 'initial',
+        value: metadata.avatar_value || null,
+        name: metadata.display_name || user.email?.split('@')[0] || 'Parent',
+      });
+    }
+  };
 
   // Fetch subjects when students are loaded
   useEffect(() => {
@@ -186,18 +289,32 @@ export default function Dashboard() {
     };
   }, [lessons]);
 
-  // Filter lessons by selected date or get recent lessons
+  // Filter lessons for selected date
   const selectedDateStr = format(selectedDate, 'yyyy-MM-dd');
-  const isTodaySelected = isSameDay(selectedDate, new Date());
-  const lessonsForSelectedDate = useMemo(() => {
-    if (isTodaySelected) {
-      // Show most recent 5 lessons when today is selected
-      return lessons.slice(0, 5);
+  const selectedDateLessons = useMemo(() => {
+    return lessons.filter(
+      l => l.date === selectedDateStr
+    );
+  }, [lessons, selectedDateStr]);
+
+  // Generate dynamic section title based on selected date
+  const getLessonSectionTitle = () => {
+    const today = format(new Date(), 'yyyy-MM-dd');
+    const tomorrow = format(addDays(new Date(), 1), 'yyyy-MM-dd');
+    const yesterday = format(subDays(new Date(), 1), 'yyyy-MM-dd');
+    
+    if (selectedDateStr === today) {
+      return "Today's Lessons";
+    } else if (selectedDateStr === yesterday) {
+      return "Yesterday's Lessons";
+    } else if (selectedDateStr === tomorrow) {
+      return "Tomorrow's Lessons";
+    } else if (new Date(selectedDateStr) < new Date(today)) {
+      return "Past Lessons";
     } else {
-      // Show lessons for the selected date
-      return lessons.filter((l) => l.date === selectedDateStr);
+      return "Future Lessons";
     }
-  }, [lessons, selectedDateStr, isTodaySelected]);
+  };
 
   // Get unique lesson dates for date picker indicators
   const lessonDates = useMemo(() => {
@@ -226,25 +343,65 @@ export default function Dashboard() {
     );
   };
 
+  const triggerConfetti = () => {
+    setShowConfetti(true);
+    
+    // Trigger confetti with slight delay
+    setTimeout(() => {
+      if (confettiRef.current) {
+        confettiRef.current.start();
+      }
+    }, 100);
+    
+    // Hide confetti after animation
+    setTimeout(() => {
+      setShowConfetti(false);
+    }, 2500);
+  };
+
   const handleLessonComplete = (lessonId: string, isCurrentlyComplete: boolean) => {
     const newStatus = !isCurrentlyComplete;
     
-    // Show confetti immediately if marking complete
+    // Show confetti if marking complete
     if (newStatus) {
-      setShowConfetti(true);
-      setTimeout(() => {
-        if (confettiRef.current) {
-          confettiRef.current.start();
-        }
-      }, 100);
-      setTimeout(() => {
-        setShowConfetti(false);
-      }, 2000);
+      triggerConfetti();
     }
     
     // Call the optimistic toggle (updates UI instantly, database in background)
     lessonStore.toggleCompleteOptimistic(lessonId);
   };
+
+  // Student Cards Skeleton
+  const StudentCardSkeleton = () => (
+    <View style={styles.studentCard}>
+      <View style={styles.studentCardContent}>
+        <Skeleton width={80} height={80} borderRadius={40} />
+        <View style={styles.studentCardRight}>
+          <Skeleton width="70%" height={20} style={{ marginBottom: 8 }} />
+          <Skeleton width="40%" height={16} style={{ marginBottom: 12 }} />
+          <View style={styles.studentCardStats}>
+            <Skeleton width={90} height={32} borderRadius={10} />
+            <Skeleton width={70} height={32} borderRadius={10} />
+            <Skeleton width={70} height={32} borderRadius={10} />
+          </View>
+        </View>
+      </View>
+    </View>
+  );
+
+  // Lesson Card Skeleton
+  const LessonCardSkeleton = () => (
+    <View style={styles.lessonCard}>
+      <View style={styles.lessonHeader}>
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <Skeleton width={60} height={24} borderRadius={12} />
+          <Skeleton width={80} height={24} borderRadius={12} />
+        </View>
+      </View>
+      <Skeleton width="80%" height={18} style={{ marginBottom: 8 }} />
+      <Skeleton width="60%" height={14} />
+    </View>
+  );
 
   return (
     <>
@@ -263,25 +420,39 @@ export default function Dashboard() {
             />
           </View>
         )}
-        <ScrollView 
-          style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-        >
+        <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
+          <ScrollView 
+            style={styles.scrollView}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+          >
         {/* Header Section */}
-        <View style={styles.header}>
-          <View style={styles.welcomeSection}>
-            <Text style={styles.welcomeText}>Welcome back! 👋</Text>
-            {user?.email && (
-              <Text style={styles.emailText}>{user.email}</Text>
-            )}
-          </View>
-          <TouchableOpacity
-            style={styles.signOutButton}
-            onPress={handleSignOut}
+        <View style={styles.headerContainer}>
+          {/* Left: Parent Avatar + Greeting */}
+          <TouchableOpacity 
+            style={styles.headerLeft}
+            onPress={() => router.push('/settings/profile' as any)}
             activeOpacity={0.7}
           >
-            <Text style={styles.signOutText}>Sign Out</Text>
+            <Avatar
+              type={parentAvatar.type}
+              value={parentAvatar.value}
+              name={parentAvatar.name}
+              color={Colors.brand[400]}
+              size={44}
+            />
+            <View style={styles.greetingContainer}>
+              <Text style={styles.greetingText}>Hello, {parentAvatar.name.split(' ')[0]}</Text>
+              <Text style={styles.dateText}>{format(new Date(), 'EEEE, dd MMM')}</Text>
+            </View>
+          </TouchableOpacity>
+
+          {/* Right: Settings Gear */}
+          <TouchableOpacity 
+            style={styles.settingsButton}
+            onPress={() => router.push('/settings' as any)}
+          >
+            <Settings size={24} color={Colors.ui.text} />
           </TouchableOpacity>
         </View>
 
@@ -297,42 +468,33 @@ export default function Dashboard() {
           thisWeekCount={weeklyStats.thisWeekCount}
           completionRate={weeklyStats.completionRate}
           streak={weeklyStats.streak}
+          onPress={() => setShowWeeklySummaryModal(true)}
         />
 
-        {/* Recent Lessons Section (or Selected Date Lessons) */}
+        {/* Dynamic Lessons Section */}
         <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={[Typography.h3, { marginBottom: 0 }]}>
-              {isSameDay(selectedDate, new Date()) 
-                ? 'Recent Lessons' 
-                : format(selectedDate, 'EEEE, MMM d')}
-            </Text>
-            {lessonsForSelectedDate.length > 0 && (
-              <TouchableOpacity
-                onPress={() => router.push('/(tabs)/calendar' as any)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.viewAllText}>View All</Text>
-              </TouchableOpacity>
-            )}
-          </View>
+          <Text style={styles.sectionTitle}>{getLessonSectionTitle()}</Text>
           
-          {lessonsForSelectedDate.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Text style={[Typography.body, { color: Colors.ui.textLight, textAlign: 'center' }]}>
-                {isSameDay(selectedDate, new Date())
-                  ? 'No lessons yet. Tap "Add Lesson" to get started! 📚'
-                  : 'No lessons for this day'}
-              </Text>
-            </View>
+          {isInitialLoading ? (
+            <>
+              <LessonCardSkeleton />
+              <LessonCardSkeleton />
+            </>
+          ) : selectedDateLessons.length === 0 ? (
+            <EmptyState
+              icon={BookOpen}
+              title={`No Lessons ${selectedDateStr === format(new Date(), 'yyyy-MM-dd') ? 'Today' : 'on This Day'}`}
+              description="Add a lesson to get started!"
+            />
           ) : (
-            lessonsForSelectedDate.slice(0, 5).map((lesson) => {
+            <>
+              {selectedDateLessons.map((lesson, index) => {
               // Find student for this lesson
               const student = students.find(s => s.id === lesson.student_id);
               const subjectColor = getSubjectColor(lesson.subject);
               
               return (
-                <TouchableOpacity
+                <AnimatedCard
                   key={lesson.id}
                   style={[
                     styles.lessonCard,
@@ -342,17 +504,18 @@ export default function Dashboard() {
                     setSelectedLesson(lesson);
                     setShowLessonModal(true);
                   }}
-                  activeOpacity={0.7}
                 >
                   <View style={styles.lessonHeader}>
                     <View style={styles.lessonHeaderLeft}>
-                      {/* Student Name Pill */}
+                      {/* Small Avatar */}
                       {student && (
-                        <View style={styles.studentPill}>
-                          <Text style={styles.studentPillText}>
-                            {student.name}
-                          </Text>
-                        </View>
+                        <Avatar
+                          type={student.avatar_type || 'initial'}
+                          value={student.avatar_value}
+                          name={student.name}
+                          color={Colors.student[student.color_theme]}
+                          size={24}
+                        />
                       )}
                       
                       {/* Subject Pill */}
@@ -364,6 +527,11 @@ export default function Dashboard() {
                       >
                         <Text style={styles.subjectPillText}>{lesson.subject}</Text>
                       </View>
+                      
+                      {/* Student Name */}
+                      {student && (
+                        <Text style={styles.studentNameText}>{student.name}</Text>
+                      )}
                     </View>
                     
                     {/* Completion Checkbox + Status */}
@@ -397,128 +565,246 @@ export default function Dashboard() {
                   
                   <Text style={styles.lessonTitle}>{lesson.title}</Text>
                   
+                  {lesson.notes && (
+                    <Text style={styles.lessonNotes} numberOfLines={2}>
+                      {lesson.notes}
+                    </Text>
+                  )}
+
+                  {/* 
+                    TODO: Re-enable photo attachments in v2.0
+                    - Issue: Supabase Storage permission problems
+                    - Alternative: Use Cloudinary or other service
+                    - Database tables exist: lesson_photos
+                    - Storage bucket exists: student-avatars (or lesson-photos)
+                  */}
+                  {/* {lesson.photos && lesson.photos.length > 0 && (
+                    <TouchableOpacity
+                      style={styles.photoIndicator}
+                      onPress={() => {
+                        setGalleryPhotos(lesson.photos || []);
+                        setGalleryIndex(0);
+                        setGalleryVisible(true);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.photoThumbnails}>
+                        {lesson.photos.slice(0, 3).map((photo, index) => (
+                          <Image
+                            key={photo.id}
+                            source={{ uri: getPhotoUrl(photo.photo_path) }}
+                            style={[styles.photoThumbnail, { marginLeft: index > 0 ? -8 : 0 }]}
+                            onError={() => console.error('Thumbnail load failed:', photo.photo_path)}
+                          />
+                        ))}
+                      </View>
+                      {lesson.photos.length > 3 && (
+                        <Text style={styles.photoCount}>+{lesson.photos.length - 3}</Text>
+                      )}
+                    </TouchableOpacity>
+                  )} */}
+                  
                   <Text style={styles.lessonDate}>
                     {formatDate(lesson.date)}
                   </Text>
-                </TouchableOpacity>
+                </AnimatedCard>
               );
-            })
+              })}
+            </>
           )}
+        </View>
+
+        {/* Add Lesson Button */}
+        <View style={styles.addLessonSection}>
+          <TouchableOpacity
+            style={styles.addLessonButton}
+            onPress={() => {
+              if (students.length === 0) {
+                Alert.alert('No Students', 'Add a student first!');
+                return;
+              }
+              // Navigate to add lesson for first student or show student picker
+              if (students.length === 1) {
+                router.push(`/add-lesson` as any);
+              } else {
+                // Show student picker modal or navigate to first student
+                router.push(`/add-lesson` as any);
+              }
+            }}
+            activeOpacity={0.8}
+          >
+            <View style={styles.addLessonButtonContent}>
+              <View style={styles.addLessonIconCircle}>
+                <Plus size={24} color="white" />
+              </View>
+              <View style={styles.addLessonText}>
+                <Text style={styles.addLessonTitle}>Add Lesson</Text>
+                <Text style={styles.addLessonDescription}>Log a new lesson for today</Text>
+              </View>
+            </View>
+          </TouchableOpacity>
         </View>
 
         {/* Your Students Section */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={[Typography.h3, { marginBottom: 16 }]}>Your Students</Text>
-            <TouchableOpacity
-              style={styles.addButton}
-              onPress={() => router.push('/add-student' as any)}
-              activeOpacity={0.7}
-            >
-              <Plus size={20} color={Colors.brand[600]} />
-            </TouchableOpacity>
+            {!isInitialLoading && (
+              <TouchableOpacity
+                style={styles.addButton}
+                onPress={() => router.push('/add-student' as any)}
+                activeOpacity={0.7}
+              >
+                <Plus size={20} color={Colors.brand[600]} />
+              </TouchableOpacity>
+            )}
           </View>
-          {loading ? (
-            <Text style={styles.loadingText}>Loading...</Text>
-          ) : students.length === 0 ? (
-            <TouchableOpacity
-              style={styles.addStudentButton}
-              onPress={() => router.push('/onboarding/step1')}
-              activeOpacity={0.8}
+          {isInitialLoading ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.studentsContainer}
+              contentContainerStyle={styles.studentsContainerContent}
             >
-              <Text style={styles.addStudentButtonText}>Add your first student</Text>
-            </TouchableOpacity>
+              <StudentCardSkeleton />
+              <StudentCardSkeleton />
+            </ScrollView>
+          ) : students.length === 0 ? (
+            <EmptyState
+              icon={Users}
+              title="No Students Yet"
+              description="Add your first student to start tracking their homeschool progress!"
+              actionText="Add Student"
+              onAction={() => setShowStudentForm(true)}
+            />
           ) : (
-            <View style={styles.studentsContainer}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.studentsContainer}
+              contentContainerStyle={styles.studentsContainerContent}
+            >
               {students.map((student) => (
-                <View
+                <AnimatedCard
                   key={student.id}
                   style={[
                     styles.studentCard,
-                    { backgroundColor: Colors.student[student.color_theme] },
+                    { borderLeftColor: Colors.student[student.color_theme] },
                   ]}
+                  onPress={() => {
+                    // Placeholder for student details
+                    console.log('Student tapped:', student.name);
+                  }}
                 >
-                  <View style={styles.cardActions}>
-                    <TouchableOpacity
-                      style={styles.deleteButton}
-                      onPress={() => handleDeleteStudent(student)}
-                      activeOpacity={0.7}
-                    >
-                      <Trash2 size={20} color={Colors.ui.error} />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.editButton}
-                      onPress={() => {
-                        console.log('Edit button onPress triggered for:', student.name);
-                        handleEditStudent(student);
-                      }}
-                      activeOpacity={0.7}
-                    >
-                      <Edit2 size={18} color="#FFFFFF" />
-                    </TouchableOpacity>
+                  <View style={styles.studentCardContent}>
+                    {/* Left: Avatar (NOT clickable) */}
+                    <Avatar
+                      type={student.avatar_type || 'initial'}
+                      value={student.avatar_value}
+                      name={student.name}
+                      color={Colors.student[student.color_theme]}
+                      size={80}
+                    />
+                    
+                    {/* Right: Info */}
+                    <View style={styles.studentCardRight}>
+                      <View style={styles.studentCardHeader}>
+                        <View style={styles.studentCardNameSection}>
+                          <Text style={styles.studentCardName}>{student.name}</Text>
+                          <Text style={styles.studentCardGrade}>{student.grade}</Text>
+                        </View>
+                        
+                        {/* Edit Button */}
+                        <TouchableOpacity
+                          style={styles.editButton}
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            handleEditStudent(student);
+                          }}
+                          activeOpacity={0.7}
+                        >
+                          <Edit2 size={16} color={Colors.brand[600]} />
+                        </TouchableOpacity>
+                      </View>
+                      
+                      {/* Stats Row */}
+                      <View style={styles.studentCardStats}>
+                        {/* Subjects Count with Edit */}
+                        <TouchableOpacity
+                          style={styles.statPill}
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            handleEditSubjects(student);
+                          }}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={styles.statPillNumber}>
+                            {getSubjectCount(student.id)}
+                          </Text>
+                          <Text style={styles.statPillLabel}>Subjects</Text>
+                          <Edit2 size={12} color={Colors.brand[500]} />
+                        </TouchableOpacity>
+                        
+                        {/* Today's Lessons */}
+                        <View style={styles.statPill}>
+                          <Text style={styles.statPillNumber}>
+                            {lessonStore.lessons.filter(
+                              l => l.student_id === student.id && 
+                              l.date === format(new Date(), 'yyyy-MM-dd')
+                            ).length}
+                          </Text>
+                          <Text style={styles.statPillLabel}>Today</Text>
+                        </View>
+                        
+                        {/* Total Completed */}
+                        <View style={styles.statPill}>
+                          <Text style={styles.statPillNumber}>
+                            {lessonStore.lessons.filter(
+                              l => l.student_id === student.id && l.completed
+                            ).length}
+                          </Text>
+                          <Text style={styles.statPillLabel}>Done</Text>
+                        </View>
+                      </View>
+                    </View>
                   </View>
-                  <TouchableOpacity
-                    activeOpacity={0.8}
-                    onPress={() => {
-                      // Placeholder for student details
-                      console.log('Student tapped:', student.name);
-                    }}
-                  >
-                    <Text style={[Typography.h4, { color: 'white', marginBottom: 4 }]}>{student.name}</Text>
-                    <Text style={[Typography.bodySmall, { color: 'white', opacity: 0.9, marginBottom: 12 }]}>{student.grade}</Text>
-                  </TouchableOpacity>
 
-                  {/* Edit/Add Subjects Button - Always visible */}
+                  {/* Student Summary Button */}
                   <TouchableOpacity
-                    style={styles.editSubjectsButton}
+                    style={styles.studentSummaryButton}
                     onPress={() => {
-                      console.log('Edit subjects for:', student.name);
-                      handleEditSubjects(student);
+                      setSelectedStudentForSummary(student);
+                      setShowStudentSummary(true);
                     }}
                     activeOpacity={0.8}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   >
-                    <Text style={styles.editSubjectsButtonText}>
-                      {getSubjectCount(student.id) > 0 
-                        ? `Edit Subjects (${getSubjectCount(student.id)})`
-                        : 'Add Subjects'}
-                    </Text>
+                    <Text style={styles.studentSummaryButtonText}>Student Summary</Text>
                   </TouchableOpacity>
-                </View>
+                </AnimatedCard>
               ))}
-            </View>
+            </ScrollView>
           )}
         </View>
 
-        {/* Quick Actions Section */}
-        <View style={styles.section}>
-          <TouchableOpacity
-            style={styles.addLessonButton}
-            onPress={() => router.push('/add-lesson' as any)}
-            activeOpacity={0.8}
-          >
-            <Plus size={24} color="white" />
-            <Text style={styles.addLessonButtonText}>Add Lesson</Text>
-          </TouchableOpacity>
-        </View>
-        </ScrollView>
-
-        {/* Floating Action Button */}
-        <TouchableOpacity
-          style={styles.fab}
-          onPress={() => router.push('/add-lesson' as any)}
-          activeOpacity={0.8}
-        >
-          <Plus size={28} color="white" />
-        </TouchableOpacity>
+          </ScrollView>
+        </Animated.View>
       </SafeAreaView>
 
       {/* Student Edit Modal - Outside ScrollView for proper rendering */}
       <StudentModal
-        visible={showEditModal}
-        student={selectedStudent}
-        onClose={handleCloseModal}
-        onSave={handleSaveStudent}
+        visible={showEditModal || showStudentForm}
+        student={showStudentForm ? null : selectedStudent}
+        onClose={() => {
+          if (showStudentForm) {
+            setShowStudentForm(false);
+          } else {
+            handleCloseModal();
+          }
+        }}
+        onSave={async () => {
+          await handleSaveStudent();
+          setShowStudentForm(false);
+        }}
       />
 
       {/* Edit Subjects Modal */}
@@ -548,6 +834,33 @@ export default function Dashboard() {
           setSelectedLesson(null);
         }}
       />
+
+      {/* Weekly Summary Modal */}
+      <WeeklySummaryModal
+        visible={showWeeklySummaryModal}
+        onClose={() => setShowWeeklySummaryModal(false)}
+        students={students}
+        lessons={lessons}
+      />
+
+      {/* Student Summary Modal */}
+      <StudentSummaryModal
+        visible={showStudentSummary}
+        onClose={() => {
+          setShowStudentSummary(false);
+          setSelectedStudentForSummary(null);
+        }}
+        student={selectedStudentForSummary}
+        lessons={lessons}
+      />
+
+      {/* Photo Gallery Modal - Disabled for now */}
+      {/* <PhotoGallery
+        visible={galleryVisible}
+        onClose={() => setGalleryVisible(false)}
+        photos={galleryPhotos}
+        initialIndex={galleryIndex}
+      /> */}
     </>
   );
 }
@@ -575,36 +888,40 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingBottom: 100,
   },
-  header: {
+  headerContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 16,
+    backgroundColor: Colors.background.card,
     marginBottom: 24,
-    paddingTop: 8,
   },
-  welcomeSection: {
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
     flex: 1,
   },
-  welcomeText: {
-    ...Typography.h3,
+  greetingContainer: {
+    flex: 1,
+  },
+  greetingText: {
+    ...Typography.label,
+    fontSize: 15,
+    color: Colors.ui.text,
     marginBottom: 2,
   },
-  emailText: {
+  dateText: {
     ...Typography.caption,
+    fontSize: 12,
     color: Colors.ui.textLight,
   },
-  signOutButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
+  settingsButton: {
+    padding: 8,
     borderRadius: 12,
-    backgroundColor: Colors.background.card,
-    borderWidth: 1,
-    borderColor: Colors.ui.border,
-  },
-  signOutText: {
-    ...Typography.caption,
-    color: Colors.ui.text,
-    fontWeight: '600',
+    backgroundColor: Colors.ui.background,
   },
   section: {
     marginBottom: 32,
@@ -656,75 +973,96 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   studentsContainer: {
-    gap: 12,
+    marginBottom: 16,
+  },
+  studentsContainerContent: {
+    paddingRight: 20,
   },
   studentCard: {
     backgroundColor: Colors.background.card,
     borderRadius: 20,
-    padding: 20,
-    marginBottom: 16,
+    padding: 16,
+    marginRight: 16,
+    width: 280,
+    borderLeftWidth: 4,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
     shadowRadius: 12,
     elevation: 3,
-    borderWidth: 0,
-    position: 'relative',
   },
-  cardActions: {
-    position: 'absolute',
-    top: 12,
-    right: 12,
+  studentCardContent: {
     flexDirection: 'row',
-    gap: 8,
-    zIndex: 1,
+    alignItems: 'flex-start',
+    gap: 14,
   },
-  deleteButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+  studentCardRight: {
+    flex: 1,
+  },
+  studentSummaryButton: {
+    backgroundColor: Colors.brand[500],
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
     alignItems: 'center',
-    justifyContent: 'center',
-    opacity: 0.8,
+    marginTop: 12,
+  },
+  studentSummaryButtonText: {
+    ...Typography.button,
+    fontSize: 14,
+    color: 'white',
+  },
+  studentCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  studentCardNameSection: {
+    flex: 1,
+  },
+  studentCardName: {
+    ...Typography.h4,
+    fontSize: 17,
+    marginBottom: 2,
+  },
+  studentCardGrade: {
+    ...Typography.bodySmall,
+    color: Colors.ui.textLight,
+    fontSize: 13,
   },
   editButton: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    alignItems: 'center',
+    backgroundColor: Colors.brand[50],
     justifyContent: 'center',
-  },
-  studentName: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-    marginBottom: 4,
-    paddingRight: 80,
-  },
-  studentGrade: {
-    fontSize: 16,
-    color: '#FFFFFF',
-    opacity: 0.9,
-    marginBottom: 8,
-  },
-  editSubjectsButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.25)',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    marginTop: 12,
-    minHeight: 44,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
     alignItems: 'center',
-    justifyContent: 'center',
   },
-  editSubjectsButtonText: {
-    ...Typography.buttonSmall,
-    color: 'white',
-    textAlign: 'center',
+  studentCardStats: {
+    flexDirection: 'row',
+    gap: 6,
+    flexWrap: 'wrap',
+  },
+  statPill: {
+    backgroundColor: Colors.ui.background,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  statPillNumber: {
+    fontFamily: 'Quicksand_700Bold',
+    fontSize: 15,
+    color: Colors.brand[600],
+  },
+  statPillLabel: {
+    ...Typography.caption,
+    fontSize: 10,
+    color: Colors.ui.textLight,
+    marginRight: 2,
   },
   lessonCard: {
     backgroundColor: Colors.background.card,
@@ -751,17 +1089,9 @@ const styles = StyleSheet.create({
     flex: 1,
     flexWrap: 'wrap',
   },
-  studentPill: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    backgroundColor: Colors.ui.border,
-    marginRight: 8,
-  },
-  studentPillText: {
-    fontFamily: 'Quicksand_600SemiBold',
-    fontSize: 11,
-    color: Colors.ui.text,
+  studentNameText: {
+    ...Typography.bodySmall,
+    color: Colors.ui.textLight,
   },
   subjectPill: {
     paddingHorizontal: 12,
@@ -786,6 +1116,29 @@ const styles = StyleSheet.create({
     ...Typography.bodySmall,
     color: Colors.ui.textLight,
     marginTop: 4,
+  },
+  photoIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  photoThumbnails: {
+    flexDirection: 'row',
+    marginRight: 8,
+  },
+  photoThumbnail: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: Colors.ui.border,
+    borderWidth: 2,
+    borderColor: Colors.background.card,
+  },
+  photoCount: {
+    ...Typography.caption,
+    fontSize: 11,
+    color: Colors.ui.textLight,
   },
   completionRow: {
     flexDirection: 'row',
@@ -835,56 +1188,43 @@ const styles = StyleSheet.create({
     color: Colors.ui.textLight,
     textAlign: 'center',
   },
+  addLessonSection: {
+    paddingHorizontal: 20,
+    marginBottom: 24,
+  },
   addLessonButton: {
     backgroundColor: Colors.brand[500],
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    borderRadius: 12,
-    marginVertical: 20,
-    minHeight: 52,
-  },
-  addLessonButtonText: {
-    color: 'white',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  actionsContainer: {
-    gap: 12,
-  },
-  actionButton: {
-    backgroundColor: Colors.brand[50],
-    borderWidth: 2,
-    borderColor: Colors.brand[200],
-    borderRadius: 12,
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 56,
-  },
-  actionButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.brand[700],
-  },
-  fab: {
-    position: 'absolute',
-    bottom: 90,
-    right: 20,
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: Colors.brand[400],
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
+    borderRadius: 16,
+    padding: 20,
+    shadowColor: Colors.brand[500],
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 8,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  addLessonButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  addLessonIconCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  addLessonText: {
+    flex: 1,
+  },
+  addLessonTitle: {
+    ...Typography.h4,
+    color: 'white',
+    marginBottom: 2,
+  },
+  addLessonDescription: {
+    ...Typography.bodySmall,
+    color: 'rgba(255, 255, 255, 0.9)',
   },
 });

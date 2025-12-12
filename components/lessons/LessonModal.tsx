@@ -1,8 +1,11 @@
+// PhotoUpload disabled for now
+// import PhotoUpload from '@/components/lessons/PhotoUpload';
 import Colors from '@/constants/Colors';
 import { PRESET_SUBJECTS, getSubjectColor } from '@/constants/Subjects';
 import { useLessonStore } from '@/store/lessonStore';
 import { useStudentStore } from '@/store/studentStore';
 import type { Lesson } from '@/types';
+// import { LessonPhoto } from '@/types/database';
 import { Trash2, X } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
 import {
@@ -45,6 +48,15 @@ const formatDate = (dateString: string) => {
   });
 };
 
+// Photo upload disabled for now
+// const getPhotoUrl = (path: string) => {
+//   if (!path) return '';
+//   const { data } = supabase.storage
+//     .from('student-avatars')
+//     .getPublicUrl(path);
+//   return data.publicUrl;
+// };
+
 export default function LessonModal({ visible, lesson, onClose, onSave }: LessonModalProps) {
   const [subject, setSubject] = useState('');
   const [title, setTitle] = useState('');
@@ -53,6 +65,8 @@ export default function LessonModal({ visible, lesson, onClose, onSave }: Lesson
   const [loading, setLoading] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
   const [confettiKey, setConfettiKey] = useState(0);
+  // Photo upload disabled for now
+  // const [photos, setPhotos] = useState<LessonPhoto[]>([]);
 
   const lessonStore = useLessonStore();
   const { students, subjects, fetchSubjects } = useStudentStore();
@@ -66,8 +80,42 @@ export default function LessonModal({ visible, lesson, onClose, onSave }: Lesson
       
       // Fetch subjects for this student
       fetchSubjects(lesson.student_id);
+      
+      // Photo upload disabled for now
+      // Load photos for this lesson
+      // loadLessonPhotos();
     }
   }, [visible, lesson, fetchSubjects]);
+
+  // Photo upload disabled for now
+  // const loadLessonPhotos = async () => {
+  //   if (!lesson) return;
+  //   
+  //   const { data, error } = await supabase
+  //     .from('lesson_photos')
+  //     .select('*')
+  //     .eq('lesson_id', lesson.id)
+  //     .order('created_at', { ascending: true });
+
+  //   if (error) {
+  //     console.error('Error loading photos:', error);
+  //     return;
+  //   }
+
+  //   setPhotos(data || []);
+  // };
+
+  // useEffect(() => {
+  //   console.log('=== PHOTOS STATE ===');
+  //   console.log('Photos array:', photos);
+  //   console.log('Photos count:', photos.length);
+  //   if (photos.length > 0) {
+  //     console.log('First photo:', photos[0]);
+  //     console.log('First photo path:', photos[0].photo_path);
+  //     console.log('First photo URL:', getPhotoUrl(photos[0].photo_path));
+  //   }
+  //   console.log('===================');
+  // }, [photos]);
 
   if (!visible || !lesson) return null;
 
@@ -282,6 +330,21 @@ export default function LessonModal({ visible, lesson, onClose, onSave }: Lesson
               />
             </View>
 
+            {/* 
+              TODO: Re-enable photo attachments in v2.0
+              - Issue: Supabase Storage permission problems
+              - Alternative: Use Cloudinary or other service
+              - Database tables exist: lesson_photos
+              - Storage bucket exists: student-avatars (or lesson-photos)
+            */}
+            {/* {lesson && (
+              <PhotoUpload
+                lessonId={lesson.id}
+                photos={photos}
+                onPhotosChange={setPhotos}
+              />
+            )} */}
+
             {/* Completed Toggle */}
             <View style={styles.completedToggle}>
               <TouchableOpacity
@@ -485,6 +548,18 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     color: 'white',
+  },
+  photoInfoCard: {
+    backgroundColor: Colors.brand[50],
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 20,
+  },
+  photoInfoText: {
+    fontSize: 14,
+    color: Colors.brand[700],
+    textAlign: 'center',
+    fontWeight: '500',
   },
 });
 

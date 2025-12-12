@@ -108,6 +108,8 @@ export const useStudentStore = create<StudentState>((set, get) => ({
         .insert({
           ...student,
           user_id: user.id,
+          avatar_type: student.avatar_type || 'initial',
+          avatar_value: student.avatar_value || null,
         })
         .select()
         .single();
@@ -132,9 +134,19 @@ export const useStudentStore = create<StudentState>((set, get) => ({
   updateStudent: async (id, updates) => {
     set({ loading: true });
     try {
+      const updateData: any = { ...updates };
+      
+      // Explicitly handle avatar fields
+      if ('avatar_type' in updates) {
+        updateData.avatar_type = updates.avatar_type;
+      }
+      if ('avatar_value' in updates) {
+        updateData.avatar_value = updates.avatar_value ?? null;
+      }
+
       const { error } = await supabase
         .from('students')
-        .update(updates)
+        .update(updateData)
         .eq('id', id);
 
       if (error) {

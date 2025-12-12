@@ -1,5 +1,6 @@
 import Colors from '@/constants/Colors';
 import Typography from '@/constants/Typography';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import React, { useRef, useState } from 'react';
 import { Dimensions, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -36,13 +37,26 @@ export default function OnboardingWelcome() {
   const carouselRef = useRef<any>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
 
-  const handleGetStarted = () => {
-    // Screen 4 has the "Get Started" button in the image
-    // Tap anywhere on screen 4 to continue
+  const handleGetStarted = async () => {
+    // Mark onboarding as completed
+    await AsyncStorage.setItem('hasSeenOnboarding', 'true');
+    
+    // Navigate to signup
     router.replace('/signup');
   };
 
-  const handleSkip = () => {
+  const handleLogin = async () => {
+    // Mark onboarding as completed
+    await AsyncStorage.setItem('hasSeenOnboarding', 'true');
+    
+    // Navigate to login
+    router.replace('/login');
+  };
+
+  const handleSkip = async () => {
+    // Mark onboarding as completed
+    await AsyncStorage.setItem('hasSeenOnboarding', 'true');
+    
     router.replace('/signup');
   };
 
@@ -84,7 +98,7 @@ export default function OnboardingWelcome() {
                 style={styles.loginLink}
                 onPress={(e) => {
                   e.stopPropagation();
-                  router.replace('/login');
+                  handleLogin();
                 }}
               >
                 Log In

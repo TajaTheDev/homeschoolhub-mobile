@@ -4,16 +4,25 @@
  */
 
 import EditGoalModal from '@/components/lessons/EditGoalModal';
+import Avatar from '@/components/ui/Avatar';
+import EmptyState from '@/components/ui/EmptyState';
+import Skeleton from '@/components/ui/Skeleton';
 import Colors from '@/constants/Colors';
 import { getSubjectColor } from '@/constants/Subjects';
+import Typography from '@/constants/Typography';
+import * as notificationService from '@/services/notificationService';
 import { useLessonStore } from '@/store/lessonStore';
+import { useScheduleStore } from '@/store/scheduleStore';
 import { useStudentStore } from '@/store/studentStore';
 import type { Lesson, StudentSubject } from '@/types';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { format } from 'date-fns';
 import { useRouter } from 'expo-router';
-import { BarChart3, Calendar, Edit2, TrendingUp, X } from 'lucide-react-native';
-import React, { useEffect, useMemo, useState } from 'react';
+import { BarChart3, BookMarked, Calendar, Edit2, TrendingUp, X } from 'lucide-react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  Animated,
   Dimensions,
   KeyboardAvoidingView,
   Modal,
@@ -99,23 +108,49 @@ const getSubjectEmoji = (subject: string): string => {
   return emojis[subject] || '📚';
 };
 
-const calculateStreak = (lessons: Lesson[]): number => {
-  if (lessons.length === 0) return 0;
+const calculateStreak = (
+  lessons: Lesson[],
+  selectedStudentId: string,
+  getSchoolDays: () => number[],
+  isBreakDay: (date: Date) => boolean
+): number => {
+  // Filter for completed lessons only
+  const completedLessons = lessons.filter(l => l.completed);
+  if (completedLessons.length === 0) return 0;
   
-  const sortedDates = [...new Set(lessons.map(l => l.date))].sort().reverse();
-  let streak = 0;
+  // Calculate streak (consecutive SCHOOL days with completed lessons)
+  const schoolDays = getSchoolDays(); // e.g., [1,2,3,4,5] for Mon-Fri
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  
-  for (let i = 0; i < sortedDates.length; i++) {
-    const date = new Date(sortedDates[i]);
-    date.setHours(0, 0, 0, 0);
-    const expectedDate = new Date(today);
-    expectedDate.setDate(today.getDate() - i);
+  let streak = 0;
+  let checkDate = new Date(today);
+
+  for (let i = 0; i < 90; i++) { // Check up to 90 days back
+    const dayOfWeek = checkDate.getDay(); // 0=Sunday, 6=Saturday
     
-    if (date.getTime() === expectedDate.getTime()) {
+    // Skip if not a school day
+    if (!schoolDays.includes(dayOfWeek)) {
+      checkDate.setDate(checkDate.getDate() - 1);
+      continue;
+    }
+    
+    // Skip if it's a break day
+    if (isBreakDay(checkDate)) {
+      checkDate.setDate(checkDate.getDate() - 1);
+      continue;
+    }
+    
+    // Check if this school day has completed lessons
+    const dateStr = format(checkDate, 'yyyy-MM-dd');
+    const hasCompletedLesson = completedLessons.some(
+      l => l.student_id === selectedStudentId && l.date === dateStr && l.completed
+    );
+    
+    if (hasCompletedLesson) {
       streak++;
+      checkDate.setDate(checkDate.getDate() - 1);
     } else {
+      // Streak broken - stop counting
       break;
     }
   }
@@ -172,16 +207,19 @@ const getStrongestSubject = (lessons: Lesson[], subjects: StudentSubject[]): { s
 const getInsight = (
   studentLessons: Lesson[],
   subjects: StudentSubject[],
-  lessonsBySubject: Record<string, Lesson[]>
+  lessonsBySubject: Record<string, Lesson[]>,
+  selectedStudentId: string,
+  getSchoolDays: () => number[],
+  isBreakDay: (date: Date) => boolean
 ): string => {
   if (studentLessons.length === 0) {
     return 'Keep logging lessons to see insights!';
   }
   
   // Calculate streak
-  const streak = calculateStreak(studentLessons);
+  const streak = calculateStreak(studentLessons, selectedStudentId, getSchoolDays, isBreakDay);
   if (streak >= 3) {
-    return `🔥 ${streak} day streak! Keep it up!`;
+    return `🔥 ${streak} school day streak! Keep it up!`;
   }
   
   // Check weekly completion rate
@@ -241,10 +279,25 @@ const ProgressBar = ({
   );
 };
 
+// Check if goal celebrations are enabled
+const isGoalCelebrationsEnabled = async () => {
+  try {
+    const settings = await AsyncStorage.getItem('notification-settings');
+    if (settings) {
+      const parsed = JSON.parse(settings);
+      return parsed.enabled && parsed.goalCelebrations;
+    }
+  } catch (error) {
+    console.error('Error checking notification settings:', error);
+  }
+  return false;
+};
+
 export default function ProgressScreen() {
   const router = useRouter();
   const { students, fetchStudents, subjects, fetchSubjects, updateSubject } = useStudentStore();
   const { lessons, fetchLessons } = useLessonStore();
+  const { schedule, breaks, getSchoolDays, isBreakDay, fetchSchedule, fetchBreaks } = useScheduleStore();
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(
     null
   );
@@ -255,12 +308,34 @@ export default function ProgressScreen() {
   const [showEditGoalModal, setShowEditGoalModal] = useState(false);
   const [editGoalSubject, setEditGoalSubject] = useState<string>('');
   const [editGoalCurrentGoal, setEditGoalCurrentGoal] = useState<number>(0);
+  const [loading, setLoading] = useState(true);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  // Track previous goal completion status to detect when goals are newly reached
+  const previousGoalStatus = useRef<Record<string, number>>({});
 
   useEffect(() => {
-    fetchStudents();
-    fetchLessons();
-    fetchSubjects();
-  }, [fetchStudents, fetchLessons, fetchSubjects]);
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
+  }, []);
+
+  useEffect(() => {
+    const loadData = async () => {
+      setLoading(true);
+      await Promise.all([
+        fetchStudents(),
+        fetchLessons(),
+        fetchSubjects(),
+        fetchSchedule(),
+        fetchBreaks(),
+      ]);
+      setLoading(false);
+    };
+    
+    loadData();
+  }, [fetchStudents, fetchLessons, fetchSubjects, fetchSchedule, fetchBreaks]);
 
   useEffect(() => {
     if (students.length > 0 && !selectedStudentId) {
@@ -297,8 +372,9 @@ export default function ProgressScreen() {
   }, [subjects, selectedStudentId]);
 
   const insight = useMemo(() => {
-    return getInsight(studentLessons, studentSubjects, lessonsBySubject);
-  }, [studentLessons, studentSubjects, lessonsBySubject]);
+    if (!selectedStudentId) return 'Keep logging lessons to see insights!';
+    return getInsight(studentLessons, studentSubjects, lessonsBySubject, selectedStudentId, getSchoolDays, isBreakDay);
+  }, [studentLessons, studentSubjects, lessonsBySubject, selectedStudentId, getSchoolDays, isBreakDay]);
 
   const selectedStudent = students.find((s) => s.id === selectedStudentId);
 
@@ -407,7 +483,37 @@ export default function ProgressScreen() {
     );
   }
 
-  if (!selectedStudentId) {
+  // Progress Skeleton
+  const ProgressSkeleton = () => (
+    <>
+      {/* Student tabs skeleton */}
+      <View style={{ flexDirection: 'row', gap: 12, marginBottom: 24 }}>
+        <Skeleton width={80} height={80} borderRadius={16} />
+        <Skeleton width={80} height={80} borderRadius={16} />
+        <Skeleton width={80} height={80} borderRadius={16} />
+      </View>
+      
+      {/* Stats cards skeleton */}
+      <View style={{ flexDirection: 'row', gap: 12, marginBottom: 24 }}>
+        <View style={{ flex: 1 }}>
+          <Skeleton width="100%" height={80} borderRadius={16} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Skeleton width="100%" height={80} borderRadius={16} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Skeleton width="100%" height={80} borderRadius={16} />
+        </View>
+      </View>
+      
+      {/* Subject cards skeleton */}
+      <Skeleton width="100%" height={120} borderRadius={16} style={{ marginBottom: 12 }} />
+      <Skeleton width="100%" height={120} borderRadius={16} style={{ marginBottom: 12 }} />
+      <Skeleton width="100%" height={120} borderRadius={16} />
+    </>
+  );
+
+  if (!selectedStudentId && !loading) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: Colors.ui.background }} edges={['top']}>
         <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 100 }}>
@@ -424,42 +530,48 @@ export default function ProgressScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: Colors.ui.background }} edges={['top']}>
-      <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 100 }}>
+      <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
+        <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 100 }}>
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Progress Tracking 📊</Text>
       </View>
 
-      {/* Student Selector Tabs */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.tabsContainer}
-        contentContainerStyle={styles.tabsContent}
-      >
-        {students.map((student) => (
+      {loading ? (
+        <ProgressSkeleton />
+      ) : (
+        <>
+          {/* Student Selector Tabs */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.studentTabs}
+            contentContainerStyle={styles.studentTabsContent}
+          >
+            {students.map((student) => (
           <TouchableOpacity
             key={student.id}
             style={[
-              styles.tab,
-              selectedStudentId === student.id && styles.tabActive,
-              {
-                backgroundColor:
-                  selectedStudentId === student.id
-                    ? Colors.student[student.color_theme]
-                    : Colors.ui.backgroundLight,
-              },
+              styles.studentTab,
+              selectedStudentId === student.id && styles.studentTabActive,
             ]}
             onPress={() => setSelectedStudentId(student.id)}
             activeOpacity={0.7}
           >
+            <Avatar
+              type={student.avatar_type || 'initial'}
+              value={student.avatar_value}
+              name={student.name}
+              color={Colors.student[student.color_theme]}
+              size={40}
+            />
             <Text
               style={[
-                styles.tabText,
-                selectedStudentId === student.id && styles.tabTextActive,
+                styles.studentTabName,
+                selectedStudentId === student.id && styles.studentTabNameActive,
               ]}
             >
-              {student.name}
+              {student.name.split(' ')[0]}
             </Text>
           </TouchableOpacity>
         ))}
@@ -518,8 +630,23 @@ export default function ProgressScreen() {
         <Text style={styles.sectionTitle}>Subject Progress 📚</Text>
         <Text style={styles.hintText}>Tap any subject to set or edit goal</Text>
 
-        {studentSubjects.length > 0 ? (
-          studentSubjects.map((subjectRecord) => {
+        {studentSubjects.length === 0 ? (
+          <EmptyState
+            icon={BookMarked}
+            title="No Subjects Enrolled"
+            description="Add subjects to track progress and set goals for this student."
+            actionText="Add Subjects"
+            onAction={() => {
+              // Navigate to subjects management
+              const student = students.find(s => s.id === selectedStudentId);
+              if (student) {
+                router.push(`/students/${student.id}/subjects` as any);
+              }
+            }}
+          />
+        ) : (
+          <>
+            {studentSubjects.map((subjectRecord) => {
             // Get all lessons for this subject
             const subjectLessons = studentLessons.filter(
               (l) => l.subject === subjectRecord.subject
@@ -543,6 +670,27 @@ export default function ProgressScreen() {
             const goalPercentage =
               goal && goal > 0 ? Math.round((completedCount / goal) * 100) : null;
             const remaining = goal ? Math.max(0, goal - completedCount) : null;
+
+            // Check if goal just reached
+            const goalKey = `${selectedStudentId}-${subjectRecord.subject}`;
+            const previousCount = previousGoalStatus.current[goalKey] || 0;
+            
+            if (goal && goal > 0 && completedCount >= goal && previousCount < goal) {
+              // Goal just reached!
+              (async () => {
+                const celebrationsEnabled = await isGoalCelebrationsEnabled();
+                
+                if (celebrationsEnabled && selectedStudent) {
+                  await notificationService.sendGoalCelebration(
+                    selectedStudent.name,
+                    subjectRecord.subject
+                  );
+                }
+              })();
+            }
+            
+            // Update previous count
+            previousGoalStatus.current[goalKey] = completedCount;
 
             const subjectColor = getSubjectColor(subjectRecord.subject);
             const subjectEmoji = getSubjectEmoji(subjectRecord.subject);
@@ -652,11 +800,8 @@ export default function ProgressScreen() {
                 )}
               </TouchableOpacity>
             );
-          })
-        ) : (
-          <Text style={styles.infoText}>
-            No subjects yet. Add subjects from the student card on Home screen.
-          </Text>
+          })}
+          </>
         )}
       </View>
 
@@ -719,6 +864,8 @@ export default function ProgressScreen() {
           ))
         )}
       </View>
+        </>
+      )}
         </>
       )}
 
@@ -806,7 +953,8 @@ export default function ProgressScreen() {
         }}
         onSave={handleSaveEditGoal}
       />
-      </ScrollView>
+        </ScrollView>
+      </Animated.View>
     </SafeAreaView>
   );
 }
@@ -829,32 +977,35 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: Colors.brand[900],
   },
-  tabsContainer: {
+  studentTabs: {
     marginBottom: 24,
   },
-  tabsContent: {
+  studentTabsContent: {
     gap: 12,
     paddingRight: 20,
   },
-  tab: {
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 20,
+  studentTab: {
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    backgroundColor: Colors.background.card,
+    marginRight: 12,
+    minWidth: 80,
+  },
+  studentTabActive: {
+    backgroundColor: Colors.brand[100],
     borderWidth: 2,
-    borderColor: Colors.ui.border,
-    minHeight: 44,
-    justifyContent: 'center',
+    borderColor: Colors.brand[400],
   },
-  tabActive: {
-    borderColor: 'transparent',
-  },
-  tabText: {
-    fontSize: 16,
-    fontWeight: '600',
+  studentTabName: {
+    ...Typography.caption,
+    marginTop: 6,
     color: Colors.ui.text,
   },
-  tabTextActive: {
-    color: '#FFFFFF',
+  studentTabNameActive: {
+    ...Typography.label,
+    color: Colors.brand[600],
   },
   statsCard: {
     backgroundColor: '#FFFFFF',

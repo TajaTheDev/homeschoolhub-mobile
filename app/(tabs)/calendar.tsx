@@ -4,11 +4,17 @@
  * Matching onboarding aesthetic with vibrant colors and pill-style badges
  */
 
+// PhotoGallery disabled for now
+// import PhotoGallery from '@/components/lessons/PhotoGallery';
+import Avatar from '@/components/ui/Avatar';
+import EmptyState from '@/components/ui/EmptyState';
+import Skeleton from '@/components/ui/Skeleton';
 import Colors from '@/constants/Colors';
 import { getSubjectColor } from '@/constants/Subjects';
 import Typography from '@/constants/Typography';
 import { useLessonStore } from '@/store/lessonStore';
 import { useStudentStore } from '@/store/studentStore';
+// import { LessonPhoto } from '@/types/database';
 import {
   addMonths,
   endOfMonth,
@@ -20,15 +26,16 @@ import {
   subMonths,
 } from 'date-fns';
 import { useRouter } from 'expo-router';
-import { ChevronLeft, ChevronRight, Plus } from 'lucide-react-native';
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus } from 'lucide-react-native';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Animated,
   Dimensions,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
 import ConfettiCannon from 'react-native-confetti-cannon';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -57,6 +64,17 @@ const getCalendarDays = (date: Date) => {
   return days;
 };
 
+// Photo upload disabled for now
+// const getPhotoUrl = (path: string) => {
+//   if (!path) return '';
+//   
+//   const { data } = supabase.storage
+//     .from('student-avatars')
+//     .getPublicUrl(path);
+//   
+//   return data.publicUrl;
+// };
+
 export default function CalendarScreen() {
   const router = useRouter();
   const { students, fetchStudents } = useStudentStore();
@@ -66,10 +84,32 @@ export default function CalendarScreen() {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [showConfetti, setShowConfetti] = useState(false);
   const confettiRef = useRef<any>(null);
+  const [loading, setLoading] = useState(true);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  // Photo gallery disabled for now
+  // const [galleryVisible, setGalleryVisible] = useState(false);
+  // const [galleryPhotos, setGalleryPhotos] = useState<LessonPhoto[]>([]);
+  // const [galleryIndex, setGalleryIndex] = useState(0);
 
   useEffect(() => {
-    fetchStudents();
-    fetchLessons();
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
+  }, []);
+
+  useEffect(() => {
+    const loadData = async () => {
+      setLoading(true);
+      await Promise.all([
+        fetchStudents(),
+        fetchLessons(),
+      ]);
+      setLoading(false);
+    };
+    
+    loadData();
   }, [fetchStudents, fetchLessons]);
 
   const calendarDays = useMemo(() => getCalendarDays(currentDate), [currentDate]);
@@ -84,32 +124,71 @@ export default function CalendarScreen() {
     return getLessonsForDate(selectedDate);
   }, [selectedDate, lessons]);
 
+  const triggerConfetti = () => {
+    setShowConfetti(true);
+    
+    // Trigger confetti with slight delay
+    setTimeout(() => {
+      if (confettiRef.current) {
+        confettiRef.current.start();
+      }
+    }, 100);
+    
+    // Hide confetti after animation
+    setTimeout(() => {
+      setShowConfetti(false);
+    }, 2500);
+  };
+
   const handleLessonComplete = (lessonId: string, isCurrentlyComplete: boolean) => {
     const newStatus = !isCurrentlyComplete;
     
-    // Show confetti immediately if marking complete
+    // Show confetti if marking complete
     if (newStatus) {
-      setShowConfetti(true);
-      setTimeout(() => {
-        if (confettiRef.current) {
-          confettiRef.current.start();
-        }
-      }, 100);
-      setTimeout(() => {
-        setShowConfetti(false);
-      }, 2000);
+      triggerConfetti();
     }
     
     // Call the optimistic toggle (updates UI instantly, database in background)
     lessonStore.toggleCompleteOptimistic(lessonId);
   };
 
+  // Calendar Skeleton
+  const CalendarSkeleton = () => (
+    <View style={styles.calendar}>
+      {/* Month header */}
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16 }}>
+        <Skeleton width={120} height={24} />
+        <Skeleton width={80} height={32} borderRadius={16} />
+      </View>
+      
+      {/* Calendar grid */}
+      <View>
+        {[...Array(5)].map((_, row) => (
+          <View key={row} style={{ flexDirection: 'row', justifyContent: 'space-around', marginBottom: 8 }}>
+            {[...Array(7)].map((_, col) => (
+              <Skeleton key={col} width={40} height={40} borderRadius={20} />
+            ))}
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <ScrollView 
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
+      <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
+        <ScrollView 
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+        {/* Header */}
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Calendar</Text>
+          <Text style={styles.headerSubtitle}>
+            {format(currentDate, 'MMMM yyyy')}
+          </Text>
+        </View>
+
         {/* Month Navigation Header */}
         <View style={styles.monthHeader}>
           <TouchableOpacity
@@ -145,76 +224,80 @@ export default function CalendarScreen() {
         </View>
 
         {/* Calendar Container */}
-        <View style={styles.calendar}>
-          {/* Weekday Headers */}
-          <View style={styles.weekdayRow}>
-            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
-              <Text key={day} style={styles.weekdayLabel}>
-                {day}
-              </Text>
-            ))}
-          </View>
+        {loading ? (
+          <CalendarSkeleton />
+        ) : (
+          <View style={styles.calendar}>
+            {/* Weekday Headers */}
+            <View style={styles.weekdayRow}>
+              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+                <Text key={day} style={styles.weekdayLabel}>
+                  {day}
+                </Text>
+              ))}
+            </View>
 
-          {/* Calendar Grid */}
-          <View style={styles.calendarGrid}>
-            {calendarDays.map((day, index) => {
-              const dayLessons = getLessonsForDate(day);
-              const isSelected = selectedDate && isSameDay(day, selectedDate);
-              const isTodayDate = isToday(day);
-              const isOtherMonth = !isSameMonth(day, currentDate);
+            {/* Calendar Grid */}
+            <View style={styles.calendarGrid}>
+              {calendarDays.map((day, index) => {
+                const dayLessons = getLessonsForDate(day);
+                const isSelected = selectedDate && isSameDay(day, selectedDate);
+                const isTodayDate = isToday(day);
+                const isOtherMonth = !isSameMonth(day, currentDate);
 
-              return (
-                <TouchableOpacity
-                  key={index}
-                  style={styles.dayCell}
-                  onPress={() => setSelectedDate(day)}
-                  activeOpacity={0.7}
-                >
-                  <View
-                    style={[
-                      styles.dayCellInner,
-                      dayLessons.length > 0 && !isTodayDate && !isSelected && styles.dayCellWithLessons,
-                      isTodayDate && styles.todayCell,
-                      isSelected && !isTodayDate && styles.selectedCell,
-                      isOtherMonth && styles.otherMonthCell,
-                    ]}
+                return (
+                  <TouchableOpacity
+                    key={index}
+                    style={styles.dayCell}
+                    onPress={() => setSelectedDate(day)}
+                    activeOpacity={0.7}
                   >
-                    <Text
+                    <View
                       style={[
-                        styles.dayNumber,
-                        isTodayDate && styles.dayNumberToday,
-                        isSelected && !isTodayDate && styles.dayNumberSelected,
-                        isOtherMonth && styles.otherMonthText,
+                        styles.dayCellInner,
+                        dayLessons.length > 0 && !isTodayDate && !isSelected && styles.dayCellWithLessons,
+                        isTodayDate && styles.todayCell,
+                        isSelected && !isTodayDate && styles.selectedCell,
+                        isOtherMonth && styles.otherMonthCell,
                       ]}
                     >
-                      {format(day, 'd')}
-                    </Text>
-                  </View>
-
-                  {/* Lesson Indicators */}
-                  {dayLessons.length > 0 && (
-                    <View style={styles.lessonIndicators}>
-                      {dayLessons
-                        .slice(0, 3)
-                        .map((lesson, idx) => (
-                          <View
-                            key={idx}
-                            style={[
-                              styles.lessonDot,
-                              { backgroundColor: getSubjectColor(lesson.subject) }
-                            ]}
-                          />
-                        ))}
-                      {dayLessons.length > 3 && (
-                        <Text style={styles.moreIndicator}>+</Text>
-                      )}
+                      <Text
+                        style={[
+                          styles.dayNumber,
+                          isTodayDate && styles.dayNumberToday,
+                          isSelected && !isTodayDate && styles.dayNumberSelected,
+                          isOtherMonth && styles.otherMonthText,
+                        ]}
+                      >
+                        {format(day, 'd')}
+                      </Text>
                     </View>
-                  )}
-                </TouchableOpacity>
-              );
-            })}
+
+                    {/* Lesson Indicators */}
+                    {dayLessons.length > 0 && (
+                      <View style={styles.lessonIndicators}>
+                        {dayLessons
+                          .slice(0, 3)
+                          .map((lesson, idx) => (
+                            <View
+                              key={idx}
+                              style={[
+                                styles.lessonDot,
+                                { backgroundColor: getSubjectColor(lesson.subject) }
+                              ]}
+                            />
+                          ))}
+                        {dayLessons.length > 3 && (
+                          <Text style={styles.moreIndicator}>+</Text>
+                        )}
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
           </View>
-        </View>
+        )}
 
         {/* Selected Date Lessons Section */}
         {selectedDate && (
@@ -223,7 +306,20 @@ export default function CalendarScreen() {
               {format(selectedDate, 'EEEE, MMMM d, yyyy')}
             </Text>
 
-            {selectedDateLessons.length > 0 ? (
+            {selectedDateLessons.length === 0 ? (
+              <EmptyState
+                icon={CalendarIcon}
+                title="No Lessons Today"
+                description={`No lessons scheduled for ${format(selectedDate, 'MMMM d, yyyy')}`}
+                actionText="Add Lesson"
+                onAction={() => {
+                  // Navigate to add lesson
+                  if (students[0]) {
+                    router.push(`/students/${students[0].id}/add-lesson` as any);
+                  }
+                }}
+              />
+            ) : (
               <View style={styles.lessonList}>
                 {selectedDateLessons.map((lesson) => {
                   const student = students.find((s) => s.id === lesson.student_id);
@@ -244,6 +340,17 @@ export default function CalendarScreen() {
                     >
                       <View style={styles.lessonHeader}>
                         <View style={styles.lessonHeaderLeft}>
+                          {/* Small Avatar */}
+                          {student && (
+                            <Avatar
+                              type={student.avatar_type || 'initial'}
+                              value={student.avatar_value}
+                              name={student.name}
+                              color={Colors.student[student.color_theme]}
+                              size={24}
+                            />
+                          )}
+                          
                           {/* Subject Pill */}
                           <View
                             style={[
@@ -254,12 +361,10 @@ export default function CalendarScreen() {
                             <Text style={styles.subjectPillText}>{lesson.subject}</Text>
                           </View>
 
-                          {/* Student Pill */}
-                          <View style={styles.studentPill}>
-                            <Text style={styles.studentPillText}>
-                              {student?.name || 'Unknown'}
-                            </Text>
-                          </View>
+                          {/* Student Name */}
+                          {student && (
+                            <Text style={styles.studentNameText}>{student.name}</Text>
+                          )}
                         </View>
 
                         {/* Completion Checkbox + Status */}
@@ -298,26 +403,48 @@ export default function CalendarScreen() {
                           {lesson.notes}
                         </Text>
                       )}
+
+                      {/* 
+                        TODO: Re-enable photo attachments in v2.0
+                        - Issue: Supabase Storage permission problems
+                        - Alternative: Use Cloudinary or other service
+                        - Database tables exist: lesson_photos
+                        - Storage bucket exists: student-avatars (or lesson-photos)
+                      */}
+                      {/* {lesson.photos && lesson.photos.length > 0 && (
+                        <TouchableOpacity
+                          style={styles.photoIndicator}
+                          onPress={() => {
+                            setGalleryPhotos(lesson.photos || []);
+                            setGalleryIndex(0);
+                            setGalleryVisible(true);
+                          }}
+                          activeOpacity={0.7}
+                        >
+                          <View style={styles.photoThumbnails}>
+                            {lesson.photos.slice(0, 3).map((photo, index) => (
+                              <Image
+                                key={photo.id}
+                                source={{ uri: getPhotoUrl(photo.photo_path) }}
+                                style={[styles.photoThumbnail, { marginLeft: index > 0 ? -8 : 0 }]}
+                                onError={() => console.error('Thumbnail load failed:', photo.photo_path)}
+                              />
+                            ))}
+                          </View>
+                          {lesson.photos.length > 3 && (
+                            <Text style={styles.photoCount}>+{lesson.photos.length - 3}</Text>
+                          )}
+                        </TouchableOpacity>
+                      )} */}
                     </TouchableOpacity>
                   );
                 })}
               </View>
-            ) : (
-              <View style={styles.emptyState}>
-                <Text style={styles.emptyText}>
-                  No lessons scheduled for this day
-                </Text>
-                <TouchableOpacity
-                  style={styles.addButton}
-                  onPress={() => router.push('/add-lesson' as any)}
-                >
-                  <Text style={styles.addButtonText}>Add Lesson</Text>
-                </TouchableOpacity>
-              </View>
             )}
           </View>
         )}
-      </ScrollView>
+        </ScrollView>
+      </Animated.View>
 
       {/* Floating Action Button */}
       <TouchableOpacity
@@ -343,6 +470,14 @@ export default function CalendarScreen() {
           />
         </View>
       )}
+
+      {/* Photo Gallery Modal - Disabled for now */}
+      {/* <PhotoGallery
+        visible={galleryVisible}
+        onClose={() => setGalleryVisible(false)}
+        photos={galleryPhotos}
+        initialIndex={galleryIndex}
+      /> */}
     </SafeAreaView>
   );
 }
@@ -366,6 +501,21 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: 16,
     paddingBottom: 100,
+  },
+  header: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 16,
+  },
+  headerTitle: {
+    ...Typography.h1,
+    fontSize: 32,
+    marginBottom: 4,
+  },
+  headerSubtitle: {
+    ...Typography.body,
+    color: Colors.ui.textLight,
+    fontSize: 16,
   },
   monthHeader: {
     flexDirection: 'row',
@@ -549,6 +699,10 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: Colors.ui.text,
   },
+  studentNameText: {
+    ...Typography.bodySmall,
+    color: Colors.ui.textLight,
+  },
   lessonTitle: {
     ...Typography.body,
     marginBottom: 4,
@@ -557,6 +711,29 @@ const styles = StyleSheet.create({
     ...Typography.bodySmall,
     color: Colors.ui.textLight,
     marginTop: 4,
+  },
+  photoIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  photoThumbnails: {
+    flexDirection: 'row',
+    marginRight: 8,
+  },
+  photoThumbnail: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: Colors.ui.border,
+    borderWidth: 2,
+    borderColor: Colors.background.card,
+  },
+  photoCount: {
+    ...Typography.caption,
+    fontSize: 11,
+    color: Colors.ui.textLight,
   },
   completionRow: {
     flexDirection: 'row',

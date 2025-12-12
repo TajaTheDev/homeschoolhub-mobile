@@ -7,6 +7,8 @@ export type SubjectType = 'math' | 'reading' | 'science' | 'history' | 'writing'
 
 export type StudentColor = 'purple' | 'blue' | 'green' | 'pink' | 'orange';
 
+export type AvatarType = 'initial' | 'photo' | 'illustration';
+
 export type GradeLevel =
   | 'Pre-K'
   | 'Kindergarten'
@@ -29,7 +31,8 @@ export interface Student {
   user_id: string;
   name: string;
   grade: string;
-  avatar?: string;
+  avatar_type: AvatarType;
+  avatar_value: string | null;
   color_theme: StudentColor;
   created_at: string;
   updated_at: string;
@@ -53,5 +56,9 @@ export interface Lesson {
   date: string;
   created_at: string;
   updated_at: string;
+  photos?: LessonPhoto[]; // Add this
 }
+
+// Re-export database types
+export type { DayOfWeek, LessonPhoto, SchoolBreak, SchoolSchedule } from './database';
 

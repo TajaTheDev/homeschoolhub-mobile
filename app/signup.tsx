@@ -3,18 +3,20 @@
  */
 
 import Colors from '@/constants/Colors';
+import { supabase } from '@/lib/supabase/client';
 import { useAuthStore } from '@/store/authStore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
-    Alert,
-    KeyboardAvoidingView,
-    Platform,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 
 export default function SignupScreen() {
@@ -44,16 +46,28 @@ export default function SignupScreen() {
     const result = await signUp(email.trim(), password);
 
     if (result.success) {
-      Alert.alert(
-        'Account Created!',
-        'Your account has been created successfully. Please log in.',
-        [
-          {
-            text: 'OK',
-            onPress: () => router.replace('/login'),
-          },
-        ]
-      );
+      // Check if session exists
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (session) {
+        // Mark onboarding as seen
+        await AsyncStorage.setItem('hasSeenOnboarding', 'true');
+        
+        // Navigate to dashboard
+        router.replace('/(tabs)');
+      } else {
+        // If no session (email confirmation required), show alert and go to login
+        Alert.alert(
+          'Account Created!',
+          'Your account has been created successfully. Please log in.',
+          [
+            {
+              text: 'OK',
+              onPress: () => router.replace('/login'),
+            },
+          ]
+        );
+      }
     } else {
       Alert.alert('Signup Failed', result.error || 'An error occurred');
     }

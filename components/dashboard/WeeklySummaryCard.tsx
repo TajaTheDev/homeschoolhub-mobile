@@ -2,21 +2,29 @@ import Colors from '@/constants/Colors';
 import Typography from '@/constants/Typography';
 import { CheckCircle, Flame, TrendingUp } from 'lucide-react-native';
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 interface WeeklySummaryCardProps {
   thisWeekCount: number;
   completionRate: number;  // Percentage
   streak: number;  // Days
+  onPress?: () => void;
 }
 
 export default function WeeklySummaryCard({ 
   thisWeekCount, 
   completionRate, 
-  streak 
+  streak,
+  onPress
 }: WeeklySummaryCardProps) {
+  const CardComponent = onPress ? TouchableOpacity : View;
+  
   return (
-    <View style={styles.container}>
+    <CardComponent 
+      style={styles.container}
+      onPress={onPress}
+      activeOpacity={onPress ? 0.7 : 1}
+    >
       <Text style={styles.title}>This Week</Text>
       
       <View style={styles.statsRow}>
@@ -42,9 +50,17 @@ export default function WeeklySummaryCard({
           </View>
           <Text style={styles.statValue}>{streak}</Text>
           <Text style={styles.statLabel}>Day Streak</Text>
+          <Text style={styles.helperText}>(Mon-Fri)</Text>
         </View>
       </View>
-    </View>
+      
+      {/* Tap hint - only show if card is clickable */}
+      {onPress && (
+        <View style={styles.tapHint}>
+          <Text style={styles.tapHintText}>Tap for details</Text>
+        </View>
+      )}
+    </CardComponent>
   );
 }
 
@@ -88,6 +104,21 @@ const styles = StyleSheet.create({
   statLabel: {
     ...Typography.caption,
     color: Colors.ui.textLight,
+  },
+  helperText: {
+    fontSize: 9,
+    color: Colors.ui.textLight,
+    marginTop: 2,
+  },
+  tapHint: {
+    marginTop: 8,
+    alignSelf: 'center',
+  },
+  tapHintText: {
+    ...Typography.caption,
+    fontSize: 10,
+    color: Colors.ui.textLight,
+    fontStyle: 'italic',
   },
 });
 

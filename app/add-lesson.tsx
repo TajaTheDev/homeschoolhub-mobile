@@ -2,22 +2,26 @@
  * Add Lesson Screen
  */
 
+// PhotoUpload disabled for now
+// import PhotoUpload from '@/components/lessons/PhotoUpload';
 import Colors from '@/constants/Colors';
+import { supabase } from '@/lib/supabase';
 import { useLessonStore } from '@/store/lessonStore';
 import { useStudentStore } from '@/store/studentStore';
+// import { LessonPhoto } from '@/types/database';
 import { useRouter } from 'expo-router';
 import { ArrowLeft, Calendar as CalendarIcon } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
 import {
-    Alert,
-    KeyboardAvoidingView,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 
 const getTodayDate = () => {
@@ -41,6 +45,14 @@ const formatDate = (dateString: string) => {
   return formattedDate;
 };
 
+const getPhotoUrl = (path: string) => {
+  if (!path) return '';
+  const { data } = supabase.storage
+    .from('student-avatars')
+    .getPublicUrl(path);
+  return data.publicUrl;
+};
+
 export default function AddLessonScreen() {
   const router = useRouter();
   const { students, fetchStudents, subjects, fetchSubjects } = useStudentStore();
@@ -52,6 +64,9 @@ export default function AddLessonScreen() {
   const [notes, setNotes] = useState('');
   const [date, setDate] = useState(getTodayDate());
   const [completed, setCompleted] = useState(false);
+  const [createdLessonId, setCreatedLessonId] = useState<string | null>(null);
+  // Photo upload disabled for now
+  // const [photos, setPhotos] = useState<LessonPhoto[]>([]);
 
   useEffect(() => {
     fetchStudents();
@@ -98,13 +113,60 @@ export default function AddLessonScreen() {
     });
 
     if (result.success) {
+      // Fetch the created lesson to get its ID
+      const { data: lessons } = await supabase
+        .from('lessons')
+        .select('id')
+        .eq('student_id', selectedStudentId)
+        .eq('subject', subject.trim())
+        .eq('title', title.trim())
+        .eq('date', date)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (lessons) {
+        setCreatedLessonId(lessons.id);
+        // Photo upload disabled for now
+        // Load photos for the new lesson
+        // loadLessonPhotos(lessons.id);
+      }
+
       Alert.alert('Success', 'Lesson added successfully!', [
-        { text: 'OK', onPress: () => router.back() },
+        { text: 'OK' },
       ]);
     } else {
       Alert.alert('Error', result.error || 'Failed to add lesson');
     }
   };
+
+  // Photo upload disabled for now
+  // const loadLessonPhotos = async (lessonId: string) => {
+  //   const { data, error } = await supabase
+  //     .from('lesson_photos')
+  //     .select('*')
+  //     .eq('lesson_id', lessonId)
+  //     .order('created_at', { ascending: true });
+
+  //   if (error) {
+  //     console.error('Error loading photos:', error);
+  //     return;
+  //   }
+
+  //   setPhotos(data || []);
+  // };
+
+  // useEffect(() => {
+  //   console.log('=== PHOTOS STATE ===');
+  //   console.log('Photos array:', photos);
+  //   console.log('Photos count:', photos.length);
+  //   if (photos.length > 0) {
+  //     console.log('First photo:', photos[0]);
+  //     console.log('First photo path:', photos[0].photo_path);
+  //     console.log('First photo URL:', getPhotoUrl(photos[0].photo_path));
+  //   }
+  //   console.log('===================');
+  // }, [photos]);
 
   const selectedStudent = students.find(s => s.id === selectedStudentId);
   const studentSubjects = getStudentSubjects();
@@ -252,6 +314,27 @@ export default function AddLessonScreen() {
             textAlignVertical="top"
           />
         </View>
+
+        {/* 
+          TODO: Re-enable photo attachments in v2.0
+          - Issue: Supabase Storage permission problems
+          - Alternative: Use Cloudinary or other service
+          - Database tables exist: lesson_photos
+          - Storage bucket exists: student-avatars (or lesson-photos)
+        */}
+        {/* {createdLessonId ? (
+          <PhotoUpload
+            lessonId={createdLessonId}
+            photos={photos}
+            onPhotosChange={setPhotos}
+          />
+        ) : (
+          <View style={styles.photoInfoCard}>
+            <Text style={styles.photoInfoText}>
+              💡 Save the lesson first to add photos
+            </Text>
+          </View>
+        )} */}
 
         {/* Completed Toggle */}
         <View style={styles.section}>
@@ -469,6 +552,18 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 18,
     fontWeight: '600',
+  },
+  photoInfoCard: {
+    backgroundColor: Colors.brand[50],
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 20,
+  },
+  photoInfoText: {
+    fontSize: 14,
+    color: Colors.brand[700],
+    textAlign: 'center',
+    fontWeight: '500',
   },
 });
 
