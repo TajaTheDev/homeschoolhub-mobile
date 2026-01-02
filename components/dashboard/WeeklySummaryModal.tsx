@@ -60,7 +60,7 @@ export default function WeeklySummaryModal({
           {/* Header */}
           <View style={styles.header}>
             <View>
-              <Text style={styles.title}>This Week's Summary</Text>
+              <Text style={styles.title}>This Week&apos;s Summary</Text>
               <Text style={styles.dateRange}>
                 {format(weekStart, 'MMM d')} - {format(weekEnd, 'MMM d, yyyy')}
               </Text>

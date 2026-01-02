@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { SchoolBreak, SchoolSchedule } from '@/types/database';
+import { format } from 'date-fns';
 import { create } from 'zustand';
 
 interface ScheduleStore {
@@ -13,8 +14,9 @@ interface ScheduleStore {
   
   fetchBreaks: () => Promise<void>;
   addBreak: (breakData: Omit<SchoolBreak, 'id' | 'user_id' | 'created_at'>) => Promise<void>;
+  updateBreak: (breakId: string, breakData: Partial<Omit<SchoolBreak, 'id' | 'user_id' | 'created_at'>>) => Promise<void>;
   deleteBreak: (id: string) => Promise<void>;
-  isBreakDay: (date: Date) => boolean;
+  isBreakDay: (date: Date | string) => boolean;
 }
 
 export const useScheduleStore = create<ScheduleStore>((set, get) => ({
@@ -135,6 +137,25 @@ export const useScheduleStore = create<ScheduleStore>((set, get) => ({
     set((state) => ({ breaks: [...state.breaks, data] }));
   },
 
+  updateBreak: async (breakId, breakData) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { error } = await supabase
+      .from('school_breaks')
+      .update(breakData)
+      .eq('id', breakId)
+      .eq('user_id', user.id);
+
+    if (error) {
+      console.error('Error updating break:', error);
+      return;
+    }
+
+    // Refresh breaks
+    await get().fetchBreaks();
+  },
+
   deleteBreak: async (id) => {
     const { error } = await supabase
       .from('school_breaks')
@@ -151,9 +172,14 @@ export const useScheduleStore = create<ScheduleStore>((set, get) => ({
     }));
   },
 
-  isBreakDay: (date) => {
+  isBreakDay: (date: Date | string) => {
     const breaks = get().breaks;
-    const dateStr = date.toISOString().split('T')[0];
+    // Handle both Date objects and strings
+    const dateStr = typeof date === 'string' 
+      ? date 
+      : date instanceof Date 
+        ? format(date, 'yyyy-MM-dd')
+        : '';
 
     return breaks.some((breakItem) => {
       return dateStr >= breakItem.start_date && dateStr <= breakItem.end_date;

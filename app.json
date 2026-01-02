@@ -4,7 +4,12 @@
     "slug": "homeschoolhub",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#F5F3FF"
+    },
     "scheme": "homeschoolhubmobile",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -15,23 +20,40 @@
       "androidCollapsedTitle": "New from HomeschoolHub"
     },
     "ios": {
+      "bundleIdentifier": "com.tajamoxey.homeschoolhub",
+      "buildNumber": "20",
       "supportsTablet": true,
-      "bundleIdentifier": "com.yourname.homeschoolhub",
       "infoPlist": {
-        "UIBackgroundModes": ["remote-notification"]
+        "UIRequiresFullScreen": true,
+        "UISupportedInterfaceOrientations": [
+          "UIInterfaceOrientationPortrait"
+        ],
+        "UISupportedInterfaceOrientations~ipad": [
+          "UIInterfaceOrientationPortrait",
+          "UIInterfaceOrientationPortraitUpsideDown"
+        ],
+        "NSCameraUsageDescription": "HomeschoolHub needs camera access to capture photos of lessons and activities.",
+        "NSPhotoLibraryUsageDescription": "HomeschoolHub needs photo library access to attach photos to lessons.",
+        "NSPhotoLibraryAddUsageDescription": "HomeschoolHub needs permission to save photos to your library.",
+        "NSUserNotificationsUsageDescription": "HomeschoolHub sends gentle reminders to help you stay on track with lessons and goals.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#B8A4E8",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#F5F3FF"
       },
-      "package": "com.yourname.homeschoolhub",
+      "icon": "./assets/icon.png",
+      "package": "com.tajamoxey.homeschoolhub",
+      "versionCode": 4,
       "permissions": [
-        "RECEIVE_BOOT_COMPLETED",
-        "VIBRATE"
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.VIBRATE",
+        "android.permission.RECORD_AUDIO",
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
       ],
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
@@ -55,17 +77,29 @@
         }
       ],
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "HomeschoolHub needs access to your photos to attach them to lessons.",
+          "cameraPermission": "HomeschoolHub needs camera access to take photos of lessons."
+        }
+      ],
+      [
         "expo-notifications",
         {
           "icon": "./assets/images/icon.png",
-          "color": "#B8A4E8",
-          "sounds": []
+          "color": "#B8A4E8"
         }
       ]
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "005bced9-b409-4feb-9430-39cef43a01d7"
+      }
     }
   }
 }

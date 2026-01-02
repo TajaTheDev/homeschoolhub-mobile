@@ -25,6 +25,11 @@ export const useAuthStore = create<AuthState>((set) => ({
   signUp: async (email: string, password: string) => {
     set({ loading: true });
     try {
+      if (!supabase) {
+        set({ loading: false });
+        return { success: false, error: 'Supabase client not initialized' };
+      }
+
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
@@ -54,6 +59,11 @@ export const useAuthStore = create<AuthState>((set) => ({
   signIn: async (email: string, password: string) => {
     set({ loading: true });
     try {
+      if (!supabase) {
+        set({ loading: false });
+        return { success: false, error: 'Supabase client not initialized' };
+      }
+
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -83,6 +93,12 @@ export const useAuthStore = create<AuthState>((set) => ({
   signOut: async () => {
     set({ loading: true });
     try {
+      if (!supabase) {
+        console.error('Supabase client not initialized');
+        set({ user: null, loading: false });
+        return;
+      }
+
       const { error } = await supabase.auth.signOut();
 
       if (error) {
@@ -99,6 +115,12 @@ export const useAuthStore = create<AuthState>((set) => ({
   checkUser: async () => {
     set({ loading: true });
     try {
+      if (!supabase) {
+        console.error('Supabase client not initialized');
+        set({ user: null, loading: false, initialized: true });
+        return;
+      }
+
       const {
         data: { session },
         error,

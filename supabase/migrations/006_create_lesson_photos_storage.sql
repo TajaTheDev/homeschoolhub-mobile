@@ -1,0 +1,72 @@
+-- ============================================
+-- Lesson Photos Storage Bucket Setup
+-- ============================================
+-- 
+-- NOTE: Due to Supabase permissions, storage policies cannot be created
+-- via SQL editor. Please follow the manual setup instructions below.
+--
+-- STEP 1: Create the bucket in Supabase Dashboard
+-- Go to: Storage > New Bucket
+-- - Name: lesson-photos
+-- - Public: Yes (for public read access)
+-- - File size limit: 10MB (recommended for photos)
+-- - Allowed MIME types: image/jpeg, image/png, image/webp (optional)
+--
+-- STEP 2: Create Storage Policies Manually
+-- Go to: Storage > lesson-photos > Policies
+-- Click "New Policy" and create the following 4 policies:
+--
+-- ============================================
+-- MANUAL POLICY SETUP INSTRUCTIONS
+-- ============================================
+--
+-- Policy 1: INSERT (Upload)
+-- Name: Allow authenticated uploads to lesson-photos
+-- Allowed operation: INSERT
+-- Target roles: authenticated
+-- USING expression: (empty)
+-- WITH CHECK expression:
+--   bucket_id = 'lesson-photos' AND
+--   auth.uid()::text = (storage.foldername(name))[1]
+--
+-- Policy 2: SELECT (View/Download)
+-- Name: Allow public to view lesson-photos
+-- Allowed operation: SELECT
+-- Target roles: public
+-- USING expression:
+--   bucket_id = 'lesson-photos'
+-- WITH CHECK expression: (empty)
+--
+-- Policy 3: UPDATE
+-- Name: Allow authenticated updates to lesson-photos
+-- Allowed operation: UPDATE
+-- Target roles: authenticated
+-- USING expression:
+--   bucket_id = 'lesson-photos' AND
+--   auth.uid()::text = (storage.foldername(name))[1]
+-- WITH CHECK expression:
+--   bucket_id = 'lesson-photos' AND
+--   auth.uid()::text = (storage.foldername(name))[1]
+--
+-- Policy 4: DELETE
+-- Name: Allow authenticated deletes from lesson-photos
+-- Allowed operation: DELETE
+-- Target roles: authenticated
+-- USING expression:
+--   bucket_id = 'lesson-photos' AND
+--   auth.uid()::text = (storage.foldername(name))[1]
+-- WITH CHECK expression: (empty)
+--
+-- ============================================
+-- ALTERNATIVE: Simplified Policies (if above doesn't work)
+-- ============================================
+-- If the folder-based restrictions don't work, you can use simpler policies:
+--
+-- Policy 1 (INSERT): bucket_id = 'lesson-photos'
+-- Policy 2 (SELECT): bucket_id = 'lesson-photos'
+-- Policy 3 (UPDATE): bucket_id = 'lesson-photos'
+-- Policy 4 (DELETE): bucket_id = 'lesson-photos'
+--
+-- Note: This gives authenticated users access to all files in the bucket.
+-- The database-level RLS on lesson_photos table will still restrict access.
+

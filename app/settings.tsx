@@ -3,6 +3,10 @@ import Colors from '@/constants/Colors';
 import Typography from '@/constants/Typography';
 import { supabase } from '@/lib/supabase';
 import type { AvatarType } from '@/types';
+import { requestNotificationPermissions, scheduleAttendanceReminder } from '@/utils/notificationManager';
+import { useSubscription } from '@/contexts/SubscriptionContext';
+import { presentCustomerCenter } from '@/components/subscription/CustomerCenter';
+import { restorePurchases } from '@/lib/revenuecat';
 import { useRouter } from 'expo-router';
 import {
   Bell,
@@ -10,10 +14,14 @@ import {
   ChevronRight,
   CreditCard,
   Download,
+  Image as ImageIcon,
   Info,
   LogOut,
   Moon,
+  RefreshCw,
   Shield,
+  Share2,
+  TrendingUp,
   User
 } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
@@ -29,6 +37,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function SettingsScreen() {
   const router = useRouter();
+  const { hasSubscription, refreshSubscriptionStatus } = useSubscription();
   const [userEmail, setUserEmail] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [avatarType, setAvatarType] = useState<AvatarType>('initial');
@@ -82,7 +91,11 @@ export default function SettingsScreen() {
     showBadge?: boolean;
     badgeText?: string;
   }) => (
-    <TouchableOpacity style={styles.settingsItem} onPress={onPress}>
+    <TouchableOpacity 
+      style={styles.settingsItem} 
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
       <View style={styles.settingsItemLeft}>
         <View style={styles.iconContainer}>
           <Icon size={20} color={Colors.brand[500]} />
@@ -131,7 +144,7 @@ export default function SettingsScreen() {
           </TouchableOpacity>
           <View style={styles.profileInfo}>
             <Text style={styles.profileName}>{displayName}</Text>
-            <Text style={styles.profileEmail}>{userEmail || 'Loading...'}</Text>
+            <Text style={styles.profileEmail}>{userEmail || ''}</Text>
           </View>
         </View>
 
@@ -167,6 +180,27 @@ export default function SettingsScreen() {
           </View>
         </View>
 
+        {/* Reminders Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Reminders</Text>
+          <View style={styles.sectionContent}>
+            <SettingsItem
+              icon={Bell}
+              title="Attendance Reminder"
+              subtitle="Daily reminder at 9:00 AM"
+              onPress={async () => {
+                const hasPermission = await requestNotificationPermissions();
+                if (hasPermission) {
+                  await scheduleAttendanceReminder(9, 0); // 9 AM daily
+                  Alert.alert('Success!', 'Daily attendance reminder set for 9:00 AM');
+                } else {
+                  Alert.alert('Permission Required', 'Please enable notifications in your device settings');
+                }
+              }}
+            />
+          </View>
+        </View>
+
         {/* Preferences Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Preferences</Text>
@@ -190,14 +224,74 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Subscription</Text>
           <View style={styles.sectionContent}>
-            <SettingsItem
-              icon={CreditCard}
-              title="Upgrade to Pro"
-              subtitle="Unlock all features"
-              onPress={() => router.push('/settings/subscription' as any)}
-              showBadge={true}
-              badgeText="Free"
-            />
+            {/* Subscription Status */}
+            <View style={styles.settingsOption}>
+              <View style={styles.settingsOptionIcon}>
+                <CreditCard size={24} color={Colors.brand[600]} />
+              </View>
+              <View style={styles.settingsOptionContent}>
+                <Text style={styles.settingsOptionTitle}>
+                  {hasSubscription ? 'Premium Active' : 'Free Trial'}
+                </Text>
+                <Text style={styles.settingsOptionDescription}>
+                  {hasSubscription 
+                    ? 'You have full access to all features' 
+                    : 'Start your 14-day free trial'}
+                </Text>
+              </View>
+            </View>
+            
+            {/* Manage Subscription - Only show if user has subscription */}
+            {hasSubscription && (
+              <TouchableOpacity
+                style={styles.settingsOption}
+                onPress={presentCustomerCenter}
+                activeOpacity={0.7}
+              >
+                <View style={styles.settingsOptionIcon}>
+                  <CreditCard size={24} color={Colors.brand[600]} />
+                </View>
+                <View style={styles.settingsOptionContent}>
+                  <Text style={styles.settingsOptionTitle}>Manage Subscription</Text>
+                  <Text style={styles.settingsOptionDescription}>
+                    View plans, update payment, or cancel
+                  </Text>
+                </View>
+                <ChevronRight size={20} color={Colors.ui.textLight} />
+              </TouchableOpacity>
+            )}
+            
+            {/* Restore Purchases - Available to all users */}
+            <TouchableOpacity
+              style={styles.settingsOption}
+              onPress={async () => {
+                const result = await restorePurchases();
+                
+                if (result.success) {
+                  await refreshSubscriptionStatus();
+                  
+                  if (result.hasProAccess) {
+                    Alert.alert('Success!', 'Your subscription has been restored!');
+                  } else {
+                    Alert.alert('No Subscription', 'No active subscription found to restore');
+                  }
+                } else {
+                  Alert.alert('Error', result.error || 'Could not restore subscription');
+                }
+              }}
+              activeOpacity={0.7}
+            >
+              <View style={styles.settingsOptionIcon}>
+                <RefreshCw size={24} color={Colors.brand[600]} />
+              </View>
+              <View style={styles.settingsOptionContent}>
+                <Text style={styles.settingsOptionTitle}>Restore Purchases</Text>
+                <Text style={styles.settingsOptionDescription}>
+                  Restore your subscription on this device
+                </Text>
+              </View>
+              <ChevronRight size={20} color={Colors.ui.textLight} />
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -206,10 +300,22 @@ export default function SettingsScreen() {
           <Text style={styles.sectionTitle}>Data & Privacy</Text>
           <View style={styles.sectionContent}>
             <SettingsItem
-              icon={Download}
+              icon={Share2}
               title="Export Data"
-              subtitle="Download your data as CSV"
-              onPress={() => Alert.alert('Coming Soon', 'Export feature coming soon!')}
+              subtitle="Export lessons, grades, and attendance"
+              onPress={() => router.push('/export' as any)}
+            />
+            <SettingsItem
+              icon={TrendingUp}
+              title="Grade Trends"
+              subtitle="View student progress and performance"
+              onPress={() => router.push('/grade-trends' as any)}
+            />
+            <SettingsItem
+              icon={ImageIcon}
+              title="Photo Library"
+              subtitle="View all lesson photos"
+              onPress={() => router.push('/photo-library' as any)}
             />
             <SettingsItem
               icon={Shield}
@@ -238,10 +344,20 @@ export default function SettingsScreen() {
         </View>
 
         {/* Sign Out Button */}
-        <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
+        <TouchableOpacity 
+          style={styles.signOutButton} 
+          onPress={handleSignOut}
+          activeOpacity={0.7}
+        >
           <LogOut size={20} color={Colors.ui.error} />
           <Text style={styles.signOutText}>Sign Out</Text>
         </TouchableOpacity>
+
+        {/* Version Section */}
+        <View style={styles.versionSection}>
+          <Text style={styles.versionText}>Version 1.0.0</Text>
+          <Text style={styles.versionSubtext}>Made with ❤️ for homeschool families</Text>
+        </View>
 
         <View style={{ height: 40 }} />
       </ScrollView>
@@ -355,6 +471,35 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: Colors.secondary[700],
   },
+  settingsOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.ui.border,
+  },
+  settingsOptionIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: Colors.brand[50],
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  settingsOptionContent: {
+    flex: 1,
+  },
+  settingsOptionTitle: {
+    ...Typography.body,
+    marginBottom: 2,
+  },
+  settingsOptionDescription: {
+    ...Typography.caption,
+    color: Colors.ui.textLight,
+  },
   signOutButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -371,6 +516,21 @@ const styles = StyleSheet.create({
   signOutText: {
     ...Typography.button,
     color: Colors.ui.error,
+  },
+  versionSection: {
+    alignItems: 'center',
+    paddingVertical: 24,
+    marginTop: 16,
+  },
+  versionText: {
+    ...Typography.caption,
+    color: Colors.ui.textLight,
+    marginBottom: 4,
+  },
+  versionSubtext: {
+    ...Typography.caption,
+    fontSize: 11,
+    color: Colors.ui.textLight,
   },
 });
 

@@ -158,6 +158,7 @@ export default function StudentModal({ visible, student, onClose, onSave }: Stud
               <TouchableOpacity
                 style={styles.avatarContainer}
                 onPress={() => setShowAvatarPicker(true)}
+                activeOpacity={0.7}
               >
                 <Avatar
                   type={avatarType}
@@ -196,6 +197,7 @@ export default function StudentModal({ visible, student, onClose, onSave }: Stud
                       grade === g && styles.gradeButtonSelected,
                     ]}
                     onPress={() => setGrade(g)}
+                    activeOpacity={0.7}
                   >
                     <Text
                       style={[

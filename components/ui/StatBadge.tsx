@@ -10,7 +10,7 @@ interface StatBadgeProps {
   icon?: React.ReactNode;
 }
 
-export default function StatBadge({ value, label, color, icon }: StatBadgeProps) {
+function StatBadge({ value, label, color, icon }: StatBadgeProps) {
   return (
     <View style={[styles.container, color && { backgroundColor: color }]}>
       {icon && <View style={styles.icon}>{icon}</View>}
@@ -46,4 +46,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 });
+
+export default React.memo(StatBadge);
 

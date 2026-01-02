@@ -1,16 +1,18 @@
+import Skeleton from '@/components/ui/Skeleton';
 import Colors from '@/constants/Colors';
 import Typography from '@/constants/Typography';
 import { useScheduleStore } from '@/store/scheduleStore';
+import { SchoolSchedule } from '@/types/database';
 import { useRouter } from 'expo-router';
-import { ChevronLeft } from 'lucide-react-native';
+import { Check, ChevronLeft } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
 import {
-    ScrollView,
-    StyleSheet,
-    Switch,
-    Text,
-    TouchableOpacity,
-    View,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -63,17 +65,83 @@ const PRESETS = [
   },
 ];
 
+// Detect which preset matches the current schedule
+const detectActivePreset = (schedule: SchoolSchedule | null): string | null => {
+  if (!schedule) return null;
+
+  // Traditional (Mon-Fri)
+  if (
+    !schedule.sunday &&
+    schedule.monday &&
+    schedule.tuesday &&
+    schedule.wednesday &&
+    schedule.thursday &&
+    schedule.friday &&
+    !schedule.saturday
+  ) {
+    return 'traditional';
+  }
+  
+  // Year-Round (Mon-Sat)
+  if (
+    !schedule.sunday &&
+    schedule.monday &&
+    schedule.tuesday &&
+    schedule.wednesday &&
+    schedule.thursday &&
+    schedule.friday &&
+    schedule.saturday
+  ) {
+    return 'yearRound';
+  }
+  
+  // 4-Day Week (Mon-Thu)
+  if (
+    !schedule.sunday &&
+    schedule.monday &&
+    schedule.tuesday &&
+    schedule.wednesday &&
+    schedule.thursday &&
+    !schedule.friday &&
+    !schedule.saturday
+  ) {
+    return 'fourDay';
+  }
+  
+  // Custom (doesn't match any preset)
+  return null;
+};
+
 export default function ScheduleSettingsScreen() {
   const router = useRouter();
-  const { schedule, updateSchedule, fetchSchedule } = useScheduleStore();
+  const scheduleStore = useScheduleStore();
+  const { schedule, updateSchedule, fetchSchedule } = scheduleStore;
   const [localSchedule, setLocalSchedule] = useState(schedule);
+  const [activePreset, setActivePreset] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchSchedule();
+    const loadSchedule = async () => {
+      await fetchSchedule();
+      const currentSchedule = scheduleStore.schedule;
+      
+      if (currentSchedule) {
+        setLocalSchedule(currentSchedule);
+        // Detect which preset is active
+        const preset = detectActivePreset(currentSchedule);
+        setActivePreset(preset);
+      }
+    };
+    
+    loadSchedule();
   }, []);
 
   useEffect(() => {
-    setLocalSchedule(schedule);
+    if (schedule) {
+      setLocalSchedule(schedule);
+      // Update active preset when schedule changes
+      const preset = detectActivePreset(schedule);
+      setActivePreset(preset);
+    }
   }, [schedule]);
 
   const toggleDay = async (day: string) => {
@@ -82,15 +150,61 @@ export default function ScheduleSettingsScreen() {
     const newSchedule = {
       ...localSchedule,
       [day]: !localSchedule[day as keyof typeof localSchedule],
-    };
+    } as SchoolSchedule;
 
     setLocalSchedule(newSchedule);
     await updateSchedule({ [day]: !localSchedule[day as keyof typeof localSchedule] });
+    
+    // Check if new schedule matches a preset
+    const preset = detectActivePreset(newSchedule);
+    setActivePreset(preset);
   };
 
-  const applyPreset = async (preset: typeof PRESETS[0]) => {
-    setLocalSchedule({ ...localSchedule, ...preset.schedule });
-    await updateSchedule(preset.schedule);
+  const applyPreset = async (preset: 'traditional' | 'yearRound' | 'fourDay') => {
+    if (!localSchedule) return;
+    
+    let newSchedule: Partial<SchoolSchedule>;
+    
+    switch (preset) {
+      case 'traditional':
+        newSchedule = {
+          sunday: false,
+          monday: true,
+          tuesday: true,
+          wednesday: true,
+          thursday: true,
+          friday: true,
+          saturday: false,
+        };
+        break;
+      case 'yearRound':
+        newSchedule = {
+          sunday: false,
+          monday: true,
+          tuesday: true,
+          wednesday: true,
+          thursday: true,
+          friday: true,
+          saturday: true,
+        };
+        break;
+      case 'fourDay':
+        newSchedule = {
+          sunday: false,
+          monday: true,
+          tuesday: true,
+          wednesday: true,
+          thursday: true,
+          friday: false,
+          saturday: false,
+        };
+        break;
+    }
+    
+    const updatedSchedule = { ...localSchedule, ...newSchedule } as SchoolSchedule;
+    setLocalSchedule(updatedSchedule);
+    setActivePreset(preset); // Keep it selected!
+    await updateSchedule(newSchedule);
   };
 
   if (!localSchedule) {
@@ -104,7 +218,7 @@ export default function ScheduleSettingsScreen() {
           <View style={{ width: 24 }} />
         </View>
         <View style={styles.loading}>
-          <Text style={styles.loadingText}>Loading...</Text>
+          <Skeleton width={200} height={20} />
         </View>
       </SafeAreaView>
     );
@@ -137,15 +251,78 @@ export default function ScheduleSettingsScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Quick Presets</Text>
           <View style={styles.presetsContainer}>
-            {PRESETS.map((preset) => (
-              <TouchableOpacity
-                key={preset.name}
-                style={styles.presetButton}
-                onPress={() => applyPreset(preset)}
-              >
-                <Text style={styles.presetButtonText}>{preset.name}</Text>
-              </TouchableOpacity>
-            ))}
+            {/* Traditional Preset */}
+            <TouchableOpacity
+              style={[
+                styles.presetButton,
+                activePreset === 'traditional' && styles.presetButtonActive
+              ]}
+              onPress={() => applyPreset('traditional')}
+              activeOpacity={0.7}
+            >
+              <View style={styles.presetButtonContent}>
+                <Text style={[
+                  styles.presetButtonText,
+                  activePreset === 'traditional' && styles.presetButtonTextActive
+                ]}>
+                  Traditional (Mon-Fri)
+                </Text>
+                {activePreset === 'traditional' && (
+                  <Check size={20} color="white" />
+                )}
+              </View>
+            </TouchableOpacity>
+
+            {/* Year-Round Preset */}
+            <TouchableOpacity
+              style={[
+                styles.presetButton,
+                activePreset === 'yearRound' && styles.presetButtonActive
+              ]}
+              onPress={() => applyPreset('yearRound')}
+              activeOpacity={0.7}
+            >
+              <View style={styles.presetButtonContent}>
+                <Text style={[
+                  styles.presetButtonText,
+                  activePreset === 'yearRound' && styles.presetButtonTextActive
+                ]}>
+                  Year-Round (Mon-Sat)
+                </Text>
+                {activePreset === 'yearRound' && (
+                  <Check size={20} color="white" />
+                )}
+              </View>
+            </TouchableOpacity>
+
+            {/* 4-Day Week Preset */}
+            <TouchableOpacity
+              style={[
+                styles.presetButton,
+                activePreset === 'fourDay' && styles.presetButtonActive
+              ]}
+              onPress={() => applyPreset('fourDay')}
+              activeOpacity={0.7}
+            >
+              <View style={styles.presetButtonContent}>
+                <Text style={[
+                  styles.presetButtonText,
+                  activePreset === 'fourDay' && styles.presetButtonTextActive
+                ]}>
+                  4-Day Week (Mon-Thu)
+                </Text>
+                {activePreset === 'fourDay' && (
+                  <Check size={20} color="white" />
+                )}
+              </View>
+            </TouchableOpacity>
+
+            {/* Custom indicator if no preset matches */}
+            {activePreset === null && (
+              <View style={styles.customIndicator}>
+                <Text style={styles.customIndicatorText}>Custom Schedule</Text>
+              </View>
+            )}
           </View>
         </View>
 
@@ -251,17 +428,41 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   presetButton: {
-    backgroundColor: Colors.background.card,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
+    backgroundColor: Colors.ui.background,
+    padding: 16,
     borderRadius: 12,
+    marginBottom: 12,
     borderWidth: 2,
-    borderColor: Colors.brand[300],
+    borderColor: Colors.ui.border,
+  },
+  presetButtonActive: {
+    backgroundColor: Colors.brand[500],
+    borderColor: Colors.brand[500],
+  },
+  presetButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   presetButtonText: {
     ...Typography.label,
-    color: Colors.brand[600],
-    textAlign: 'center',
+    fontSize: 15,
+    color: Colors.ui.text,
+  },
+  presetButtonTextActive: {
+    color: 'white',
+  },
+  customIndicator: {
+    backgroundColor: Colors.secondary[100],
+    padding: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  customIndicatorText: {
+    ...Typography.label,
+    fontSize: 13,
+    color: Colors.secondary[700],
   },
   daysContainer: {
     backgroundColor: Colors.background.card,

@@ -3,13 +3,6 @@
  */
 
 import WeeklySummaryCard from '@/components/dashboard/WeeklySummaryCard';
-import WeeklySummaryModal from '@/components/dashboard/WeeklySummaryModal';
-import LessonModal from '@/components/lessons/LessonModal';
-// PhotoGallery disabled for now
-// import PhotoGallery from '@/components/lessons/PhotoGallery';
-import EditSubjectsModal from '@/components/students/EditSubjectsModal';
-import StudentModal from '@/components/students/StudentModal';
-import StudentSummaryModal from '@/components/students/StudentSummaryModal';
 import Avatar from '@/components/ui/Avatar';
 import DatePicker from '@/components/ui/DatePicker';
 import EmptyState from '@/components/ui/EmptyState';
@@ -17,17 +10,25 @@ import Skeleton from '@/components/ui/Skeleton';
 import Colors from '@/constants/Colors';
 import { getSubjectColor } from '@/constants/Subjects';
 import Typography from '@/constants/Typography';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase/client';
 import { useAuthStore } from '@/store/authStore';
 import { useLessonStore } from '@/store/lessonStore';
 import { useStudentStore } from '@/store/studentStore';
+import { useAttendanceStore } from '@/store/attendanceStore';
+import { useSubscription } from '@/contexts/SubscriptionContext';
 import type { Lesson, Student } from '@/types';
+import { getGradeDisplay } from '@/utils/gradeHelpers';
 // import { LessonPhoto } from '@/types/database';
+import PhotoGalleryModal from '@/components/lessons/PhotoGalleryModal';
+import { useFocusEffect } from '@react-navigation/native';
 import { addDays, format, subDays } from 'date-fns';
+import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import { BookOpen, Edit2, Plus, Settings, Users } from 'lucide-react-native';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { BookOpen, Edit2, Plus, Settings, TrendingUp, Users } from 'lucide-react-native';
+import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Animated,
   Dimensions,
@@ -42,6 +43,46 @@ import ConfettiCannon from 'react-native-confetti-cannon';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+// Get photo URL from storage
+const getPhotoUrl = (path: string): string => {
+  if (!path) return '';
+  
+  try {
+    let cleanPath = path.trim();
+    if (cleanPath.startsWith('/')) {
+      cleanPath = cleanPath.slice(1);
+    }
+    if (cleanPath.endsWith('/')) {
+      cleanPath = cleanPath.slice(0, -1);
+    }
+    
+    if (!cleanPath) return '';
+    
+    const result = supabase.storage
+      .from('lesson-photos')
+      .getPublicUrl(cleanPath);
+    
+    if (!result || !result.data) {
+      console.warn('Failed to get photo URL for:', cleanPath);
+      return '';
+    }
+    
+    return result.data.publicUrl || '';
+  } catch (error) {
+    console.error('Error getting photo URL:', error);
+    return '';
+  }
+};
+
+import AttendanceModal from '@/components/attendance/AttendanceModal';
+
+// Lazy load modals - only load when needed
+const WeeklySummaryModal = lazy(() => import('@/components/dashboard/WeeklySummaryModal'));
+const LessonModal = lazy(() => import('@/components/lessons/LessonModal'));
+const EditSubjectsModal = lazy(() => import('@/components/students/EditSubjectsModal'));
+const StudentModal = lazy(() => import('@/components/students/StudentModal'));
+const StudentSummaryModal = lazy(() => import('@/components/students/StudentSummaryModal'));
 
 const formatDate = (dateString: string) => {
   const date = new Date(dateString);
@@ -104,6 +145,7 @@ const AnimatedCard = ({ children, onPress, style }: any) => {
 
 export default function Dashboard() {
   const router = useRouter();
+  const { hasSubscription, isLoading } = useSubscription();
   const { students, fetchStudents, deleteStudent, subjects, fetchSubjects, loading: studentsLoading } = useStudentStore();
   const lessonStore = useLessonStore();
   const { lessons, fetchLessons, toggleCompleteOptimistic } = lessonStore;
@@ -130,34 +172,66 @@ export default function Dashboard() {
     value: null,
     name: '',
   });
-  const [isInitialLoading, setIsInitialLoading] = useState(true);
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  // Photo gallery disabled for now
-  // const [galleryVisible, setGalleryVisible] = useState(false);
-  // const [galleryPhotos, setGalleryPhotos] = useState<LessonPhoto[]>([]);
-  // const [galleryIndex, setGalleryIndex] = useState(0);
+  const contentFadeAnim = useRef(new Animated.Value(0)).current;
+  // Photo gallery state
+  const [showPhotoGallery, setShowPhotoGallery] = useState(false);
+  const [galleryPhotos, setGalleryPhotos] = useState<any[]>([]);
+  const [galleryStartIndex, setGalleryStartIndex] = useState(0);
+  const [showAttendanceModal, setShowAttendanceModal] = useState(false);
+  const { hasAttendanceForDate } = useAttendanceStore();
 
   useEffect(() => {
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 300,
-      useNativeDriver: true,
-    }).start();
-  }, []);
+    // Wait for subscription check to complete
+    if (!isLoading) {
+      if (!hasSubscription) {
+        // No active subscription, redirect to subscribe screen
+        router.replace('/subscribe' as any);
+      }
+    }
+  }, [hasSubscription, isLoading, router]);
 
   useEffect(() => {
     const loadData = async () => {
-      setIsInitialLoading(true);
+      // Show skeletons immediately, no loading state check
       await Promise.all([
         fetchStudents(),
         fetchLessons(),
         loadParentData(),
       ]);
-      setIsInitialLoading(false);
     };
     
     loadData();
-  }, [fetchStudents, fetchLessons]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Check onboarding status after successful login
+  useEffect(() => {
+    checkOnboarding();
+  }, []);
+
+  const checkOnboarding = async () => {
+    try {
+      const hasCompletedOnboarding = await AsyncStorage.getItem('hasCompletedOnboarding');
+      
+      if (!hasCompletedOnboarding) {
+        // First time after sign up - show onboarding
+        router.push('/onboarding' as any);
+      }
+    } catch (error) {
+      console.error('Error checking onboarding:', error);
+    }
+  };
+
+  // Fade in content when data loads
+  useEffect(() => {
+    if (students.length > 0 || lessons.length > 0) {
+      Animated.timing(contentFadeAnim, {
+        toValue: 1,
+        duration: 400,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [students.length, lessons.length, contentFadeAnim]);
 
   const loadParentData = async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -171,33 +245,41 @@ export default function Dashboard() {
     }
   };
 
+  // Reload parent data when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      loadParentData();
+    }, [])
+  );
+
   // Fetch subjects when students are loaded
   useEffect(() => {
     if (students.length > 0) {
       console.log('Fetching subjects for', students.length, 'students');
       fetchSubjects();
     }
-  }, [students, fetchSubjects]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [students.length]);
 
   // Debug: Log modal state changes
-  useEffect(() => {
-    console.log('Modal state changed - showEditModal:', showEditModal, 'selectedStudent:', selectedStudent?.name || 'null');
-  }, [showEditModal, selectedStudent]);
+  // useEffect(() => {
+  //   console.log('Modal state changed - showEditModal:', showEditModal, 'selectedStudent:', selectedStudent?.name || 'null');
+  // }, [showEditModal, selectedStudent]);
 
   // Debug: Log subjects modal state changes
-  useEffect(() => {
-    console.log('showSubjectsModal changed:', showSubjectsModal);
-    console.log('selectedStudentForSubjects:', selectedStudentForSubjects?.name || 'null');
-  }, [showSubjectsModal, selectedStudentForSubjects]);
+  // useEffect(() => {
+  //   console.log('showSubjectsModal changed:', showSubjectsModal);
+  //   console.log('selectedStudentForSubjects:', selectedStudentForSubjects?.name || 'null');
+  // }, [showSubjectsModal, selectedStudentForSubjects]);
 
   // Debug: Log when subjects are updated
-  useEffect(() => {
-    console.log('Subjects updated in store. Total subjects:', subjects.length);
-    students.forEach((student) => {
-      const count = subjects.filter((s) => s.student_id === student.id).length;
-      console.log(`  - ${student.name}: ${count} subjects`);
-    });
-  }, [subjects, students]);
+  // useEffect(() => {
+  //   console.log('Subjects updated in store. Total subjects:', subjects.length);
+  //   students.forEach((student) => {
+  //     const count = subjects.filter((s) => s.student_id === student.id).length;
+  //     console.log(`  - ${student.name}: ${count} subjects`);
+  //   });
+  // }, [subjects, students]);
 
   const handleSignOut = async () => {
     await signOut();
@@ -292,9 +374,27 @@ export default function Dashboard() {
   // Filter lessons for selected date
   const selectedDateStr = format(selectedDate, 'yyyy-MM-dd');
   const selectedDateLessons = useMemo(() => {
-    return lessons.filter(
-      l => l.date === selectedDateStr
-    );
+    const filtered = lessons.filter(l => l.date === selectedDateStr);
+    
+    console.log('=== TODAY LESSONS DEBUG ===');
+    console.log('Selected date:', selectedDateStr);
+    console.log('Total lessons in store:', lessons.length);
+    console.log('Filtered lessons:', filtered.length);
+    console.log('First 3 lessons:', lessons.slice(0, 3).map(l => ({
+      id: l.id,
+      date: l.date,
+      title: l.title,
+      students: l.students?.length
+    })));
+    console.log('Filtered lessons details:', filtered.map(l => ({
+      id: l.id,
+      title: l.title,
+      date: l.date,
+      students: l.students?.map((s: any) => s.name || s.id)
+    })));
+    console.log('=========================');
+    
+    return filtered;
   }, [lessons, selectedDateStr]);
 
   // Generate dynamic section title based on selected date
@@ -403,6 +503,40 @@ export default function Dashboard() {
     </View>
   );
 
+  // Weekly Summary Card Skeleton
+  const WeeklySummaryCardSkeleton = () => (
+    <View style={[styles.lessonCard, { marginBottom: 24 }]}>
+      <Skeleton width={120} height={20} style={{ marginBottom: 16 }} />
+      <View style={{ flexDirection: 'row', justifyContent: 'space-around' }}>
+        <View style={{ alignItems: 'center', flex: 1 }}>
+          <Skeleton width={56} height={56} borderRadius={28} style={{ marginBottom: 10 }} />
+          <Skeleton width={40} height={20} style={{ marginBottom: 4 }} />
+          <Skeleton width={60} height={14} />
+        </View>
+        <View style={{ alignItems: 'center', flex: 1 }}>
+          <Skeleton width={56} height={56} borderRadius={28} style={{ marginBottom: 10 }} />
+          <Skeleton width={40} height={20} style={{ marginBottom: 4 }} />
+          <Skeleton width={60} height={14} />
+        </View>
+        <View style={{ alignItems: 'center', flex: 1 }}>
+          <Skeleton width={56} height={56} borderRadius={28} style={{ marginBottom: 10 }} />
+          <Skeleton width={40} height={20} style={{ marginBottom: 4 }} />
+          <Skeleton width={60} height={14} />
+        </View>
+      </View>
+    </View>
+  );
+
+  // Show loading while checking
+  if (isLoading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={Colors.brand[500]} />
+        <Text style={styles.loadingText}>Checking subscription...</Text>
+      </View>
+    );
+  }
+
   return (
     <>
       <SafeAreaView style={styles.container} edges={['top']}>
@@ -420,7 +554,6 @@ export default function Dashboard() {
             />
           </View>
         )}
-        <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
           <ScrollView 
             style={styles.scrollView}
             contentContainerStyle={styles.scrollContent}
@@ -428,29 +561,64 @@ export default function Dashboard() {
           >
         {/* Header Section */}
         <View style={styles.headerContainer}>
-          {/* Left: Parent Avatar + Greeting */}
-          <TouchableOpacity 
-            style={styles.headerLeft}
-            onPress={() => router.push('/settings/profile' as any)}
-            activeOpacity={0.7}
-          >
-            <Avatar
-              type={parentAvatar.type}
-              value={parentAvatar.value}
-              name={parentAvatar.name}
-              color={Colors.brand[400]}
-              size={44}
-            />
-            <View style={styles.greetingContainer}>
-              <Text style={styles.greetingText}>Hello, {parentAvatar.name.split(' ')[0]}</Text>
-              <Text style={styles.dateText}>{format(new Date(), 'EEEE, dd MMM')}</Text>
+          <View style={styles.headerTop}>
+            {/* Left: Parent Avatar + Greeting */}
+            <TouchableOpacity 
+              style={styles.headerLeft}
+              onPress={() => router.push('/settings/profile' as any)}
+              activeOpacity={0.7}
+            >
+              <Avatar
+                type={parentAvatar.type}
+                value={parentAvatar.value}
+                name={parentAvatar.name}
+                color={Colors.brand[400]}
+                size={44}
+              />
+              <View style={styles.greetingContainer}>
+                <Text style={styles.greetingText}>Hello, {parentAvatar.name.split(' ')[0]}</Text>
+                <Text style={styles.dateText}>{format(new Date(), 'EEEE, dd MMM')}</Text>
+              </View>
+            </TouchableOpacity>
+
+            {/* Attendance Section */}
+            <View style={styles.attendanceSection}>
+              <TouchableOpacity
+                style={[
+                  styles.attendanceButton,
+                  hasAttendanceForDate(format(new Date(), 'yyyy-MM-dd')) && styles.attendanceButtonTaken
+                ]}
+                onPress={() => setShowAttendanceModal(true)}
+                activeOpacity={0.7}
+              >
+                {hasAttendanceForDate(format(new Date(), 'yyyy-MM-dd')) ? (
+                  <>
+                    <Text style={styles.attendanceButtonIcon}>✓</Text>
+                    <Text style={styles.attendanceButtonText}>Attendance Taken</Text>
+                  </>
+                ) : (
+                  <>
+                    <Text style={styles.attendanceButtonIcon}>📋</Text>
+                    <Text style={styles.attendanceButtonText}>Take Attendance</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={styles.historyButton}
+                onPress={() => router.push('/attendance-history' as any)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.historyButtonText}>View History →</Text>
+              </TouchableOpacity>
             </View>
-          </TouchableOpacity>
+          </View>
 
           {/* Right: Settings Gear */}
           <TouchableOpacity 
             style={styles.settingsButton}
             onPress={() => router.push('/settings' as any)}
+            activeOpacity={0.7}
           >
             <Settings size={24} color={Colors.ui.text} />
           </TouchableOpacity>
@@ -464,33 +632,40 @@ export default function Dashboard() {
         />
 
         {/* Weekly Summary Card */}
-        <WeeklySummaryCard
-          thisWeekCount={weeklyStats.thisWeekCount}
-          completionRate={weeklyStats.completionRate}
-          streak={weeklyStats.streak}
-          onPress={() => setShowWeeklySummaryModal(true)}
-        />
+        {weeklyStats.thisWeekCount === 0 && lessons.length === 0 ? (
+          <WeeklySummaryCardSkeleton />
+        ) : (
+          <Animated.View style={{ opacity: contentFadeAnim }}>
+            <WeeklySummaryCard
+              thisWeekCount={weeklyStats.thisWeekCount}
+              completionRate={weeklyStats.completionRate}
+              streak={weeklyStats.streak}
+              onPress={() => setShowWeeklySummaryModal(true)}
+            />
+          </Animated.View>
+        )}
 
         {/* Dynamic Lessons Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{getLessonSectionTitle()}</Text>
           
-          {isInitialLoading ? (
+          {selectedDateLessons.length === 0 && lessons.length === 0 ? (
             <>
               <LessonCardSkeleton />
               <LessonCardSkeleton />
             </>
           ) : selectedDateLessons.length === 0 ? (
-            <EmptyState
-              icon={BookOpen}
-              title={`No Lessons ${selectedDateStr === format(new Date(), 'yyyy-MM-dd') ? 'Today' : 'on This Day'}`}
-              description="Add a lesson to get started!"
-            />
+            <Animated.View style={{ opacity: contentFadeAnim }}>
+              <EmptyState
+                icon={BookOpen}
+                title={`No Lessons ${selectedDateStr === format(new Date(), 'yyyy-MM-dd') ? 'Today' : 'on This Day'}`}
+                description="Add a lesson to get started!"
+              />
+            </Animated.View>
           ) : (
-            <>
+            <Animated.View style={{ opacity: contentFadeAnim }}>
               {selectedDateLessons.map((lesson, index) => {
-              // Find student for this lesson
-              const student = students.find(s => s.id === lesson.student_id);
+              // Get subject color
               const subjectColor = getSubjectColor(lesson.subject);
               
               return (
@@ -507,17 +682,6 @@ export default function Dashboard() {
                 >
                   <View style={styles.lessonHeader}>
                     <View style={styles.lessonHeaderLeft}>
-                      {/* Small Avatar */}
-                      {student && (
-                        <Avatar
-                          type={student.avatar_type || 'initial'}
-                          value={student.avatar_value}
-                          name={student.name}
-                          color={Colors.student[student.color_theme]}
-                          size={24}
-                        />
-                      )}
-                      
                       {/* Subject Pill */}
                       <View
                         style={[
@@ -527,11 +691,6 @@ export default function Dashboard() {
                       >
                         <Text style={styles.subjectPillText}>{lesson.subject}</Text>
                       </View>
-                      
-                      {/* Student Name */}
-                      {student && (
-                        <Text style={styles.studentNameText}>{student.name}</Text>
-                      )}
                     </View>
                     
                     {/* Completion Checkbox + Status */}
@@ -565,52 +724,125 @@ export default function Dashboard() {
                   
                   <Text style={styles.lessonTitle}>{lesson.title}</Text>
                   
+                  {/* Grade Badge */}
+                  {(() => {
+                    const gradeDisplay = getGradeDisplay(
+                      lesson.grade_type,
+                      lesson.grade_value,
+                      lesson.grade_max_points
+                    );
+                    
+                    if (gradeDisplay) {
+                      return (
+                        <View style={[
+                          styles.gradeBadge,
+                          { backgroundColor: gradeDisplay.backgroundColor }
+                        ]}>
+                          <Text style={[
+                            styles.gradeBadgeText,
+                            { color: gradeDisplay.color }
+                          ]}>
+                            {gradeDisplay.display}
+                          </Text>
+                        </View>
+                      );
+                    }
+                    return null;
+                  })()}
+                  
+                  {/* Multiple Student Avatars */}
+                  {lesson.students && lesson.students.length > 0 && (
+                    <View style={styles.lessonStudents}>
+                      <View style={styles.avatarStack}>
+                        {lesson.students.slice(0, 3).map((student: any, index: number) => {
+                          const colorTheme = student.color_theme || 'purple';
+                          const studentColor = Colors.student[colorTheme as keyof typeof Colors.student] || Colors.student.purple;
+                          return (
+                            <View
+                              key={student.id}
+                              style={[
+                                styles.avatarStackItem,
+                                { marginLeft: index > 0 ? -12 : 0, zIndex: (lesson.students?.length || 0) - index }
+                              ]}
+                            >
+                              <Avatar
+                                type={student.avatar_type || 'initial'}
+                                value={student.avatar_value}
+                                name={student.name || 'Student'}
+                                color={studentColor}
+                                size={28}
+                              />
+                            </View>
+                          );
+                        })}
+                      </View>
+                      <Text style={styles.lessonStudentNames}>
+                        {lesson.students.length === 1
+                          ? lesson.students[0]?.name || 'Student'
+                          : lesson.students.length === 2
+                          ? `${lesson.students[0]?.name || 'Student'} & ${lesson.students[1]?.name || 'Student'}`
+                          : `${lesson.students.slice(0, 2).map((s: any) => s.name || 'Student').join(', ')} +${lesson.students.length - 2}`
+                        }
+                      </Text>
+                    </View>
+                  )}
+                  
                   {lesson.notes && (
                     <Text style={styles.lessonNotes} numberOfLines={2}>
                       {lesson.notes}
                     </Text>
                   )}
 
-                  {/* 
-                    TODO: Re-enable photo attachments in v2.0
-                    - Issue: Supabase Storage permission problems
-                    - Alternative: Use Cloudinary or other service
-                    - Database tables exist: lesson_photos
-                    - Storage bucket exists: student-avatars (or lesson-photos)
-                  */}
-                  {/* {lesson.photos && lesson.photos.length > 0 && (
+                  {/* Photo Thumbnails - CLICKABLE */}
+                  {lesson.photos && lesson.photos.length > 0 && (
                     <TouchableOpacity
-                      style={styles.photoIndicator}
-                      onPress={() => {
+                      style={styles.lessonPhotos}
+                      onPress={(e) => {
+                        e.stopPropagation();
                         setGalleryPhotos(lesson.photos || []);
-                        setGalleryIndex(0);
-                        setGalleryVisible(true);
+                        setGalleryStartIndex(0);
+                        setShowPhotoGallery(true);
                       }}
                       activeOpacity={0.7}
                     >
                       <View style={styles.photoThumbnails}>
-                        {lesson.photos.slice(0, 3).map((photo, index) => (
-                          <Image
-                            key={photo.id}
-                            source={{ uri: getPhotoUrl(photo.photo_path) }}
-                            style={[styles.photoThumbnail, { marginLeft: index > 0 ? -8 : 0 }]}
-                            onError={() => console.error('Thumbnail load failed:', photo.photo_path)}
-                          />
-                        ))}
+                        {lesson.photos.slice(0, 3).map((photo, index) => {
+                          const photoUrl = getPhotoUrl(photo.storage_path);
+                          if (!photoUrl) return null;
+                          
+                          return (
+                            <Image
+                              key={photo.id}
+                              source={{ uri: photoUrl }}
+                              style={[
+                                styles.photoThumbnail,
+                                { marginLeft: index > 0 ? -8 : 0, zIndex: 3 - index }
+                              ]}
+                              contentFit="cover"
+                              transition={200}
+                              cachePolicy="memory-disk"
+                              onError={() => {
+                                console.warn('Failed to load photo thumbnail:', photo.storage_path);
+                              }}
+                            />
+                          );
+                        })}
                       </View>
                       {lesson.photos.length > 3 && (
                         <Text style={styles.photoCount}>+{lesson.photos.length - 3}</Text>
                       )}
+                      {/* Visual hint that it's tappable */}
+                      <Text style={styles.viewPhotosHint}>Tap to view</Text>
                     </TouchableOpacity>
-                  )} */}
+                  )}
                   
                   <Text style={styles.lessonDate}>
                     {formatDate(lesson.date)}
                   </Text>
                 </AnimatedCard>
               );
-              })}
-            </>
+            })}
+            </Animated.View>
           )}
         </View>
 
@@ -649,17 +881,15 @@ export default function Dashboard() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={[Typography.h3, { marginBottom: 16 }]}>Your Students</Text>
-            {!isInitialLoading && (
-              <TouchableOpacity
-                style={styles.addButton}
-                onPress={() => router.push('/add-student' as any)}
-                activeOpacity={0.7}
-              >
-                <Plus size={20} color={Colors.brand[600]} />
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity
+              style={styles.addButton}
+              onPress={() => router.push('/add-student' as any)}
+              activeOpacity={0.7}
+            >
+              <Plus size={20} color={Colors.brand[600]} />
+            </TouchableOpacity>
           </View>
-          {isInitialLoading ? (
+          {students.length === 0 && lessonStore.loading ? (
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -670,21 +900,24 @@ export default function Dashboard() {
               <StudentCardSkeleton />
             </ScrollView>
           ) : students.length === 0 ? (
-            <EmptyState
-              icon={Users}
-              title="No Students Yet"
-              description="Add your first student to start tracking their homeschool progress!"
-              actionText="Add Student"
-              onAction={() => setShowStudentForm(true)}
-            />
+            <Animated.View style={{ opacity: contentFadeAnim }}>
+              <EmptyState
+                icon={Users}
+                title="No Students Yet"
+                description="Add your first student to start tracking their homeschool progress!"
+                actionText="Add Student"
+                onAction={() => setShowStudentForm(true)}
+              />
+            </Animated.View>
           ) : (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.studentsContainer}
-              contentContainerStyle={styles.studentsContainerContent}
-            >
-              {students.map((student) => (
+            <Animated.View style={{ opacity: contentFadeAnim }}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={styles.studentsContainer}
+                contentContainerStyle={styles.studentsContainerContent}
+              >
+                {students.map((student) => (
                 <AnimatedCard
                   key={student.id}
                   style={[
@@ -766,6 +999,21 @@ export default function Dashboard() {
                           <Text style={styles.statPillLabel}>Done</Text>
                         </View>
                       </View>
+                      
+                      {/* Action Buttons */}
+                      <View style={styles.studentActionButtons}>
+                        <TouchableOpacity
+                          style={styles.studentActionButton}
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            router.push(`/grade-trends?studentId=${student.id}` as any);
+                          }}
+                          activeOpacity={0.7}
+                        >
+                          <TrendingUp size={18} color={Colors.brand[600]} />
+                          <Text style={styles.studentActionText}>Grades</Text>
+                        </TouchableOpacity>
+                      </View>
                     </View>
                   </View>
 
@@ -782,76 +1030,100 @@ export default function Dashboard() {
                   </TouchableOpacity>
                 </AnimatedCard>
               ))}
-            </ScrollView>
+              </ScrollView>
+            </Animated.View>
           )}
         </View>
+      </ScrollView>
+    </SafeAreaView>
 
-          </ScrollView>
-        </Animated.View>
-      </SafeAreaView>
+      {/* Photo Gallery Modal */}
+      <PhotoGalleryModal
+        visible={showPhotoGallery}
+        onClose={() => setShowPhotoGallery(false)}
+        photos={galleryPhotos}
+        initialIndex={galleryStartIndex}
+      />
 
       {/* Student Edit Modal - Outside ScrollView for proper rendering */}
-      <StudentModal
-        visible={showEditModal || showStudentForm}
-        student={showStudentForm ? null : selectedStudent}
-        onClose={() => {
-          if (showStudentForm) {
+      <Suspense fallback={<View />}>
+        <StudentModal
+          visible={showEditModal || showStudentForm}
+          student={showStudentForm ? null : selectedStudent}
+          onClose={() => {
+            if (showStudentForm) {
+              setShowStudentForm(false);
+            } else {
+              handleCloseModal();
+            }
+          }}
+          onSave={async () => {
+            await handleSaveStudent();
             setShowStudentForm(false);
-          } else {
-            handleCloseModal();
-          }
-        }}
-        onSave={async () => {
-          await handleSaveStudent();
-          setShowStudentForm(false);
-        }}
-      />
+          }}
+        />
+      </Suspense>
 
       {/* Edit Subjects Modal */}
-      {(() => {
-        console.log('EditSubjectsModal render - visible:', showSubjectsModal, 'student:', selectedStudentForSubjects?.name || 'null');
-        return (
-          <EditSubjectsModal
-            visible={showSubjectsModal}
-            student={selectedStudentForSubjects}
-            onClose={handleCloseSubjectsModal}
-            onSave={handleSaveSubjects}
-          />
-        );
-      })()}
+      <Suspense fallback={<View />}>
+        <EditSubjectsModal
+          visible={showSubjectsModal}
+          student={selectedStudentForSubjects}
+          onClose={handleCloseSubjectsModal}
+          onSave={handleSaveSubjects}
+        />
+      </Suspense>
 
       {/* Lesson Edit Modal */}
-      <LessonModal
-        visible={showLessonModal}
-        lesson={selectedLesson}
-        onClose={() => {
-          setShowLessonModal(false);
-          setSelectedLesson(null);
-        }}
-        onSave={() => {
-          fetchLessons();
-          setShowLessonModal(false);
-          setSelectedLesson(null);
-        }}
-      />
+      <Suspense fallback={<View />}>
+        <LessonModal
+          visible={showLessonModal}
+          lesson={selectedLesson}
+          onClose={() => {
+            setShowLessonModal(false);
+            setSelectedLesson(null);
+          }}
+          onSave={() => {
+            fetchLessons();
+            setShowLessonModal(false);
+            setSelectedLesson(null);
+          }}
+        />
+      </Suspense>
 
       {/* Weekly Summary Modal */}
-      <WeeklySummaryModal
-        visible={showWeeklySummaryModal}
-        onClose={() => setShowWeeklySummaryModal(false)}
-        students={students}
-        lessons={lessons}
-      />
+      <Suspense fallback={<View />}>
+        <WeeklySummaryModal
+          visible={showWeeklySummaryModal}
+          onClose={() => setShowWeeklySummaryModal(false)}
+          students={students}
+          lessons={lessons}
+        />
+      </Suspense>
 
       {/* Student Summary Modal */}
-      <StudentSummaryModal
-        visible={showStudentSummary}
-        onClose={() => {
-          setShowStudentSummary(false);
-          setSelectedStudentForSummary(null);
+      <Suspense fallback={<View />}>
+        <StudentSummaryModal
+          visible={showStudentSummary}
+          onClose={() => {
+            setShowStudentSummary(false);
+            setSelectedStudentForSummary(null);
+          }}
+          student={selectedStudentForSummary}
+          lessons={lessons}
+        />
+      </Suspense>
+
+      {/* Attendance Modal */}
+      <AttendanceModal
+        visible={showAttendanceModal}
+        date={new Date()} // Today's date
+        onClose={() => setShowAttendanceModal(false)}
+        onSave={() => {
+          // Refresh attendance data
+          useAttendanceStore.getState().fetchAttendance();
+          setShowAttendanceModal(false);
         }}
-        student={selectedStudentForSummary}
-        lessons={lessons}
       />
 
       {/* Photo Gallery Modal - Disabled for now */}
@@ -889,20 +1161,65 @@ const styles = StyleSheet.create({
     paddingBottom: 100,
   },
   headerContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     paddingHorizontal: 20,
     paddingTop: 12,
     paddingBottom: 16,
     backgroundColor: Colors.background.card,
     marginBottom: 24,
   },
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 20,
+  },
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     flex: 1,
+  },
+  attendanceButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: Colors.brand[500],
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  attendanceButtonTaken: {
+    backgroundColor: '#10B981', // Green when taken
+  },
+  attendanceButtonIcon: {
+    fontSize: 18,
+  },
+  attendanceButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: 'white',
+  },
+  attendanceSection: {
+    gap: 8,
+  },
+  historyButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    backgroundColor: 'white',
+    borderWidth: 2,
+    borderColor: Colors.brand[200],
+    alignItems: 'center',
+  },
+  historyButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.brand[600],
   },
   greetingContainer: {
     flex: 1,
@@ -925,6 +1242,30 @@ const styles = StyleSheet.create({
   },
   section: {
     marginBottom: 32,
+  },
+  quickActionsSection: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 24,
+    paddingHorizontal: 20,
+  },
+  quickActionButton: {
+    alignItems: 'center',
+    padding: 12,
+    backgroundColor: 'white',
+    borderRadius: 12,
+    flex: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  quickActionText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.ui.text,
+    marginTop: 4,
   },
   viewAllText: {
     ...Typography.caption,
@@ -952,11 +1293,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.brand[200],
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: Colors.ui.background,
+  },
   loadingText: {
+    marginTop: 16,
     fontSize: 16,
     color: Colors.ui.textLight,
-    textAlign: 'center',
-    paddingVertical: 20,
   },
   addStudentButton: {
     backgroundColor: Colors.brand[500],
@@ -998,6 +1344,25 @@ const styles = StyleSheet.create({
   },
   studentCardRight: {
     flex: 1,
+  },
+  studentActionButtons: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 12,
+  },
+  studentActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: Colors.brand[50],
+  },
+  studentActionText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.brand[600],
   },
   studentSummaryButton: {
     backgroundColor: Colors.brand[500],
@@ -1112,20 +1477,48 @@ const styles = StyleSheet.create({
     ...Typography.caption,
     color: Colors.ui.textLight,
   },
+  gradeBadge: {
+    alignSelf: 'flex-start',
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    marginTop: 8,
+  },
+  gradeBadgeText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
   lessonNotes: {
     ...Typography.bodySmall,
     color: Colors.ui.textLight,
     marginTop: 4,
   },
-  photoIndicator: {
+  lessonPhotos: {
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 8,
-    marginBottom: 4,
+  },
+  lessonStudents: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 8,
+  },
+  avatarStack: {
+    flexDirection: 'row',
+  },
+  avatarStackItem: {
+    borderWidth: 2,
+    borderColor: Colors.background.card,
+    borderRadius: 14,
+  },
+  lessonStudentNames: {
+    ...Typography.caption,
+    color: Colors.ui.textLight,
+    flex: 1,
   },
   photoThumbnails: {
     flexDirection: 'row',
-    marginRight: 8,
   },
   photoThumbnail: {
     width: 32,
@@ -1139,6 +1532,14 @@ const styles = StyleSheet.create({
     ...Typography.caption,
     fontSize: 11,
     color: Colors.ui.textLight,
+    marginLeft: 4,
+  },
+  viewPhotosHint: {
+    ...Typography.caption,
+    fontSize: 9,
+    color: Colors.ui.textLight,
+    marginLeft: 4,
+    fontStyle: 'italic',
   },
   completionRow: {
     flexDirection: 'row',

@@ -52,7 +52,8 @@ export const useStudentStore = create<StudentState>((set, get) => ({
         .from('students')
         .select('*')
         .eq('user_id', user.id)
-        .order('created_at', { ascending: true });
+        .order('created_at', { ascending: true })
+        .limit(100); // Reasonable limit for student records
 
       if (error) {
         console.error('Error fetching students:', error);
@@ -76,7 +77,9 @@ export const useStudentStore = create<StudentState>((set, get) => ({
         query = query.eq('student_id', studentId);
       }
 
-      const { data, error } = await query.order('created_at', { ascending: true });
+      const { data, error } = await query
+        .order('created_at', { ascending: true })
+        .limit(500); // Reasonable limit for subject records
 
       if (error) {
         console.error('Error fetching subjects:', error);

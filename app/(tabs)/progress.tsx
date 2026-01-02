@@ -3,7 +3,6 @@
  * Shows lesson completion rates, subject breakdown, goals, and recent activity
  */
 
-import EditGoalModal from '@/components/lessons/EditGoalModal';
 import Avatar from '@/components/ui/Avatar';
 import EmptyState from '@/components/ui/EmptyState';
 import Skeleton from '@/components/ui/Skeleton';
@@ -16,10 +15,10 @@ import { useScheduleStore } from '@/store/scheduleStore';
 import { useStudentStore } from '@/store/studentStore';
 import type { Lesson, StudentSubject } from '@/types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { format } from 'date-fns';
+import { endOfWeek, format, startOfWeek } from 'date-fns';
 import { useRouter } from 'expo-router';
 import { BarChart3, BookMarked, Calendar, Edit2, TrendingUp, X } from 'lucide-react-native';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Animated,
@@ -39,9 +38,21 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
+// Lazy load modals - only load when needed
+const EditGoalModal = lazy(() => import('@/components/lessons/EditGoalModal'));
+const LessonsDetailModal = lazy(() => import('@/components/progress/LessonsDetailModal'));
+const EditSubjectsModal = lazy(() => import('@/components/students/EditSubjectsModal'));
+
 // Helper functions
 const getLessonsForStudent = (lessons: Lesson[], studentId: string) => {
-  return lessons.filter((l) => l.student_id === studentId);
+  return lessons.filter((l) => {
+    // Check if this student is in the lesson's students array (many-to-many)
+    if (l.students && l.students.length > 0) {
+      return l.students.some((s: any) => s.id === studentId);
+    }
+    // Fallback to student_id for backward compatibility
+    return l.student_id === studentId;
+  });
 };
 
 const getCompletedLessons = (lessons: Lesson[]) => {
@@ -143,7 +154,11 @@ const calculateStreak = (
     // Check if this school day has completed lessons
     const dateStr = format(checkDate, 'yyyy-MM-dd');
     const hasCompletedLesson = completedLessons.some(
-      l => l.student_id === selectedStudentId && l.date === dateStr && l.completed
+      l => {
+        // Check if student is in lesson's students array
+        const isStudentInLesson = l.students?.some((s: any) => s.id === selectedStudentId) || l.student_id === selectedStudentId;
+        return isStudentInLesson && l.date === dateStr && l.completed;
+      }
     );
     
     if (hasCompletedLesson) {
@@ -308,22 +323,17 @@ export default function ProgressScreen() {
   const [showEditGoalModal, setShowEditGoalModal] = useState(false);
   const [editGoalSubject, setEditGoalSubject] = useState<string>('');
   const [editGoalCurrentGoal, setEditGoalCurrentGoal] = useState<number>(0);
-  const [loading, setLoading] = useState(true);
-  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const [showLessonsDetail, setShowLessonsDetail] = useState(false);
+  const [detailModalTitle, setDetailModalTitle] = useState('');
+  const [detailModalLessons, setDetailModalLessons] = useState<Lesson[]>([]);
+  const [showSubjectsModal, setShowSubjectsModal] = useState(false);
+  const contentFadeAnim = useRef(new Animated.Value(0)).current;
   // Track previous goal completion status to detect when goals are newly reached
   const previousGoalStatus = useRef<Record<string, number>>({});
 
   useEffect(() => {
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 300,
-      useNativeDriver: true,
-    }).start();
-  }, []);
-
-  useEffect(() => {
     const loadData = async () => {
-      setLoading(true);
+      // Show skeletons immediately, no loading state check
       await Promise.all([
         fetchStudents(),
         fetchLessons(),
@@ -331,17 +341,28 @@ export default function ProgressScreen() {
         fetchSchedule(),
         fetchBreaks(),
       ]);
-      setLoading(false);
     };
     
     loadData();
-  }, [fetchStudents, fetchLessons, fetchSubjects, fetchSchedule, fetchBreaks]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Fade in content when data loads
+  useEffect(() => {
+    if (students.length > 0 || lessons.length > 0) {
+      Animated.timing(contentFadeAnim, {
+        toValue: 1,
+        duration: 400,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [students.length, lessons.length, contentFadeAnim]);
 
   useEffect(() => {
     if (students.length > 0 && !selectedStudentId) {
       setSelectedStudentId(students[0].id);
     }
-  }, [students, selectedStudentId]);
+  }, [students.length, selectedStudentId]);
 
   // Calculate stats using useMemo
   const studentLessons = useMemo(() => {
@@ -356,6 +377,16 @@ export default function ProgressScreen() {
   const lessonsThisWeek = useMemo(() => {
     return getLessonsThisWeek(studentLessons);
   }, [studentLessons]);
+
+  // Calculate this week's lessons using startOfWeek/endOfWeek
+  const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
+  const weekEnd = endOfWeek(new Date(), { weekStartsOn: 1 });
+  const thisWeekLessons = useMemo(() => {
+    return studentLessons.filter(l => {
+      const lessonDate = new Date(l.date);
+      return lessonDate >= weekStart && lessonDate <= weekEnd;
+    });
+  }, [studentLessons, weekStart, weekEnd]);
 
   const lessonsBySubject = useMemo(() => {
     return getLessonsBySubject(studentLessons);
@@ -451,6 +482,17 @@ export default function ProgressScreen() {
     }
   };
 
+  const handleCloseSubjectsModal = () => {
+    setShowSubjectsModal(false);
+  };
+
+  const handleSaveSubjects = async () => {
+    if (selectedStudentId) {
+      await fetchSubjects(selectedStudentId);
+    }
+    setShowSubjectsModal(false);
+  };
+
   // Group lessons by date for recent activity
   const recentActivity = useMemo(() => {
     const weekLessons = lessonsThisWeek;
@@ -513,16 +555,14 @@ export default function ProgressScreen() {
     </>
   );
 
-  if (!selectedStudentId && !loading) {
+  if (!selectedStudentId && students.length === 0) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: Colors.ui.background }} edges={['top']}>
         <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 100 }}>
         <View style={styles.header}>
           <Text style={styles.title}>Progress Tracking 📊</Text>
         </View>
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyStateText}>Loading...</Text>
-        </View>
+        <ProgressSkeleton />
         </ScrollView>
       </SafeAreaView>
     );
@@ -530,17 +570,17 @@ export default function ProgressScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: Colors.ui.background }} edges={['top']}>
-      <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
-        <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 100 }}>
+      <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 100 }}>
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Progress Tracking 📊</Text>
       </View>
 
-      {loading ? (
+      {students.length === 0 && lessons.length === 0 ? (
         <ProgressSkeleton />
       ) : (
-        <>
+        <Animated.View style={{ opacity: contentFadeAnim }}>
+          <>
           {/* Student Selector Tabs */}
           <ScrollView
             horizontal
@@ -597,12 +637,23 @@ export default function ProgressScreen() {
         <>
           {/* Overview Stats Card */}
           <View style={styles.statsCard}>
-        <View style={styles.statItem}>
+        {/* Total Lessons - Clickable */}
+        <TouchableOpacity
+          style={styles.statItem}
+          onPress={() => {
+            setDetailModalTitle('All Lessons');
+            setDetailModalLessons(studentLessons);
+            setShowLessonsDetail(true);
+          }}
+          activeOpacity={0.7}
+        >
           <BarChart3 size={24} color={Colors.brand[600]} />
           <Text style={styles.statValue}>{studentLessons.length}</Text>
           <Text style={styles.statLabel}>Total Lessons</Text>
-        </View>
+          <Text style={styles.tapHint}>Tap for details</Text>
+        </TouchableOpacity>
         <View style={styles.statDivider} />
+        {/* Completed - Keep as View (has confetti) */}
         <View style={styles.statItem}>
           <TrendingUp size={24} color={Colors.ui.success} />
           <Text style={styles.statValue}>
@@ -613,11 +664,21 @@ export default function ProgressScreen() {
           </Text>
         </View>
         <View style={styles.statDivider} />
-        <View style={styles.statItem}>
+        {/* This Week - Clickable */}
+        <TouchableOpacity
+          style={styles.statItem}
+          onPress={() => {
+            setDetailModalTitle("This Week's Lessons");
+            setDetailModalLessons(thisWeekLessons);
+            setShowLessonsDetail(true);
+          }}
+          activeOpacity={0.7}
+        >
           <Calendar size={24} color={Colors.brand[500]} />
           <Text style={styles.statValue}>{lessonsThisWeek.length}</Text>
           <Text style={styles.statLabel}>This Week</Text>
-        </View>
+          <Text style={styles.tapHint}>Tap for details</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Insights Card */}
@@ -637,11 +698,7 @@ export default function ProgressScreen() {
             description="Add subjects to track progress and set goals for this student."
             actionText="Add Subjects"
             onAction={() => {
-              // Navigate to subjects management
-              const student = students.find(s => s.id === selectedStudentId);
-              if (student) {
-                router.push(`/students/${student.id}/subjects` as any);
-              }
+              setShowSubjectsModal(true);
             }}
           />
         ) : (
@@ -794,6 +851,7 @@ export default function ProgressScreen() {
                       e.stopPropagation();
                       handleEditGoal(subjectRecord.subject, 0);
                     }}
+                    activeOpacity={0.7}
                   >
                     <Text style={styles.setGoalText}>+ Set Goal</Text>
                   </TouchableOpacity>
@@ -805,69 +863,71 @@ export default function ProgressScreen() {
         )}
       </View>
 
-      {/* Recent Activity Section */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Last 7 Days</Text>
-        
-        {/* Weekly Chart */}
-        <View style={styles.chartContainer}>
-          {getLastSevenDays().map((date, index) => {
-            const dayLessons = getLessonsForDate(date, studentLessons);
-            const dayName = date.toLocaleDateString('en-US', { weekday: 'short' })[0];
-            const height = Math.min(dayLessons.length * 20, 100); // Max 100px
-            const allComplete = dayLessons.length > 0 && dayLessons.every((l) => l.completed);
-            const someComplete = dayLessons.length > 0 && dayLessons.some((l) => l.completed) && !allComplete;
+          {/* Recent Activity Section */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Last 7 Days</Text>
+            
+            {/* Weekly Chart */}
+            <View style={styles.chartContainer}>
+              {getLastSevenDays().map((date, index) => {
+                const dayLessons = getLessonsForDate(date, studentLessons);
+                const dayName = date.toLocaleDateString('en-US', { weekday: 'short' })[0];
+                const height = Math.min(dayLessons.length * 20, 100); // Max 100px
+                const allComplete = dayLessons.length > 0 && dayLessons.every((l) => l.completed);
+                const someComplete = dayLessons.length > 0 && dayLessons.some((l) => l.completed) && !allComplete;
 
-            return (
-              <View key={index} style={styles.chartBar}>
-                <View
-                  style={[
-                    styles.bar,
-                    {
-                      height: height || 4,
-                      backgroundColor:
-                        dayLessons.length === 0
-                          ? Colors.ui.border
-                          : allComplete
-                            ? Colors.ui.success
-                            : someComplete
-                              ? Colors.ui.warning
-                              : Colors.ui.border,
-                    },
-                  ]}
-                />
-                <Text style={styles.chartLabel}>{dayName}</Text>
-                <Text style={styles.chartValue}>{dayLessons.length}</Text>
-              </View>
-            );
-          })}
-        </View>
+                return (
+                  <View key={index} style={styles.chartBar}>
+                    <View
+                      style={[
+                        styles.bar,
+                        {
+                          height: height || 4,
+                          backgroundColor:
+                            dayLessons.length === 0
+                              ? Colors.ui.border
+                              : allComplete
+                                ? Colors.ui.success
+                                : someComplete
+                                  ? Colors.ui.warning
+                                  : Colors.ui.border,
+                        },
+                      ]}
+                    />
+                    <Text style={styles.chartLabel}>{dayName}</Text>
+                    <Text style={styles.chartValue}>{dayLessons.length}</Text>
+                  </View>
+                );
+              })}
+            </View>
 
-        {/* Activity List */}
-        {recentActivity.length === 0 ? (
-          <View style={styles.emptyCard}>
-            <Text style={styles.emptyCardText}>
-              No lessons logged in the past week.
-            </Text>
-          </View>
-        ) : (
-          recentActivity.map(([date, count]) => (
-            <View key={date} style={styles.activityCard}>
-              <Text style={styles.activityDate}>{formatDate(date)}</Text>
-              <View style={styles.activityBadge}>
-                <Text style={styles.activityCount}>{count}</Text>
-                <Text style={styles.activityLabel}>
-                  lesson{count === 1 ? '' : 's'}
+            {/* Activity List */}
+            {recentActivity.length === 0 ? (
+              <View style={styles.emptyCard}>
+                <Text style={styles.emptyCardText}>
+                  No lessons logged in the past week.
                 </Text>
               </View>
-            </View>
-          ))
+            ) : (
+              recentActivity.map(([date, count]) => (
+                <View key={date} style={styles.activityCard}>
+                  <Text style={styles.activityDate}>{formatDate(date)}</Text>
+                  <View style={styles.activityBadge}>
+                    <Text style={styles.activityCount}>{count}</Text>
+                    <Text style={styles.activityLabel}>
+                      lesson{count === 1 ? '' : 's'}
+                    </Text>
+                  </View>
+                </View>
+              ))
+            )}
+          </View>
+          </>
         )}
-      </View>
-        </>
+          </>
+        </Animated.View>
       )}
-        </>
-      )}
+      </ScrollView>
 
       {/* Goal Setting Modal */}
       <Modal
@@ -894,6 +954,7 @@ export default function ProgressScreen() {
                   setGoalValue('');
                 }}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                activeOpacity={0.7}
               >
                 <X size={24} color={Colors.ui.text} />
               </TouchableOpacity>
@@ -922,6 +983,7 @@ export default function ProgressScreen() {
                   setGoalValue('');
                 }}
                 disabled={goalLoading}
+                activeOpacity={0.7}
               >
                 <Text style={styles.modalCancelButtonText}>Cancel</Text>
               </TouchableOpacity>
@@ -930,6 +992,7 @@ export default function ProgressScreen() {
                 style={[styles.modalSaveButton, goalLoading && styles.modalSaveButtonDisabled]}
                 onPress={handleSaveGoal}
                 disabled={goalLoading}
+                activeOpacity={0.7}
               >
                 <Text style={styles.modalSaveButtonText}>
                   {goalLoading ? 'Saving...' : 'Set Goal'}
@@ -941,20 +1004,40 @@ export default function ProgressScreen() {
       </Modal>
 
       {/* Edit Goal Modal */}
-      <EditGoalModal
-        visible={showEditGoalModal}
-        subject={editGoalSubject}
-        currentGoal={editGoalCurrentGoal}
-        studentName={selectedStudent?.name || ''}
-        onClose={() => {
-          setShowEditGoalModal(false);
-          setEditGoalSubject('');
-          setEditGoalCurrentGoal(0);
-        }}
-        onSave={handleSaveEditGoal}
-      />
-        </ScrollView>
-      </Animated.View>
+      <Suspense fallback={<View />}>
+        <EditGoalModal
+          visible={showEditGoalModal}
+          subject={editGoalSubject}
+          currentGoal={editGoalCurrentGoal}
+          studentName={selectedStudent?.name || ''}
+          onClose={() => {
+            setShowEditGoalModal(false);
+            setEditGoalSubject('');
+            setEditGoalCurrentGoal(0);
+          }}
+          onSave={handleSaveEditGoal}
+        />
+      </Suspense>
+      {/* Lessons Detail Modal */}
+      <Suspense fallback={<View />}>
+        <LessonsDetailModal
+          visible={showLessonsDetail}
+          onClose={() => setShowLessonsDetail(false)}
+          title={detailModalTitle}
+          lessons={detailModalLessons}
+          studentName={selectedStudent?.name || ''}
+        />
+      </Suspense>
+
+      {/* Edit Subjects Modal */}
+      <Suspense fallback={<View />}>
+        <EditSubjectsModal
+          visible={showSubjectsModal}
+          student={selectedStudent || null}
+          onClose={handleCloseSubjectsModal}
+          onSave={handleSaveSubjects}
+        />
+      </Suspense>
     </SafeAreaView>
   );
 }
@@ -1062,6 +1145,14 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.ui.textLight,
     marginTop: 4,
+    textAlign: 'center',
+  },
+  tapHint: {
+    ...Typography.caption,
+    fontSize: 9,
+    color: Colors.ui.textLight,
+    marginTop: 4,
+    fontStyle: 'italic',
     textAlign: 'center',
   },
   section: {

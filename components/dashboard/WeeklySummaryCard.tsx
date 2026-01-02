@@ -11,7 +11,7 @@ interface WeeklySummaryCardProps {
   onPress?: () => void;
 }
 
-export default function WeeklySummaryCard({ 
+function WeeklySummaryCard({ 
   thisWeekCount, 
   completionRate, 
   streak,
@@ -121,4 +121,6 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
 });
+
+export default React.memo(WeeklySummaryCard);
 

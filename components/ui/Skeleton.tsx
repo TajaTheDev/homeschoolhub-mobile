@@ -1,6 +1,6 @@
 import Colors from '@/constants/Colors';
 import React, { useEffect, useRef } from 'react';
-import { Animated, StyleSheet } from 'react-native';
+import { Animated, Easing, StyleSheet } from 'react-native';
 
 interface SkeletonProps {
   width?: number | string;
@@ -9,26 +9,28 @@ interface SkeletonProps {
   style?: any;
 }
 
-export default function Skeleton({ 
+function Skeleton({ 
   width = '100%', 
   height = 20, 
   borderRadius = 8,
   style 
 }: SkeletonProps) {
-  const opacity = useRef(new Animated.Value(0.3)).current;
+  const opacity = useRef(new Animated.Value(0.4)).current;
 
   useEffect(() => {
     Animated.loop(
       Animated.sequence([
         Animated.timing(opacity, {
-          toValue: 1,
-          duration: 800,
+          toValue: 0.7,
+          duration: 1000,
           useNativeDriver: true,
+          easing: Easing.inOut(Easing.ease),
         }),
         Animated.timing(opacity, {
-          toValue: 0.3,
-          duration: 800,
+          toValue: 0.4,
+          duration: 1000,
           useNativeDriver: true,
+          easing: Easing.inOut(Easing.ease),
         }),
       ])
     ).start();
@@ -52,7 +54,9 @@ export default function Skeleton({
 
 const styles = StyleSheet.create({
   skeleton: {
-    backgroundColor: Colors.ui.border,
+    backgroundColor: Colors.ui.background,
   },
 });
+
+export default React.memo(Skeleton);
 

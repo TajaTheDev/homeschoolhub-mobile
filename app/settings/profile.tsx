@@ -73,6 +73,9 @@ export default function ProfileScreen() {
       if (error) throw error;
 
       Alert.alert('Success', 'Profile updated successfully!');
+      
+      // Force dashboard to reload by navigating back
+      router.back();
     } catch (error) {
       console.error('Error saving profile:', error);
       Alert.alert('Error', 'Failed to save profile. Please try again.');

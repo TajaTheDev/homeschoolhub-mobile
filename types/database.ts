@@ -23,6 +23,7 @@ export interface SchoolBreak {
   name: string;
   start_date: string; // Format: 'YYYY-MM-DD'
   end_date: string;   // Format: 'YYYY-MM-DD'
+  emoji?: string;
   created_at: string;
 }
 
@@ -35,8 +36,15 @@ export interface DayOfWeek {
 export interface LessonPhoto {
   id: string;
   lesson_id: string;
-  photo_path: string;
+  storage_path: string;
   caption: string | null;
+  created_at: string;
+}
+
+export interface LessonStudent {
+  id: string;
+  lesson_id: string;
+  student_id: string;
   created_at: string;
 }
 

@@ -12,7 +12,7 @@ interface EmptyStateProps {
   onAction?: () => void;
 }
 
-export default function EmptyState({
+function EmptyState({
   icon: Icon,
   title,
   description,
@@ -75,4 +75,6 @@ const styles = StyleSheet.create({
     color: 'white',
   },
 });
+
+export default React.memo(EmptyState);
 

@@ -31,54 +31,291 @@ export const useLessonStore = create<LessonState>((set, get) => ({
   fetchLessons: async (studentId?: string, date?: string) => {
     set({ loading: true });
     try {
-      let query = supabase.from('lessons').select('*');
-
-      if (studentId) {
-        query = query.eq('student_id', studentId);
-      }
-
-      if (date) {
-        query = query.eq('date', date);
-      }
-
-      const { data: lessonsData, error: lessonsError } = await query.order('date', { ascending: false });
-
-      if (lessonsError) {
-        console.error('Error fetching lessons:', lessonsError);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
         set({ loading: false });
         return;
       }
 
-      // TODO: Re-enable photo attachments in v2.0
-      // - Issue: Supabase Storage permission problems
-      // - Alternative: Use Cloudinary or other service
-      // - Database tables exist: lesson_photos
-      // - Storage bucket exists: student-avatars (or lesson-photos)
-      // const lessonIds = lessonsData?.map(l => l.id) || [];
-      // let photosData: any[] = [];
-      // 
-      // if (lessonIds.length > 0) {
-      //   const { data, error: photosError } = await supabase
-      //     .from('lesson_photos')
-      //     .select('*')
-      //     .in('lesson_id', lessonIds);
+      console.log('🔍 STEP 1: Fetching lessons - simple query...', { studentId, date });
 
-      //   if (photosError) {
-      //     console.error('Error fetching photos:', photosError);
-      //   } else {
-      //     photosData = data || [];
-      //   }
-      // }
+      // STEP 1: Simple query first (no relationships)
+      const { data, error } = await supabase
+        .from('lessons')
+        .select('*')
+        .order('date', { ascending: false })
+        .limit(500);
 
-      // Combine lessons with their photos
-      const lessonsWithPhotos = lessonsData?.map(lesson => ({
-        ...lesson,
-        // photos: photosData.filter(p => p.lesson_id === lesson.id) || [],
-      })) || [];
+      console.log('📦 STEP 1 Result:', { 
+        dataCount: data?.length || 0, 
+        error: error ? { code: error.code, message: error.message } : null,
+        firstLesson: data?.[0] ? {
+          id: data[0].id,
+          date: data[0].date,
+          title: data[0].title,
+          student_id: data[0].student_id,
+        } : null
+      });
 
-      set({ lessons: lessonsWithPhotos, loading: false });
+      if (error) {
+        console.error('❌ STEP 1 Failed:', error);
+        set({ lessons: [], loading: false });
+        return;
+      }
+
+      // If simple query works, proceed to STEP 2
+      console.log('✅ STEP 1 Success! Proceeding to STEP 2...');
+
+      // STEP 2: Try different syntaxes for lesson_students relationship
+      // Try 2a: Simple syntax
+      let dataWithJunction: any = null;
+      let errorJunction: any = null;
+
+      const step2a = await supabase
+        .from('lessons')
+        .select('*, lesson_students(*)')
+        .order('date', { ascending: false })
+        .limit(500);
+
+      if (step2a.error) {
+        console.log('⚠️ STEP 2a failed, trying STEP 2b with explicit foreign key...');
+        
+        // Try 2b: Explicit foreign key syntax
+        const step2b = await supabase
+          .from('lessons')
+          .select('*, lesson_students!lesson_students_lesson_id_fkey(*)')
+          .order('date', { ascending: false })
+          .limit(500);
+
+        if (step2b.error) {
+          console.log('⚠️ STEP 2b failed, trying STEP 2c with reverse relationship...');
+          
+          // Try 2c: Query from lesson_students side
+          const lessonIds = (data || []).map((l: any) => l.id);
+          if (lessonIds.length === 0) {
+            console.log('📦 No lessons to fetch junction data for');
+            set({ lessons: data || [], loading: false });
+            return;
+          }
+
+          const { data: junctionData, error: junctionError } = await supabase
+            .from('lesson_students')
+            .select('lesson_id, student_id')
+            .in('lesson_id', lessonIds);
+
+          if (junctionError) {
+            console.error('❌ STEP 2c (separate query) also failed:', junctionError);
+            
+            // Check if the error is due to missing table
+            if (junctionError.message?.includes('does not exist') || 
+                junctionError.message?.includes('relation') ||
+                junctionError.code === '42P01') {
+              console.error('❌❌❌ CRITICAL: lesson_students table does not exist!');
+              console.error('❌❌❌ Please run the migration in scripts/apply-lesson-students-migration.sql');
+              console.error('❌❌❌ See MIGRATION_INSTRUCTIONS.md for details');
+              console.error('❌❌❌ Using lessons without multi-student support for now...');
+            }
+            
+            // Use simple data without relationships
+            set({ lessons: data || [], loading: false });
+            return;
+          }
+
+          console.log('✅ STEP 2c Success (separate query)! Junction data:', junctionData?.length || 0);
+          dataWithJunction = data;
+          errorJunction = null;
+          
+          // Store junction data for later processing
+          (dataWithJunction as any).__junctionData = junctionData;
+        } else {
+          console.log('✅ STEP 2b Success (explicit foreign key)!');
+          dataWithJunction = step2b.data;
+          errorJunction = null;
+        }
+      } else {
+        console.log('✅ STEP 2a Success (simple syntax)!');
+        dataWithJunction = step2a.data;
+        errorJunction = null;
+      }
+
+      console.log('📦 STEP 2 Final Result:', { 
+        dataCount: dataWithJunction?.length || 0, 
+        error: errorJunction ? { code: errorJunction.code, message: errorJunction.message } : null,
+        hasJunctionData: !!(dataWithJunction as any)?.[0]?.lesson_students || !!(dataWithJunction as any)?.__junctionData,
+      });
+
+      if (errorJunction || !dataWithJunction) {
+        console.error('❌ STEP 2 Failed completely');
+        // Fall back to simple data without relationships
+        set({ lessons: data || [], loading: false });
+        return;
+      }
+
+      // STEP 3: Fetch students separately and join (since nested queries aren't working)
+      console.log('✅ STEP 2 Success! Proceeding to STEP 3 - fetching students separately...');
+
+      // Collect all student IDs from lessons and junction data
+      const studentIds = new Set<string>();
+      const junctionDataFromStep2 = (dataWithJunction as any).__junctionData;
+      
+      (dataWithJunction || []).forEach((l: any) => {
+        if (l.student_id) studentIds.add(l.student_id);
+        
+        // Check if junction data is embedded or separate
+        if (l.lesson_students && Array.isArray(l.lesson_students)) {
+          l.lesson_students.forEach((ls: any) => {
+            if (ls.student_id) studentIds.add(ls.student_id);
+          });
+        }
+      });
+
+      // Also check separate junction data if we fetched it that way
+      if (junctionDataFromStep2) {
+        junctionDataFromStep2.forEach((js: any) => {
+          if (js.student_id) studentIds.add(js.student_id);
+        });
+      }
+
+      console.log('📦 Found', studentIds.size, 'unique student IDs');
+
+      // Fetch all students
+      const { data: studentsData, error: studentsError } = await supabase
+        .from('students')
+        .select('id, name, color_theme, grade, avatar_type, avatar_value')
+        .in('id', Array.from(studentIds))
+        .eq('user_id', user.id);
+
+      console.log('📦 STEP 3 Result (students fetch):', {
+        studentsCount: studentsData?.length || 0,
+        error: studentsError ? { code: studentsError.code, message: studentsError.message } : null,
+      });
+
+      if (studentsError) {
+        console.error('❌ STEP 3 Failed to fetch students:', studentsError);
+      }
+
+      // STEP 4: Fetch photos separately and join
+      console.log('✅ STEP 3 Complete! Proceeding to STEP 4 - fetching photos separately...');
+
+      const lessonIds = (dataWithJunction || []).map((l: any) => l.id);
+      let photosData: any[] = [];
+
+      if (lessonIds.length > 0) {
+        const { data: photos, error: photosError } = await supabase
+          .from('lesson_photos')
+          .select('id, lesson_id, storage_path, caption, created_at')
+          .in('lesson_id', lessonIds)
+          .order('created_at', { ascending: true });
+
+        console.log('📦 STEP 4 Result (photos fetch):', {
+          photosCount: photos?.length || 0,
+          error: photosError ? { code: photosError.code, message: photosError.message } : null,
+        });
+
+        if (photosError) {
+          console.error('❌ STEP 4 Failed to fetch photos:', photosError);
+          // Check if it's a table/column not found error
+          if (photosError.code === '42P01' || photosError.code === 'PGRST116') {
+            console.warn('⚠️ lesson_photos table may not exist. Please run migration 005_create_lesson_photos.sql');
+          } else if (photosError.code === '42703' || photosError.message?.includes('does not exist')) {
+            console.warn('⚠️ lesson_photos table exists but storage_path column is missing. Please run migration 007_add_storage_path_to_lesson_photos.sql');
+          }
+          // Continue without photos if fetch fails
+          photosData = [];
+        } else {
+          photosData = photos || [];
+        }
+      }
+
+      // Create photos map by lesson_id
+      const photosMap = new Map<string, any[]>();
+      photosData.forEach((photo: any) => {
+        if (!photosMap.has(photo.lesson_id)) {
+          photosMap.set(photo.lesson_id, []);
+        }
+        photosMap.get(photo.lesson_id)?.push(photo);
+      });
+
+      // Create students map
+      const studentsMap = new Map(
+        (studentsData || []).map((s: any) => [s.id, s])
+      );
+
+      // Create junction map if we have separate junction data
+      const lessonStudentsMap = new Map<string, string[]>();
+      if (junctionDataFromStep2) {
+        junctionDataFromStep2.forEach((js: any) => {
+          if (!lessonStudentsMap.has(js.lesson_id)) {
+            lessonStudentsMap.set(js.lesson_id, []);
+          }
+          lessonStudentsMap.get(js.lesson_id)?.push(js.student_id);
+        });
+      }
+
+      // Combine lessons with students
+      console.log('✅ Combining lessons with students...');
+
+      const lessonsWithStudents = (dataWithJunction || []).map((lesson: any) => {
+        let junctionStudentIds: string[] = [];
+
+        // Check if junction data is embedded
+        if (lesson.lesson_students && Array.isArray(lesson.lesson_students)) {
+          junctionStudentIds = lesson.lesson_students.map((ls: any) => ls.student_id).filter(Boolean);
+        }
+        // Or if we have separate junction data
+        else if (lessonStudentsMap.has(lesson.id)) {
+          junctionStudentIds = lessonStudentsMap.get(lesson.id) || [];
+        }
+
+        // Get student objects from junction
+        const junctionStudents = junctionStudentIds
+          .map((sid: string) => studentsMap.get(sid))
+          .filter(Boolean);
+
+        // Fallback to primary student_id if no junction students
+        const students = junctionStudents.length > 0
+          ? junctionStudents
+          : lesson.student_id && studentsMap.has(lesson.student_id)
+          ? [studentsMap.get(lesson.student_id)]
+          : [];
+
+        // Get photos for this lesson
+        const lessonPhotos = photosMap.get(lesson.id) || [];
+
+        return {
+          ...lesson,
+          students,
+          photos: lessonPhotos.length > 0 ? lessonPhotos : undefined,
+          // Remove temporary junction data property
+          __junctionData: undefined,
+        };
+      });
+
+      console.log('✅ Processed lessons with students and photos:', lessonsWithStudents.length);
+
+      // Apply date filtering if needed
+      let filteredLessons = lessonsWithStudents;
+      if (date) {
+        filteredLessons = filteredLessons.filter((l: any) => l.date === date);
+      } else {
+        const threeMonthsAgo = new Date();
+        threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+        const dateThreshold = threeMonthsAgo.toISOString().split('T')[0];
+        filteredLessons = filteredLessons.filter((l: any) => l.date >= dateThreshold);
+      }
+
+      // Apply student filtering if needed
+      if (studentId) {
+        filteredLessons = filteredLessons.filter((l: any) =>
+          l.student_id === studentId ||
+          l.students?.some((s: any) => s.id === studentId)
+        );
+      }
+
+      console.log('✅ Final processed lessons:', filteredLessons.length);
+      set({ lessons: filteredLessons, loading: false });
     } catch (error) {
-      console.error('Error fetching lessons:', error);
+      console.error('❌ Error fetching lessons:', error);
       set({ loading: false });
     }
   },

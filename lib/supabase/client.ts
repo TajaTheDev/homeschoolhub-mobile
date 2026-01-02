@@ -1,46 +1,67 @@
-/**
- * Supabase client configuration for React Native
- * Uses expo-secure-store for secure token storage
- */
-
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { SupabaseClientOptions } from '@supabase/supabase-js';
 import { createClient } from '@supabase/supabase-js';
-import * as SecureStore from 'expo-secure-store';
+import Constants from 'expo-constants';
 
-// SecureStore adapter for Supabase auth storage
-const SecureStoreAdapter = {
-  getItem: (key: string): Promise<string | null> => {
-    return SecureStore.getItemAsync(key);
+// AsyncStorage adapter for Supabase auth storage
+// SIMPLER and more reliable than SecureStore
+const AsyncStorageAdapter = {
+  getItem: async (key: string): Promise<string | null> => {
+    try {
+      return await AsyncStorage.getItem(key);
+    } catch (error: any) {
+      console.error('AsyncStorage getItem error:', error);
+      if (error.message?.includes('quota')) {
+        console.error('Storage quota exceeded!');
+      }
+      return null;
+    }
   },
-  setItem: (key: string, value: string): Promise<void> => {
-    return SecureStore.setItemAsync(key, value);
+  setItem: async (key: string, value: string): Promise<void> => {
+    try {
+      await AsyncStorage.setItem(key, value);
+    } catch (error: any) {
+      console.error('AsyncStorage setItem error:', error);
+      if (error.message?.includes('quota')) {
+        console.error('Storage quota exceeded - clearing old data');
+        try {
+          await AsyncStorage.clear();
+          await AsyncStorage.setItem(key, value);
+        } catch (clearError) {
+          console.error('Failed to clear and retry:', clearError);
+        }
+      }
+    }
   },
-  removeItem: (key: string): Promise<void> => {
-    return SecureStore.deleteItemAsync(key);
+  removeItem: async (key: string): Promise<void> => {
+    try {
+      await AsyncStorage.removeItem(key);
+    } catch (error) {
+      console.error('AsyncStorage removeItem error:', error);
+    }
   },
 };
 
-// Get environment variables
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+// Read from environment variables (EAS secrets)
+const supabaseUrl = Constants.expoConfig?.extra?.EXPO_PUBLIC_SUPABASE_URL || 
+                    process.env.EXPO_PUBLIC_SUPABASE_URL;
 
-// Validate environment variables
-if (!supabaseUrl) {
-  throw new Error(
-    'Missing EXPO_PUBLIC_SUPABASE_URL environment variable. Please add it to your .env file.'
-  );
-}
+const supabaseAnonKey = Constants.expoConfig?.extra?.EXPO_PUBLIC_SUPABASE_ANON_KEY || 
+                        process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
-if (!supabaseAnonKey) {
-  throw new Error(
-    'Missing EXPO_PUBLIC_SUPABASE_ANON_KEY environment variable. Please add it to your .env file.'
-  );
+// Validate credentials exist
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.error('❌ Supabase credentials missing!');
+  console.error('URL:', supabaseUrl ? 'Found' : 'Missing');
+  console.error('Key:', supabaseAnonKey ? 'Found' : 'Missing');
+} else {
+  console.log('✅ Supabase credentials loaded');
 }
 
 // Create Supabase client options
 const supabaseOptions: SupabaseClientOptions<'public'> = {
   auth: {
-    storage: SecureStoreAdapter,
+    storage: AsyncStorageAdapter,  // ← Using AsyncStorage instead!
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,
@@ -48,5 +69,10 @@ const supabaseOptions: SupabaseClientOptions<'public'> = {
 };
 
 // Create and export Supabase client
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, supabaseOptions);
+export const supabase = createClient(
+  supabaseUrl || '', 
+  supabaseAnonKey || '',
+  supabaseOptions
+);
 
+console.log('✅ Supabase client created');

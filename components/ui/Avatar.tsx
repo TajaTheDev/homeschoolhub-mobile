@@ -1,7 +1,8 @@
 import { AVATAR_ILLUSTRATIONS } from '@/constants/Avatars';
 import { supabase } from '@/lib/supabase';
-import React, { useState } from 'react';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { Image } from 'expo-image';
+import React, { useMemo, useState } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
 
 interface AvatarProps {
   type: 'initial' | 'photo' | 'illustration';
@@ -11,31 +12,34 @@ interface AvatarProps {
   size?: number;
 }
 
-const getPhotoUrl = (path: string) => {
-  if (!path) return '';
-  
-  // Use student-avatars bucket (which works)
-  const { data } = supabase.storage
-    .from('student-avatars')
-    .getPublicUrl(path);
-  
-  console.log('Avatar path:', path);
-  console.log('Avatar URL:', data.publicUrl);
-  
-  return data.publicUrl;
-};
-
-export default function Avatar({ type, value, name, color, size = 40 }: AvatarProps) {
+function Avatar({ type, value, name, color, size = 40 }: AvatarProps) {
   const [imageError, setImageError] = useState(false);
 
-  const getInitials = () => {
+  // Memoize the URL so it's only calculated once
+  const photoUrl = useMemo(() => {
+    if (type !== 'photo' || !value) return '';
+    
+    const { data } = supabase.storage
+      .from('student-avatars')
+      .getPublicUrl(value);
+    
+    console.log('Avatar path:', value);
+    console.log('Avatar URL:', data.publicUrl);
+    
+    return data.publicUrl;
+  }, [type, value]);
+
+  // Memoize initials calculation
+  const initials = useMemo(() => {
     return name
       .split(' ')
       .map(n => n[0])
       .join('')
       .toUpperCase()
       .slice(0, 2);
-  };
+  }, [name]);
+
+  const getInitials = () => initials;
 
   const renderInitialAvatar = () => (
     <View style={[styles.container, styles.initial, { width: size, height: size, borderRadius: size / 2, backgroundColor: color }]}>
@@ -48,11 +52,14 @@ export default function Avatar({ type, value, name, color, size = 40 }: AvatarPr
     return (
       <View style={[styles.container, { width: size, height: size }]}>
         <Image
-          source={{ uri: getPhotoUrl(value) }}
+          source={{ uri: photoUrl }}
           style={[styles.photo, { width: size, height: size, borderRadius: size / 2 }]}
+          contentFit="cover"
+          transition={200}
+          cachePolicy="memory-disk"
           onError={(e) => {
-            console.error('Avatar image load error:', e.nativeEvent.error);
-            console.error('Attempted URL:', getPhotoUrl(value));
+            console.error('Avatar image load error:', e);
+            console.error('Attempted URL:', photoUrl);
             console.log('🔄 Falling back to initials for:', name);
             setImageError(true);
           }}
@@ -86,7 +93,6 @@ export default function Avatar({ type, value, name, color, size = 40 }: AvatarPr
 
   // Default: Initial
   return renderInitialAvatar();
-
 }
 
 const styles = StyleSheet.create({
@@ -112,4 +118,6 @@ const styles = StyleSheet.create({
     color: 'white',
   },
 });
+
+export default React.memo(Avatar);
 

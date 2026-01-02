@@ -41,7 +41,7 @@ export default function OnboardingStep2() {
   useEffect(() => {
     if (students.length === 0) {
       // If no students, redirect back to step 1
-      router.replace('/onboarding/step1');
+      router.replace('/onboarding/step1'); // Keep as-is, this is internal onboarding flow
     }
   }, [students, router]);
 
@@ -133,7 +133,7 @@ export default function OnboardingStep2() {
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
       <TouchableOpacity
         style={styles.backButton}
-        onPress={() => router.push('/onboarding/step1')}
+        onPress={() => router.push('/onboarding/step1')} // Keep as-is, this is internal onboarding flow
         activeOpacity={0.7}
       >
         <Text style={styles.backButtonText}>← Back</Text>

@@ -4,14 +4,14 @@ import { Student } from '@/types';
 import { Plus, X } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
 import {
-  Alert,
-  Modal,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    Alert,
+    Modal,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 
 interface EditSubjectsModalProps {
@@ -45,20 +45,30 @@ export default function EditSubjectsModal({
 
   useEffect(() => {
     if (visible && student) {
-      console.log('Loading subjects for:', student.name);
+      console.log('🔄 MODAL: Loading subjects for:', student.name, student.id);
       loadSubjects();
     }
-  }, [visible, student]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, student?.id]);
 
   const loadSubjects = async () => {
-    if (!student) return;
+    if (!student) {
+      console.log('❌ MODAL: No student in loadSubjects');
+      return;
+    }
     
+    console.log('📥 MODAL: Fetching subjects from store for student:', student.id);
     await studentStore.fetchSubjects(student.id);
-    const studentSubjects = studentStore.subjects
+    
+    const allSubjects = studentStore.subjects;
+    console.log('📦 MODAL: Total subjects in store:', allSubjects.length);
+    
+    const studentSubjects = allSubjects
       .filter(s => s.student_id === student.id)
       .map(s => s.subject);
     
-    console.log('Loaded subjects:', studentSubjects);
+    console.log('✅ MODAL: Loaded subjects for student:', studentSubjects);
+    console.log('📋 MODAL: Setting selectedSubjects state to:', studentSubjects);
     setSelectedSubjects(studentSubjects);
   };
 
@@ -85,7 +95,14 @@ export default function EditSubjectsModal({
   };
 
   const handleSave = async () => {
-    if (!student) return;
+    if (!student) {
+      console.log('❌ SAVE: No student provided');
+      return;
+    }
+    
+    console.log('🔍 SAVE: Starting save...');
+    console.log('📋 SAVE: Student ID:', student.id);
+    console.log('✅ SAVE: Selected subjects:', selectedSubjects);
     
     if (selectedSubjects.length === 0) {
       Alert.alert('No Subjects', 'Please select at least one subject');
@@ -94,25 +111,53 @@ export default function EditSubjectsModal({
 
     setLoading(true);
 
-    // Delete existing subjects
-    const existingSubjects = studentStore.subjects.filter(
-      s => s.student_id === student.id
-    );
-    for (const subject of existingSubjects) {
-      await studentStore.deleteSubject(subject.id);
-    }
+    try {
+      // Delete existing subjects
+      const existingSubjects = studentStore.subjects.filter(
+        s => s.student_id === student.id
+      );
+      
+      console.log('🗑️ SAVE: Deleting', existingSubjects.length, 'existing subjects');
+      
+      for (const subject of existingSubjects) {
+        const result = await studentStore.deleteSubject(subject.id);
+        if (!result.success) {
+          console.error('❌ SAVE: Failed to delete subject', subject.id, result.error);
+          throw new Error(`Failed to delete subject: ${result.error}`);
+        }
+      }
 
-    // Add new subjects
-    for (const subject of selectedSubjects) {
-      await studentStore.addSubject({
-        student_id: student.id,
-        subject: subject,
-      });
-    }
+      console.log('✅ SAVE: All existing subjects deleted');
 
-    setLoading(false);
-    Alert.alert('Success', 'Subjects updated!');
-    onSave();
+      // Add new subjects
+      console.log('➕ SAVE: Adding', selectedSubjects.length, 'new subjects');
+      
+      for (const subject of selectedSubjects) {
+        const result = await studentStore.addSubject({
+          student_id: student.id,
+          subject: subject,
+        });
+        
+        if (!result.success) {
+          console.error('❌ SAVE: Failed to add subject', subject, result.error);
+          throw new Error(`Failed to add subject ${subject}: ${result.error}`);
+        }
+      }
+
+      console.log('✅ SAVE: All subjects added successfully');
+      console.log('✅ SAVE: Save complete!');
+
+      setLoading(false);
+      Alert.alert('Success', 'Subjects updated!');
+      onSave();
+    } catch (error) {
+      console.error('❌ SAVE: Error during save:', error);
+      setLoading(false);
+      Alert.alert(
+        'Error',
+        error instanceof Error ? error.message : 'Failed to save subjects. Please try again.'
+      );
+    }
   };
 
   if (!visible || !student) {
@@ -136,7 +181,10 @@ export default function EditSubjectsModal({
               <Text style={styles.title}>Edit Subjects</Text>
               <Text style={styles.subtitle}>{student.name}</Text>
             </View>
-            <TouchableOpacity onPress={onClose}>
+            <TouchableOpacity 
+              onPress={onClose}
+              activeOpacity={0.7}
+            >
               <X size={24} color={Colors.ui.text} />
             </TouchableOpacity>
           </View>
@@ -158,6 +206,7 @@ export default function EditSubjectsModal({
                       },
                     ]}
                     onPress={() => toggleSubject(subject.name)}
+                    activeOpacity={0.7}
                   >
                     <Text style={styles.emoji}>{subject.emoji}</Text>
                     <Text style={[
@@ -184,6 +233,7 @@ export default function EditSubjectsModal({
               <TouchableOpacity
                 style={styles.addButton}
                 onPress={addCustomSubject}
+                activeOpacity={0.7}
               >
                 <Plus size={20} color="white" />
               </TouchableOpacity>
@@ -201,6 +251,7 @@ export default function EditSubjectsModal({
                       key={subject}
                       style={[styles.pill, styles.customPill]}
                       onPress={() => toggleSubject(subject)}
+                      activeOpacity={0.7}
                     >
                       <Text style={styles.pillTextSelected}>{subject}</Text>
                     </TouchableOpacity>
@@ -213,6 +264,7 @@ export default function EditSubjectsModal({
               style={styles.saveButton}
               onPress={handleSave}
               disabled={loading}
+              activeOpacity={0.7}
             >
               <Text style={styles.saveButtonText}>
                 {loading 
