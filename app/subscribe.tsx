@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { RevenueCatUI, PAYWALL_RESULT } from 'react-native-purchases-ui';
 import ConfettiCannon from 'react-native-confetti-cannon';
@@ -43,6 +43,17 @@ export default function SubscribeScreen() {
 
   const presentPaywall = async () => {
     try {
+      // Check if RevenueCatUI is available
+      if (!RevenueCatUI || typeof RevenueCatUI.presentPaywall !== 'function') {
+        console.error('❌ RevenueCatUI not available');
+        Alert.alert(
+          'Feature Unavailable',
+          'Subscription feature is not available on emulators. Please test on a physical device.',
+          [{ text: 'OK', onPress: () => setLoading(false) }]
+        );
+        return;
+      }
+
       console.log('📱 Showing subscription paywall...');
       const result = await RevenueCatUI.presentPaywall();
       
@@ -69,6 +80,11 @@ export default function SubscribeScreen() {
       }
     } catch (error) {
       console.error('Paywall error:', error);
+      Alert.alert(
+        'Cannot Show Paywall',
+        'Subscriptions are not available on emulators. Test on a real device for full functionality.',
+        [{ text: 'Skip for now', onPress: () => router.replace('/(tabs)') }]
+      );
       setLoading(false);
     }
   };

@@ -291,13 +291,22 @@ export default function AddLessonScreen() {
     try {
       setLoading(true);
 
-      // Base lesson object
+      // Get user ID first
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        Alert.alert('Error', 'Please log in');
+        setLoading(false);
+        return;
+      }
+
+      // Base lesson object with user_id
       const baseLesson = {
         student_id: selectedStudents[0], // Primary student (for backward compatibility)
         subject: subject.trim(),
         title: finalTitle,
         notes: notes.trim() || null,
         completed: completed,
+        user_id: user.id,  // ← ADD THIS!
       };
 
       if (isRecurring) {
@@ -356,15 +365,34 @@ export default function AddLessonScreen() {
               text: 'Create',
               onPress: async () => {
                 try {
+                  // user_id is already in baseLesson, so recurringLessons already have it
+                  // No need to check user again - already checked at start of handleSave
+                  console.log('✅ Recurring lessons already include user_id from baseLesson');
+                  console.log('📝 Sample lesson data:', recurringLessons[0]);
+                  console.log(`📚 Total lessons to insert: ${recurringLessons.length}`);
+
+                  // Use recurringLessons directly (user_id already included in baseLesson)
+                  const recurringLessonsWithUserId = recurringLessons;
+
+                  // VERIFY: Check that user_id is present in all lessons
+                  const missingUserId = recurringLessonsWithUserId.some(lesson => !lesson.user_id);
+                  if (missingUserId) {
+                    console.error('❌ CRITICAL: Some recurring lessons are missing user_id!');
+                    Alert.alert('Error', 'Internal error: Missing user ID in lessons');
+                    setLoading(false);
+                    return;
+                  }
+                  console.log('✅ Verified: All recurring lessons have user_id');
+
                   // Insert all lessons at once
                   const { data: insertedLessons, error } = await supabase
         .from('lessons')
-                    .insert(recurringLessons)
+                    .insert(recurringLessonsWithUserId)
                     .select();
 
                   if (error) {
-                    console.error('Error creating recurring lessons:', error);
-                    Alert.alert('Error', 'Failed to create recurring lessons');
+                    console.error('❌ Error creating recurring lessons:', error);
+                    Alert.alert('Error', `Failed to create lessons: ${error.message}`);
                     setLoading(false);
                     return;
                   }
@@ -425,11 +453,29 @@ export default function AddLessonScreen() {
       } else {
         // SINGLE LESSON PATH
         
+        // Get user ID
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          Alert.alert('Error', 'Please log in');
+          setLoading(false);
+          return;
+        }
+
         const singleLesson = {
           ...baseLesson,
           date: format(selectedDate, 'yyyy-MM-dd'),
           is_recurring: false,
+          user_id: user.id, // Add user_id (also in baseLesson, but explicit for clarity)
         };
+
+        // VERIFY: Check that user_id is present
+        if (!singleLesson.user_id) {
+          console.error('❌ CRITICAL: Single lesson is missing user_id!');
+          Alert.alert('Error', 'Internal error: Missing user ID in lesson');
+          setLoading(false);
+          return;
+        }
+        console.log('✅ Verified: Single lesson has user_id:', singleLesson.user_id);
 
         const { data: lesson, error } = await supabase
           .from('lessons')

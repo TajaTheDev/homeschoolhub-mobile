@@ -21,7 +21,7 @@ import { getGradeDisplay } from '@/utils/gradeHelpers';
 // import { LessonPhoto } from '@/types/database';
 import PhotoGalleryModal from '@/components/lessons/PhotoGalleryModal';
 import { useFocusEffect } from '@react-navigation/native';
-import { addDays, format, subDays } from 'date-fns';
+import { addDays, format, isSameDay, subDays } from 'date-fns';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -179,28 +179,99 @@ export default function Dashboard() {
   const [galleryStartIndex, setGalleryStartIndex] = useState(0);
   const [showAttendanceModal, setShowAttendanceModal] = useState(false);
   const { hasAttendanceForDate } = useAttendanceStore();
+  const [hasError, setHasError] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string>('');
+
+  // ⚠️ TEMPORARILY DISABLED FOR DEVELOPMENT TESTING
+  // TODO: Re-enable this before production!
+  // useEffect(() => {
+  //   // Wait for subscription check to complete
+  //   if (!isLoading) {
+  //     if (!hasSubscription) {
+  //       // No active subscription, redirect to subscribe screen
+  //       router.replace('/subscribe' as any);
+  //     }
+  //   }
+  // }, [hasSubscription, isLoading, router]);
 
   useEffect(() => {
-    // Wait for subscription check to complete
-    if (!isLoading) {
-      if (!hasSubscription) {
-        // No active subscription, redirect to subscribe screen
-        router.replace('/subscribe' as any);
+    const loadDashboardData = async () => {
+      try {
+        console.log('📊 Loading dashboard data...');
+        
+        // Wrap each fetch in try-catch for detailed error logging
+        try {
+          console.log('📚 Fetching lessons...');
+          await fetchLessons();
+          console.log('✅ Lessons fetched successfully');
+        } catch (err: any) {
+          console.error('❌ Error fetching lessons:', {
+            error: err,
+            message: err?.message,
+            code: err?.code,
+            details: err?.details,
+            hint: err?.hint,
+            stack: err?.stack
+          });
+          // Set error state if lessons fail (critical)
+          if (err?.code === '42703' || err?.message?.includes('column') || err?.message?.includes('does not exist')) {
+            setHasError(true);
+            setErrorMessage(err?.hint || err?.message || 'Database column error. Check console for details.');
+          }
+        }
+        
+        try {
+          console.log('👥 Fetching students...');
+          await fetchStudents();
+          console.log('✅ Students fetched successfully');
+        } catch (err: any) {
+          console.error('❌ Error fetching students:', {
+            error: err,
+            message: err?.message,
+            code: err?.code,
+            details: err?.details,
+            hint: err?.hint,
+            stack: err?.stack
+          });
+          // Set error state if students fail (critical)
+          if (err?.code === '42703' || err?.message?.includes('column') || err?.message?.includes('does not exist')) {
+            setHasError(true);
+            setErrorMessage(err?.hint || err?.message || 'Database column error. Check console for details.');
+          }
+        }
+        
+        try {
+          console.log('👤 Loading parent data...');
+          await loadParentData();
+          console.log('✅ Parent data loaded successfully');
+        } catch (err: any) {
+          console.error('❌ Error loading parent data:', {
+            error: err,
+            message: err?.message,
+            code: err?.code,
+            details: err?.details,
+            hint: err?.hint,
+            stack: err?.stack
+          });
+          // Parent data is not critical, so don't set error state
+        }
+        
+        console.log('✅ Dashboard data loading complete');
+      } catch (error: any) {
+        console.error('❌ Dashboard load error:', {
+          error,
+          message: error?.message,
+          code: error?.code,
+          details: error?.details,
+          hint: error?.hint,
+          stack: error?.stack
+        });
+        setHasError(true);
+        setErrorMessage(error?.message || 'Failed to load dashboard data. Check console for details.');
       }
-    }
-  }, [hasSubscription, isLoading, router]);
-
-  useEffect(() => {
-    const loadData = async () => {
-      // Show skeletons immediately, no loading state check
-      await Promise.all([
-        fetchStudents(),
-        fetchLessons(),
-        loadParentData(),
-      ]);
     };
     
-    loadData();
+    loadDashboardData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -371,8 +442,17 @@ export default function Dashboard() {
     };
   }, [lessons]);
 
-  // Filter lessons for selected date
+  // Filter lessons for selected date - optimized with useMemo
   const selectedDateStr = format(selectedDate, 'yyyy-MM-dd');
+  const today = new Date();
+  const todayStr = format(today, 'yyyy-MM-dd');
+  
+  // Memoized today's lessons for better performance
+  const todayLessons = useMemo(() => 
+    lessons.filter(l => l.date === todayStr),
+    [lessons, todayStr]
+  );
+  
   const selectedDateLessons = useMemo(() => {
     const filtered = lessons.filter(l => l.date === selectedDateStr);
     
@@ -532,8 +612,52 @@ export default function Dashboard() {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={Colors.brand[500]} />
-        <Text style={styles.loadingText}>Checking subscription...</Text>
+        <Text style={styles.loadingText}>Loading...</Text>
       </View>
+    );
+  }
+
+  // ⚠️ REMOVE THIS COMMENT BEFORE PRODUCTION
+  // Subscription check is temporarily disabled for development testing
+
+  if (hasError) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorTitle}>Unable to load dashboard data</Text>
+          <Text style={styles.errorMessage}>
+            {errorMessage || 'There\'s a database configuration issue. Check the console for details.'}
+          </Text>
+          <Text style={styles.errorHint}>
+            Common issues:{'\n'}
+            • Column name mismatch in database{'\n'}
+            • Missing table or migration{'\n'}
+            • Network connectivity issues
+          </Text>
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={async () => {
+              setHasError(false);
+              setErrorMessage('');
+              // Retry loading data
+              try {
+                console.log('🔄 Retrying dashboard data load...');
+                await fetchLessons();
+                await fetchStudents();
+                await loadParentData();
+                console.log('✅ Retry successful');
+              } catch (error: any) {
+                console.error('❌ Retry failed:', error);
+                setHasError(true);
+                setErrorMessage(error?.message || 'Retry failed. Check console for details.');
+              }
+            }}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
     );
   }
 
@@ -544,8 +668,8 @@ export default function Dashboard() {
           <View style={styles.confettiContainer}>
             <ConfettiCannon
               ref={confettiRef}
-              count={40}
-              origin={{ x: SCREEN_WIDTH / 2, y: 0 }}
+              count={100}
+              origin={{ x: -10, y: 0 }}
               autoStart={false}
               fadeOut={true}
               explosionSpeed={350}
@@ -1627,5 +1751,50 @@ const styles = StyleSheet.create({
   addLessonDescription: {
     ...Typography.bodySmall,
     color: 'rgba(255, 255, 255, 0.9)',
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+    backgroundColor: Colors.ui.background,
+  },
+  errorTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: Colors.ui.text,
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  errorMessage: {
+    fontSize: 16,
+    color: Colors.ui.textLight,
+    marginBottom: 20,
+    textAlign: 'center',
+    lineHeight: 24,
+  },
+  errorHint: {
+    fontSize: 14,
+    color: Colors.ui.textLight,
+    marginBottom: 30,
+    textAlign: 'left',
+    lineHeight: 20,
+    backgroundColor: Colors.background.card,
+    padding: 16,
+    borderRadius: 12,
+    width: '100%',
+  },
+  retryButton: {
+    backgroundColor: Colors.brand[500],
+    paddingVertical: 15,
+    paddingHorizontal: 30,
+    borderRadius: 10,
+    minWidth: 120,
+  },
+  retryButtonText: {
+    color: 'white',
+    textAlign: 'center',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

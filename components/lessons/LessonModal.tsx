@@ -10,7 +10,7 @@ import { LessonPhoto } from '@/types/database';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { format } from 'date-fns';
 import { Calendar, Trash2, X } from 'lucide-react-native';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Dimensions,
@@ -61,7 +61,7 @@ export default function LessonModal({ visible, lesson, onClose, onSave }: Lesson
   const [completed, setCompleted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
-  const [confettiKey, setConfettiKey] = useState(0);
+  const confettiRef = useRef<any>(null);
   const [photos, setPhotos] = useState<LessonPhoto[]>([]);
   const [showPhotoGallery, setShowPhotoGallery] = useState(false);
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
@@ -319,7 +319,11 @@ export default function LessonModal({ visible, lesson, onClose, onSave }: Lesson
       // If marking as complete (was false, now true), show confetti
       if (!wasCompleted && newCompleted) {
         setShowConfetti(true);
-        setConfettiKey(prev => prev + 1); // Force new confetti instance
+        
+        // Trigger confetti with slight delay to ensure component is mounted
+        setTimeout(() => {
+          confettiRef.current?.start();
+        }, 100);
         
         // Hide confetti after animation
         setTimeout(() => {
@@ -442,12 +446,13 @@ export default function LessonModal({ visible, lesson, onClose, onSave }: Lesson
     >
       {showConfetti && (
         <ConfettiCannon
-          key={confettiKey}
-          count={30}
-          origin={{ x: SCREEN_WIDTH / 2, y: 100 }}
-          autoStart={true}
+          ref={confettiRef}
+          count={100}
+          origin={{ x: -10, y: 0 }}
+          autoStart={false}
           fadeOut={true}
-          fallSpeed={2500}
+          fallSpeed={2000}
+          colors={['#7C3AED', '#F97316', '#10B981', '#F59E0B', '#EC4899', '#3B82F6']}
         />
       )}
       <KeyboardAvoidingView

@@ -255,7 +255,13 @@ export default function RootLayout() {
               } catch (checkError) {
                 console.error('Error checking user:', checkError);
               }
-              router.replace('/(tabs)');
+              // Check onboarding status even in offline mode
+              const hasCompletedOnboarding = await AsyncStorage.getItem('hasCompletedOnboarding');
+              if (hasCompletedOnboarding === 'true') {
+                router.replace('/(tabs)');
+              } else {
+                router.replace('/onboarding');
+              }
               return;
             } else {
               throw userError;
@@ -288,11 +294,28 @@ export default function RootLayout() {
             } catch (checkError) {
               console.error('Error checking user:', checkError);
             }
-            router.replace('/(tabs)');
+            
+            // Check if user has completed interactive onboarding
+            const hasCompletedOnboarding = await AsyncStorage.getItem('hasCompletedOnboarding');
+            if (hasCompletedOnboarding === 'true') {
+              console.log('✅ User has completed onboarding, going to main app');
+              router.replace('/(tabs)');
+            } else {
+              console.log('📝 User needs to complete interactive onboarding');
+              router.replace('/onboarding');
+            }
           }
         } else {
-          console.log('📝 No session, showing onboarding');
-          router.replace('/(auth)/onboarding');
+          console.log('📝 No session, checking onboarding status');
+          // Check if user has seen Canva welcome
+          const hasSeenOnboarding = await AsyncStorage.getItem('hasSeenOnboarding');
+          if (hasSeenOnboarding === 'true') {
+            console.log('✅ User has seen welcome, going to signup');
+            router.replace('/(auth)/signup');
+          } else {
+            console.log('📝 New user, showing Canva welcome');
+            router.replace('/(auth)/onboarding');
+          }
         }
       } catch (error) {
         console.error('🚨 Auth error:', error);

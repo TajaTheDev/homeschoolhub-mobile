@@ -37,6 +37,8 @@ const COLORS: { name: StudentColor; color: string }[] = [
 ];
 
 export default function StudentModal({ visible, student, onClose, onSave }: StudentModalProps) {
+  console.log('🎨 StudentModal render - visible:', visible, 'student:', student ? student.name : 'null');
+  
   const [name, setName] = useState('');
   const [grade, setGrade] = useState<GradeLevel>('1st');
   const [colorTheme, setColorTheme] = useState<StudentColor>('purple');
@@ -49,7 +51,9 @@ export default function StudentModal({ visible, student, onClose, onSave }: Stud
   const slideAnim = useRef(new Animated.Value(300)).current;
 
   useEffect(() => {
+    console.log('🎨 StudentModal useEffect [visible] - visible:', visible);
     if (visible) {
+      console.log('🎨 Starting slide animation');
       Animated.spring(slideAnim, {
         toValue: 0,
         friction: 8,
@@ -57,6 +61,7 @@ export default function StudentModal({ visible, student, onClose, onSave }: Stud
         useNativeDriver: true,
       }).start();
     } else {
+      console.log('🎨 Resetting slide animation');
       slideAnim.setValue(300);
     }
   }, [visible]);
@@ -68,10 +73,23 @@ export default function StudentModal({ visible, student, onClose, onSave }: Stud
       setColorTheme(student.color_theme as StudentColor);
       setAvatarType(student.avatar_type || 'initial');
       setAvatarValue(student.avatar_value || null);
+    } else {
+      // Reset form when adding new student
+      setName('');
+      setGrade('1st');
+      setColorTheme('purple');
+      setAvatarType('initial');
+      setAvatarValue(null);
     }
   }, [student]);
 
-  if (!visible || !student) return null;
+  // Only check visible prop - allow null student for adding new students
+  if (!visible) {
+    console.log('🎨 StudentModal returning null - visible is false');
+    return null;
+  }
+  
+  console.log('🎨 StudentModal rendering Modal component - visible:', visible);
 
   const handleAvatarSelect = (type: 'initial' | 'photo' | 'illustration', value?: string) => {
     setAvatarType(type);
@@ -85,20 +103,35 @@ export default function StudentModal({ visible, student, onClose, onSave }: Stud
     }
 
     setLoading(true);
-    const result = await studentStore.updateStudent(student.id, {
-      name,
-      grade,
-      color_theme: colorTheme,
-      avatar_type: avatarType,
-      avatar_value: avatarValue || undefined,
-    });
+    
+    let result;
+    if (student) {
+      // Update existing student
+      result = await studentStore.updateStudent(student.id, {
+        name,
+        grade,
+        color_theme: colorTheme,
+        avatar_type: avatarType,
+        avatar_value: avatarValue || undefined,
+      });
+    } else {
+      // Add new student
+      result = await studentStore.addStudent({
+        name,
+        grade,
+        color_theme: colorTheme,
+        avatar_type: avatarType,
+        avatar_value: avatarValue || undefined,
+      });
+    }
+    
     setLoading(false);
 
     if (result.success) {
-      Alert.alert('Success', 'Student updated!');
+      Alert.alert('Success', student ? 'Student updated!' : 'Student added!');
       onSave();
     } else {
-      Alert.alert('Error', result.error || 'Failed to update student');
+      Alert.alert('Error', result.error || (student ? 'Failed to update student' : 'Failed to add student'));
     }
   };
 
@@ -131,7 +164,7 @@ export default function StudentModal({ visible, student, onClose, onSave }: Stud
       visible={visible}
       transparent
       animationType="fade"
-      onRequestClose={onClose}
+      // onRequestClose={onClose}  // TEMPORARILY COMMENTED OUT - Testing if this causes auto-close
     >
       <KeyboardAvoidingView
         style={styles.modalOverlay}
@@ -232,14 +265,16 @@ export default function StudentModal({ visible, student, onClose, onSave }: Stud
 
             {/* Buttons */}
             <View style={styles.buttonRow}>
-              <TouchableOpacity
-                style={styles.deleteButton}
-                onPress={handleDelete}
-                disabled={loading}
-              >
-                <Trash2 size={20} color={Colors.ui.error} />
-                <Text style={styles.deleteButtonText}>Delete</Text>
-              </TouchableOpacity>
+              {student && (
+                <TouchableOpacity
+                  style={styles.deleteButton}
+                  onPress={handleDelete}
+                  disabled={loading}
+                >
+                  <Trash2 size={20} color={Colors.ui.error} />
+                  <Text style={styles.deleteButtonText}>Delete</Text>
+                </TouchableOpacity>
+              )}
 
               <TouchableOpacity
                 style={[styles.saveButton, loading && styles.saveButtonDisabled]}
@@ -247,7 +282,7 @@ export default function StudentModal({ visible, student, onClose, onSave }: Stud
                 disabled={loading}
               >
                 <Text style={styles.saveButtonText}>
-                  {loading ? 'Saving...' : 'Save Changes'}
+                  {loading ? 'Saving...' : (student ? 'Save Changes' : 'Add Student')}
                 </Text>
               </TouchableOpacity>
             </View>

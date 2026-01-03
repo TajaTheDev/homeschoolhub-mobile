@@ -73,11 +73,12 @@ export default function SignupScreen() {
       console.log('📧 User email:', data.user?.email);
       
       if (data.session) {
-        console.log('✅ Session created, going to app');
-        // Mark onboarding as seen
+        console.log('✅ Session created, going to interactive onboarding');
+        // Mark onboarding welcome as seen
         await AsyncStorage.setItem('hasSeenOnboarding', 'true');
         Alert.alert('Success', 'Account created!');
-        router.replace('/(tabs)');
+        // Navigate to interactive onboarding
+        router.replace('/onboarding');
       } else {
         console.log('⚠️ No session after signup!');
         Alert.alert('Account Created', 'Account created! Please login.');

@@ -946,12 +946,15 @@ const styles = StyleSheet.create({
   header: {
     marginBottom: 20,
   },
+  scrollableHeader: {
+    paddingHorizontal: 20,
+  },
   titleRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 16,
-    paddingRight: 8,
+    paddingHorizontal: 0,
   },
   title: {
     fontSize: 28,
@@ -965,6 +968,7 @@ const styles = StyleSheet.create({
   },
   filters: {
     marginBottom: 16,
+    paddingHorizontal: 20,
   },
   filterGroup: {
     marginBottom: 16,

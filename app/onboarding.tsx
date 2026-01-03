@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -15,23 +15,50 @@ import { Calendar, Users, BookOpen, Repeat, Sparkles } from 'lucide-react-native
 import Colors from '@/constants/Colors';
 import { useStudentStore } from '@/store/studentStore';
 import { useLessonStore } from '@/store/lessonStore';
+import { useScheduleStore } from '@/store/scheduleStore';
 import StudentModal from '@/components/students/StudentModal';
 import * as ImagePicker from 'expo-image-picker';
 
 type OnboardingStep = 'welcome' | 'schedule' | 'students' | 'lesson' | 'recurring' | 'complete';
 
 export default function OnboardingScreen() {
+  console.log('🔄 OnboardingScreen RENDER - checking if component re-rendered');
+  
   const router = useRouter();
   const confettiRef = useRef<any>(null);
   
   const [currentStep, setCurrentStep] = useState<OnboardingStep>('welcome');
   const [schoolDays, setSchoolDays] = useState([1, 2, 3, 4, 5]); // Mon-Fri default
-  const [showStudentModal, setShowStudentModal] = useState(false);
+  const [studentModalVisible, setStudentModalVisible] = useState(false);
   const [lessonTitle, setLessonTitle] = useState('');
   const [lessonSubject, setLessonSubject] = useState('');
   
   const { students } = useStudentStore();
   const { addLesson } = useLessonStore();
+  const { updateSchedule } = useScheduleStore();
+  
+  // Check if component re-render is resetting modal state
+  useEffect(() => {
+    console.log('🔄 Component mounted/re-rendered - currentStep:', currentStep, 'modalVisible:', studentModalVisible);
+  }, []);
+  
+  // Check if currentStep change is affecting modal
+  useEffect(() => {
+    console.log('📝 currentStep changed to:', currentStep);
+    if (currentStep !== 'students' && studentModalVisible) {
+      console.log('⚠️ WARNING: currentStep changed away from "students" but modal is still visible!');
+    }
+  }, [currentStep]);
+  
+  // Debug: Watch studentModalVisible state changes
+  useEffect(() => {
+    console.log('⚠️ useEffect running - studentModalVisible changed to:', studentModalVisible);
+    console.log('⚠️ useEffect STACK:', new Error().stack);
+    // Check if there's any code here that sets studentModalVisible to false
+    if (studentModalVisible === false) {
+      console.log('⚠️ WARNING: Modal was set to false - checking why...');
+    }
+  }, [studentModalVisible]);
   
   const shootConfetti = () => {
     confettiRef.current?.start();
@@ -39,6 +66,64 @@ export default function OnboardingScreen() {
   
   const handleAddLesson = () => {
     setCurrentStep('recurring');
+  };
+  
+  const handleScheduleSave = async () => {
+    try {
+      // Convert schoolDays array [1,2,3,4,5] to boolean format expected by scheduleStore
+      const scheduleData = {
+        sunday: schoolDays.includes(0),
+        monday: schoolDays.includes(1),
+        tuesday: schoolDays.includes(2),
+        wednesday: schoolDays.includes(3),
+        thursday: schoolDays.includes(4),
+        friday: schoolDays.includes(5),
+        saturday: schoolDays.includes(6),
+      };
+      
+      await updateSchedule(scheduleData);
+      console.log('✅ Schedule saved from onboarding:', scheduleData);
+      setCurrentStep('students');
+    } catch (error) {
+      console.error('Error saving schedule:', error);
+      // Still allow user to continue even if save fails
+      setCurrentStep('students');
+    }
+  };
+  
+  const handleStudentAdd = async (studentData?: any) => {
+    console.log('✅ Student added in onboarding:', studentData);
+    console.log('❌ MODAL CLOSING FROM handleStudentAdd - STACK:', new Error().stack);
+    setStudentModalVisible(false);
+    shootConfetti();
+    
+    // Show option to add more students
+    // Note: onSave doesn't pass student data, so we get it from the store
+    setTimeout(() => {
+      // Get the most recently added student from the store
+      const latestStudent = students[students.length - 1];
+      const studentName = latestStudent?.name || 'Student';
+      
+      Alert.alert(
+        'Student Added! 🎉',
+        `${studentName} has been added. Would you like to add another student?`,
+        [
+          {
+            text: 'Add Another',
+            onPress: () => setStudentModalVisible(true),
+          },
+          {
+            text: 'Continue',
+            onPress: () => {
+              if (currentStep === 'students') {
+                setCurrentStep('lesson');
+              }
+            },
+            style: 'default',
+          },
+        ]
+      );
+    }, 1500);
   };
   
   const handleComplete = async () => {
@@ -52,7 +137,7 @@ export default function OnboardingScreen() {
     }
     
     setTimeout(() => {
-      router.replace('/subscribe' as any);
+      router.replace('/subscribe'); // Changed from /(tabs) to show trial celebration screen
     }, 2000);
   };
   
@@ -148,10 +233,7 @@ export default function OnboardingScreen() {
             
             <TouchableOpacity
               style={styles.primaryButton}
-              onPress={() => {
-                // Save schedule (you can add this to a settings store)
-                setCurrentStep('students');
-              }}
+              onPress={handleScheduleSave}
             >
               <Text style={styles.primaryButtonText}>Continue</Text>
             </TouchableOpacity>
@@ -192,10 +274,21 @@ export default function OnboardingScreen() {
               </View>
             )}
             
+            {/* Helper text */}
+            <Text style={styles.helperText}>
+              Don't worry! You can add more students anytime from the Students tab.
+            </Text>
+            
             {/* Add Student Button */}
             <TouchableOpacity
               style={styles.primaryButton}
-              onPress={() => setShowStudentModal(true)}
+              onPress={() => {
+                console.log('🔍 DEBUG: Add First Student button pressed');
+                console.log('🔍 DEBUG: Current studentModalVisible:', studentModalVisible);
+                console.log('🔍 DEBUG: Setting studentModalVisible to true');
+                setStudentModalVisible(true);
+                console.log('🔍 DEBUG: After setState, studentModalVisible:', studentModalVisible);
+              }}
             >
               <Text style={styles.primaryButtonText}>
                 {students.length === 0 ? 'Add Your First Student 🎊' : 'Add Another Student'}
@@ -360,15 +453,30 @@ export default function OnboardingScreen() {
       
       {/* Student Modal */}
       <StudentModal
-        visible={showStudentModal}
+        visible={studentModalVisible}
         onClose={() => {
-          setShowStudentModal(false);
-          // Shoot confetti when student is added
-          if (students.length > 0) {
-            shootConfetti();
-          }
+          console.log('❌ MODAL ONCLOSE CALLED - WHO CALLED ME?', new Error().stack);
+          setStudentModalVisible(false);
         }}
+        onSave={handleStudentAdd}
+        student={null}
       />
+      
+      {/* Debug: Force show modal state */}
+      {studentModalVisible && (
+        <View style={{
+          position: 'absolute',
+          top: 100,
+          left: 20,
+          backgroundColor: 'red',
+          padding: 10,
+          zIndex: 9999,
+        }}>
+          <Text style={{ color: 'white', fontWeight: 'bold' }}>
+            MODAL SHOULD BE VISIBLE!
+          </Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -443,6 +551,14 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 24,
     marginBottom: 32,
+  },
+  helperText: {
+    fontSize: 14,
+    color: Colors.ui.textLight,
+    textAlign: 'center',
+    fontStyle: 'italic',
+    marginTop: 8,
+    marginBottom: 24,
   },
   featuresList: {
     width: '100%',

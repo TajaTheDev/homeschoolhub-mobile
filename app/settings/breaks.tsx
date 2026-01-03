@@ -30,30 +30,51 @@ export default function BreaksScreen() {
   }, []);
 
   const saveBreakToDatabase = async (breakData: { name: string; start_date: string; end_date: string; emoji?: string; id?: string }) => {
-    console.log('💾 Saving break:', {
-      id: breakData.id,
-      name: breakData.name,
-      mode: breakData.id ? 'EDIT' : 'CREATE'
-    });
-    
-    if (breakData.id) {
-      // EDIT MODE
-      console.log('📝 Updating existing break with ID:', breakData.id);
-      await updateBreak(breakData.id, {
+    try {
+      console.log('💾 Saving break:', {
+        id: breakData.id,
         name: breakData.name,
-        start_date: breakData.start_date,
-        end_date: breakData.end_date,
-        emoji: breakData.emoji,
+        mode: breakData.id ? 'EDIT' : 'CREATE'
       });
-    } else {
-      // CREATE MODE
-      console.log('➕ Creating new break');
-      await addBreak({
-        name: breakData.name,
-        start_date: breakData.start_date,
-        end_date: breakData.end_date,
-        emoji: breakData.emoji,
+      
+      if (breakData.id) {
+        // EDIT MODE
+        console.log('📝 Updating existing break with ID:', breakData.id);
+        await updateBreak(breakData.id, {
+          name: breakData.name,
+          start_date: breakData.start_date,
+          end_date: breakData.end_date,
+          emoji: breakData.emoji,
+        });
+        console.log('✅ Break updated successfully');
+      } else {
+        // CREATE MODE
+        console.log('➕ Creating new break');
+        await addBreak({
+          name: breakData.name,
+          start_date: breakData.start_date,
+          end_date: breakData.end_date,
+          emoji: breakData.emoji,
+        });
+        console.log('✅ Break created successfully');
+      }
+    } catch (error: any) {
+      console.error('❌ Break save error:', {
+        error,
+        message: error?.message,
+        code: error?.code,
+        details: error?.details
       });
+      
+      if (error?.code === '42703') {
+        Alert.alert(
+          'Database Error',
+          `Column doesn't exist: ${error.message}\n\nPlease check the school_breaks table schema.`
+        );
+      } else {
+        Alert.alert('Error', `Could not ${breakData.id ? 'update' : 'add'} break: ${error?.message || 'Unknown error'}`);
+      }
+      throw error; // Re-throw to prevent continuing
     }
   };
 
@@ -61,7 +82,16 @@ export default function BreaksScreen() {
     try {
       // STEP 1: Check if any lessons exist during this break period
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!user) {
+        Alert.alert('Error', 'User not authenticated');
+        return;
+      }
+
+      console.log('🔍 Checking for conflicting lessons:', {
+        startDate: breakData.start_date,
+        endDate: breakData.end_date,
+        userId: user.id
+      });
 
       const { data: conflictingLessons, error: fetchError } = await supabase
         .from('lessons')
@@ -72,8 +102,22 @@ export default function BreaksScreen() {
         .order('date', { ascending: true });
 
       if (fetchError) {
-        console.error('Error checking for conflicts:', fetchError);
-        Alert.alert('Error', 'Failed to check for conflicting lessons');
+        console.error('❌ Break conflict check error:', {
+          code: fetchError.code,
+          message: fetchError.message,
+          details: fetchError.details,
+          hint: fetchError.hint
+        });
+        
+        // If it's a column error, show helpful message
+        if (fetchError.code === '42703') {
+          Alert.alert(
+            'Database Error',
+            `Column doesn't exist. Error: ${fetchError.message}\n\nPlease check that the lessons table has columns: id, date, title, subject, user_id`
+          );
+        } else {
+          Alert.alert('Error', `Failed to check for conflicting lessons: ${fetchError.message}`);
+        }
         return;
       }
 
@@ -114,16 +158,32 @@ export default function BreaksScreen() {
               onPress: async () => {
                 // Delete conflicting lessons
                 const lessonIds = conflictingLessons.map(l => l.id);
+                console.log('🗑️ Deleting conflicting lessons:', lessonIds);
+                
                 const { error: deleteError } = await supabase
                   .from('lessons')
                   .delete()
                   .in('id', lessonIds);
 
                 if (deleteError) {
-                  console.error('Error deleting lessons:', deleteError);
-                  Alert.alert('Error', 'Failed to delete conflicting lessons');
+                  console.error('❌ Error deleting lessons:', {
+                    code: deleteError.code,
+                    message: deleteError.message,
+                    details: deleteError.details
+                  });
+                  
+                  if (deleteError.code === '42703') {
+                    Alert.alert(
+                      'Database Error',
+                      `Column doesn't exist: ${deleteError.message}\n\nPlease check the lessons table schema.`
+                    );
+                  } else {
+                    Alert.alert('Error', `Failed to delete conflicting lessons: ${deleteError.message}`);
+                  }
                   return;
                 }
+                
+                console.log('✅ Conflicting lessons deleted successfully');
 
                 // Now save the break
                 await saveBreakToDatabase(breakData);

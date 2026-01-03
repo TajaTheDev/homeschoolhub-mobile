@@ -224,42 +224,35 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Subscription</Text>
           <View style={styles.sectionContent}>
-            {/* Subscription Status */}
-            <View style={styles.settingsOption}>
+            {/* Manage Subscription - Available to all users */}
+            <TouchableOpacity
+              style={styles.settingsOption}
+              onPress={() => {
+                if (hasSubscription) {
+                  // Open Customer Center
+                  presentCustomerCenter();
+                } else {
+                  // Go to subscribe screen
+                  router.push('/subscribe' as any);
+                }
+              }}
+              activeOpacity={0.7}
+            >
               <View style={styles.settingsOptionIcon}>
                 <CreditCard size={24} color={Colors.brand[600]} />
               </View>
               <View style={styles.settingsOptionContent}>
                 <Text style={styles.settingsOptionTitle}>
-                  {hasSubscription ? 'Premium Active' : 'Free Trial'}
+                  Manage Subscription
                 </Text>
                 <Text style={styles.settingsOptionDescription}>
                   {hasSubscription 
-                    ? 'You have full access to all features' 
+                    ? 'View your plan and billing' 
                     : 'Start your 14-day free trial'}
                 </Text>
               </View>
-            </View>
-            
-            {/* Manage Subscription - Only show if user has subscription */}
-            {hasSubscription && (
-              <TouchableOpacity
-                style={styles.settingsOption}
-                onPress={presentCustomerCenter}
-                activeOpacity={0.7}
-              >
-                <View style={styles.settingsOptionIcon}>
-                  <CreditCard size={24} color={Colors.brand[600]} />
-                </View>
-                <View style={styles.settingsOptionContent}>
-                  <Text style={styles.settingsOptionTitle}>Manage Subscription</Text>
-                  <Text style={styles.settingsOptionDescription}>
-                    View plans, update payment, or cancel
-                  </Text>
-                </View>
-                <ChevronRight size={20} color={Colors.ui.textLight} />
-              </TouchableOpacity>
-            )}
+              <ChevronRight size={20} color={Colors.ui.textLight} />
+            </TouchableOpacity>
             
             {/* Restore Purchases - Available to all users */}
             <TouchableOpacity
@@ -320,7 +313,7 @@ export default function SettingsScreen() {
             <SettingsItem
               icon={Shield}
               title="Privacy Policy"
-              onPress={() => Alert.alert('Privacy Policy', 'Privacy policy will be displayed here')}
+              onPress={() => router.push('/settings/privacy' as any)}
             />
           </View>
         </View>
@@ -333,12 +326,12 @@ export default function SettingsScreen() {
               icon={Info}
               title="App Version"
               subtitle="1.0.0"
-              onPress={() => {}}
+              onPress={() => router.push('/settings/about' as any)}
             />
             <SettingsItem
               icon={Info}
               title="Terms of Service"
-              onPress={() => Alert.alert('Terms of Service', 'Terms will be displayed here')}
+              onPress={() => router.push('/settings/terms' as any)}
             />
           </View>
         </View>

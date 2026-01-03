@@ -4,8 +4,13 @@
  */
 
 import { supabase } from '@/lib/supabase/client';
+import { cacheData, getCachedData, isOnline } from '@/lib/offline';
 import type { Student, StudentSubject } from '@/types';
 import { create } from 'zustand';
+
+// Cache configuration
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+let lastFetch = 0;
 
 interface StudentState {
   students: Student[];
@@ -37,8 +42,31 @@ export const useStudentStore = create<StudentState>((set, get) => ({
   loading: false,
 
   fetchStudents: async () => {
+    // Check in-memory cache first
+    const now = Date.now();
+    if (now - lastFetch < CACHE_DURATION && get().students.length > 0) {
+      console.log('📦 Using in-memory cached students');
+      return;
+    }
+
     set({ loading: true });
     try {
+      // Check if online
+      const online = await isOnline();
+      
+      if (!online) {
+        console.log('📡 Offline - checking local cache');
+        const cached = await getCachedData('students', CACHE_DURATION);
+        if (cached) {
+          set({ students: cached, loading: false });
+          return;
+        } else {
+          console.log('⚠️ No cached students available offline');
+          set({ loading: false });
+          return;
+        }
+      }
+
       const {
         data: { user },
       } = await supabase.auth.getUser();
@@ -57,13 +85,31 @@ export const useStudentStore = create<StudentState>((set, get) => ({
 
       if (error) {
         console.error('Error fetching students:', error);
+        // Try to use cached data on error
+        const cached = await getCachedData('students', CACHE_DURATION * 2); // Use older cache on error
+        if (cached) {
+          console.log('📦 Using cached students due to fetch error');
+          set({ students: cached, loading: false });
+          return;
+        }
         set({ loading: false });
         return;
       }
 
       set({ students: data || [], loading: false });
+      lastFetch = now; // Update cache timestamp
+      
+      // Cache data for offline use
+      await cacheData('students', data || []);
     } catch (error) {
       console.error('Error fetching students:', error);
+      // Try to use cached data on error
+      const cached = await getCachedData('students', CACHE_DURATION * 2);
+      if (cached) {
+        console.log('📦 Using cached students due to exception');
+        set({ students: cached, loading: false });
+        return;
+      }
       set({ loading: false });
     }
   },
@@ -94,37 +140,39 @@ export const useStudentStore = create<StudentState>((set, get) => ({
     }
   },
 
-  addStudent: async (student) => {
+  addStudent: async (studentData) => {
     set({ loading: true });
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
+      const { data: { user } } = await supabase.auth.getUser();
+      
       if (!user) {
         set({ loading: false });
-        return { success: false, error: 'User not authenticated' };
+        return { success: false, error: 'Not authenticated' };
       }
-
+      
       const { data, error } = await supabase
         .from('students')
         .insert({
-          ...student,
-          user_id: user.id,
-          avatar_type: student.avatar_type || 'initial',
-          avatar_value: student.avatar_value || null,
+          ...studentData,
+          user_id: user.id,  // ← ADD THIS!
+          avatar_type: studentData.avatar_type || 'initial',
+          avatar_value: studentData.avatar_value || null,
         })
         .select()
         .single();
-
+      
       if (error) {
         set({ loading: false });
         return { success: false, error: error.message };
       }
-
-      // Refresh students list
-      await get().fetchStudents();
-      return { success: true };
+      
+      // Update local state immediately with new student
+      set((state) => ({ 
+        students: [...state.students, data],
+        loading: false,
+      }));
+      
+      return { success: true, data };
     } catch (error) {
       set({ loading: false });
       return {

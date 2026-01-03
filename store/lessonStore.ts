@@ -4,6 +4,7 @@
  */
 
 import { supabase } from '@/lib/supabase/client';
+import { cacheData, getCachedData, isOnline } from '@/lib/offline';
 import type { Lesson } from '@/types';
 import { create } from 'zustand';
 
@@ -24,31 +25,125 @@ interface LessonState {
   updateLessonOptimistic: (id: string, updates: Partial<Lesson>) => void;
 }
 
+// Cache configuration
+const CACHE_DURATION = 2 * 60 * 1000; // 2 minutes
+let lastFetch = 0;
+let cachedFilters: { studentId?: string; date?: string } | null = null;
+
 export const useLessonStore = create<LessonState>((set, get) => ({
   lessons: [],
   loading: false,
 
   fetchLessons: async (studentId?: string, date?: string) => {
+    // Check in-memory cache first
+    const now = Date.now();
+    const filters = { studentId, date };
+    const cacheKey = JSON.stringify(filters);
+    const cachedKey = JSON.stringify(cachedFilters);
+    
+    if (now - lastFetch < CACHE_DURATION && 
+        cacheKey === cachedKey && 
+        get().lessons.length > 0) {
+      console.log('📦 Using in-memory cached lessons');
+      return;
+    }
+
     set({ loading: true });
     try {
+      // Check if online
+      const online = await isOnline();
+      const cacheKeyForStorage = `lessons_${cacheKey}`;
+      
+      if (!online) {
+        console.log('📡 Offline - checking local cache');
+        const cached = await getCachedData(cacheKeyForStorage, CACHE_DURATION);
+        if (cached) {
+          set({ lessons: cached, loading: false });
+          lastFetch = now;
+          cachedFilters = filters;
+          return;
+        } else {
+          console.log('⚠️ No cached lessons available offline');
+          set({ loading: false });
+          return;
+        }
+      }
+
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         set({ loading: false });
         return;
       }
 
-      console.log('🔍 STEP 1: Fetching lessons - simple query...', { studentId, date });
-
-      // STEP 1: Simple query first (no relationships)
-      const { data, error } = await supabase
+      // First, let's see what columns actually exist
+      console.log('🔍 Testing lessons table schema...');
+      const { data: schemaTest, error: schemaError } = await supabase
         .from('lessons')
         .select('*')
+        .limit(1);
+      
+      console.log('🔍 Lessons table schema test:', {
+        hasData: !!schemaTest,
+        sampleRow: schemaTest?.[0] || null,
+        columns: schemaTest && schemaTest[0] ? Object.keys(schemaTest[0]) : [],
+        columnCount: schemaTest && schemaTest[0] ? Object.keys(schemaTest[0]).length : 0,
+        error: schemaError ? {
+          code: schemaError.code,
+          message: schemaError.message,
+          details: schemaError.details,
+          hint: schemaError.hint
+        } : null,
+      });
+      
+      if (schemaError) {
+        console.error('❌ Even basic query fails:', {
+          code: schemaError.code,
+          message: schemaError.message,
+          details: schemaError.details,
+          hint: schemaError.hint,
+          fullError: schemaError
+        });
+        set({ lessons: [], loading: false });
+        return;
+      }
+      
+      if (schemaTest && schemaTest[0]) {
+        console.log('✅ Lessons table columns found:', Object.keys(schemaTest[0]));
+        console.log('📋 Column details:', Object.keys(schemaTest[0]).map(col => ({
+          name: col,
+          type: typeof schemaTest[0][col],
+          sampleValue: schemaTest[0][col]
+        })));
+      }
+
+      console.log('🔍 Fetching lessons with pagination...', { studentId, date });
+
+      // STEP 1: Simple query first (no relationships) - isolate column name issues
+      let query = supabase
+        .from('lessons')
+        .select('*')
+        .eq('user_id', user.id)
         .order('date', { ascending: false })
-        .limit(500);
+        .limit(50);
+
+      // Apply filters if provided
+      if (studentId) {
+        query = query.eq('student_id', studentId);
+      }
+      if (date) {
+        query = query.eq('date', date);
+      }
+
+      const { data, error } = await query;
 
       console.log('📦 STEP 1 Result:', { 
         dataCount: data?.length || 0, 
-        error: error ? { code: error.code, message: error.message } : null,
+        error: error ? { 
+          code: error.code, 
+          message: error.message,
+          details: error.details,
+          hint: error.hint
+        } : null,
         firstLesson: data?.[0] ? {
           id: data[0].id,
           date: data[0].date,
@@ -58,7 +153,21 @@ export const useLessonStore = create<LessonState>((set, get) => ({
       });
 
       if (error) {
-        console.error('❌ STEP 1 Failed:', error);
+        console.error('❌ STEP 1 Failed - Column name error details:', {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          fullError: error
+        });
+        
+        // Check for specific column errors
+        if (error.code === '42703') {
+          console.error('❌❌❌ COLUMN DOES NOT EXIST ERROR (42703)');
+          console.error('❌❌❌ This means a column name in the query is wrong.');
+          console.error('❌❌❌ Check the error.hint for the exact column name.');
+        }
+        
         set({ lessons: [], loading: false });
         return;
       }
@@ -118,6 +227,8 @@ export const useLessonStore = create<LessonState>((set, get) => ({
             
             // Use simple data without relationships
             set({ lessons: data || [], loading: false });
+            lastFetch = Date.now();
+            cachedFilters = filters;
             return;
           }
 
@@ -314,30 +425,61 @@ export const useLessonStore = create<LessonState>((set, get) => ({
 
       console.log('✅ Final processed lessons:', filteredLessons.length);
       set({ lessons: filteredLessons, loading: false });
+      lastFetch = Date.now(); // Update cache timestamp
+      cachedFilters = filters; // Update cached filters
+      
+      // Cache data for offline use (reuse cacheKeyForStorage declared at line 55)
+      await cacheData(cacheKeyForStorage, filteredLessons);
     } catch (error) {
       console.error('❌ Error fetching lessons:', error);
+      // Try to use cached data on error (cacheKey is available in catch scope)
+      const cacheKeyForError = `lessons_${cacheKey}`;
+      const cached = await getCachedData(cacheKeyForError, CACHE_DURATION * 2);
+      if (cached) {
+        console.log('📦 Using cached lessons due to error');
+        set({ lessons: cached, loading: false });
+        lastFetch = now;
+        cachedFilters = filters;
+        return;
+      }
       set({ loading: false });
     }
   },
 
-  addLesson: async (lesson) => {
+  addLesson: async (lessonData) => {
     set({ loading: true });
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        set({ loading: false });
+        return { success: false, error: 'Not authenticated' };
+      }
+      
       const { data, error } = await supabase
         .from('lessons')
-        .insert(lesson)
+        .insert({
+          ...lessonData,
+          user_id: user.id,  // ← ADD THIS!
+        })
         .select()
         .single();
-
+      
       if (error) {
+        console.error('Error adding lesson:', error);
         set({ loading: false });
         return { success: false, error: error.message };
       }
-
-      // Refresh lessons list
-      await get().fetchLessons();
-      return { success: true };
+      
+      // Update local state immediately with new lesson
+      set((state) => ({ 
+        lessons: [...state.lessons, data],
+        loading: false,
+      }));
+      
+      return { success: true, data };
     } catch (error) {
+      console.error('Error adding lesson:', error);
       set({ loading: false });
       return {
         success: false,
