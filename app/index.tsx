@@ -5,10 +5,21 @@ import { View, ActivityIndicator } from 'react-native';
 import { supabase } from '@/lib/supabase/client';
 import Colors from '@/constants/Colors';
 
+// TEMPORARY: Bypass subscription for App Store review
+// TODO: Re-enable after approval (Jan 15, 2026)
+const REVIEW_MODE = true;
+
 export default function Index() {
   const router = useRouter();
 
   useEffect(() => {
+    // TEMPORARY: Skip subscription check during review
+    if (REVIEW_MODE) {
+      console.log('⚠️ REVIEW MODE: Subscription check bypassed');
+      checkUserStatus();
+      return;
+    }
+    
     checkUserStatus();
   }, []);
 

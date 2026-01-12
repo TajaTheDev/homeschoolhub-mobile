@@ -12,6 +12,7 @@ import Typography from '@/constants/Typography';
 import * as notificationService from '@/services/notificationService';
 import { useLessonStore } from '@/store/lessonStore';
 import { useScheduleStore } from '@/store/scheduleStore';
+import { useBreakStore } from '@/store/breakStore';
 import { useStudentStore } from '@/store/studentStore';
 import type { Lesson, StudentSubject } from '@/types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -312,7 +313,8 @@ export default function ProgressScreen() {
   const router = useRouter();
   const { students, fetchStudents, subjects, fetchSubjects, updateSubject } = useStudentStore();
   const { lessons, fetchLessons } = useLessonStore();
-  const { schedule, breaks, getSchoolDays, isBreakDay, fetchSchedule, fetchBreaks } = useScheduleStore();
+  const { schedule, getSchoolDays, fetchSchedule } = useScheduleStore();
+  const { breaks, isBreakDay, fetchBreaks } = useBreakStore();
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(
     null
   );
@@ -493,18 +495,39 @@ export default function ProgressScreen() {
     setShowSubjectsModal(false);
   };
 
-  // Group lessons by date for recent activity
+  // Group lessons by date for recent activity (only last 7 calendar days)
   const recentActivity = useMemo(() => {
-    const weekLessons = lessonsThisWeek;
+    const lastSevenDays = getLastSevenDays();
+    const lastSevenDaysStr = lastSevenDays.map(d => d.toISOString().split('T')[0]);
+    
+    // Filter lessons to only include dates from the last 7 calendar days
+    const weekLessons = studentLessons.filter((lesson) => {
+      return lastSevenDaysStr.includes(lesson.date);
+    });
+    
     const byDate: Record<string, number> = {};
     weekLessons.forEach((lesson) => {
       const dateKey = lesson.date;
       byDate[dateKey] = (byDate[dateKey] || 0) + 1;
     });
-    return Object.entries(byDate)
+    
+    // Only return dates that are in the last 7 days, sorted by date (newest first)
+    const result = Object.entries(byDate)
+      .filter(([date]) => lastSevenDaysStr.includes(date))
       .sort((a, b) => b[0].localeCompare(a[0]))
       .slice(0, 7);
-  }, [lessonsThisWeek]);
+    
+    // Debug logging
+    console.log('📊 Progress page date range:', {
+      today: new Date().toISOString().split('T')[0],
+      lastSevenDays: lastSevenDaysStr,
+      lessonsInRange: weekLessons.length,
+      recentActivityDates: result.map(([date]) => date),
+      allStudentLessons: studentLessons.length,
+    });
+    
+    return result;
+  }, [studentLessons]);
 
   if (students.length === 0) {
     return (

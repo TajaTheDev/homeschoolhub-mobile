@@ -5,13 +5,16 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#F5F3FF"
+      "backgroundColor": "#E8DEFF"
     },
     "scheme": "homeschoolhubmobile",
-    "userInterfaceStyle": "automatic",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "newArchEnabled": true,
     "notification": {
       "icon": "./assets/images/icon.png",
@@ -20,9 +23,9 @@
       "androidCollapsedTitle": "New from HomeschoolHub"
     },
     "ios": {
-      "bundleIdentifier": "com.tajamoxey.homeschoolhub",
-      "buildNumber": "20",
       "supportsTablet": true,
+      "bundleIdentifier": "com.tajamoxey.homeschoolhub",
+      "buildNumber": "23",
       "infoPlist": {
         "UIRequiresFullScreen": true,
         "UISupportedInterfaceOrientations": [
@@ -36,17 +39,21 @@
         "NSPhotoLibraryUsageDescription": "HomeschoolHub needs photo library access to attach photos to lessons.",
         "NSPhotoLibraryAddUsageDescription": "HomeschoolHub needs permission to save photos to your library.",
         "NSUserNotificationsUsageDescription": "HomeschoolHub sends gentle reminders to help you stay on track with lessons and goals.",
+        "NSUserTrackingUsageDescription": "We use this to provide you with personalized educational recommendations and improve your experience.",
         "ITSAppUsesNonExemptEncryption": false
+      },
+      "config": {
+        "usesNonExemptEncryption": false
       }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#F5F3FF"
+        "backgroundColor": "#ffffff"
       },
       "icon": "./assets/icon.png",
       "package": "com.tajamoxey.homeschoolhub",
-      "versionCode": 4,
+      "versionCode": 23,
       "permissions": [
         "android.permission.RECEIVE_BOOT_COMPLETED",
         "android.permission.VIBRATE",
@@ -96,7 +103,9 @@
       "reactCompiler": true
     },
     "extra": {
-      "router": {},
+      "router": {
+        "origin": false
+      },
       "eas": {
         "projectId": "005bced9-b409-4feb-9430-39cef43a01d7"
       }

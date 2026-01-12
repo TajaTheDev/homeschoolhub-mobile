@@ -1,6 +1,7 @@
 {
   "cli": {
-    "version": ">= 5.0.0"
+    "version": ">= 5.9.0",
+    "appVersionSource": "local"
   },
   "build": {
     "development": {
@@ -18,11 +19,9 @@
         "buildType": "app-bundle"
       },
       "ios": {
-        "buildConfiguration": "Release"
+        "autoIncrement": false
       },
-      "env": {
-        "RCT_NEW_ARCH_ENABLED": "1"
-      }
+      "autoIncrement": false
     }
   },
   "submit": {

@@ -65,11 +65,18 @@ export default function EditBreakModal({
   // Update state when breakData changes
   useEffect(() => {
     if (breakData) {
+      console.log('🔄 Loading break data into form:', {
+        name: breakData.name,
+        emoji: breakData.emoji,
+        start_date: breakData.start_date,
+        end_date: breakData.end_date,
+      });
       setName(breakData.name);
       setStartDate(new Date(breakData.start_date));
       setEndDate(new Date(breakData.end_date));
       setSelectedEmoji(breakData.emoji || '🎄');
     } else {
+      console.log('🔄 Resetting form (new break)');
       setName('');
       setStartDate(new Date());
       setEndDate(new Date());
@@ -97,6 +104,14 @@ export default function EditBreakModal({
       emoji: selectedEmoji,
       ...(breakData?.id && { id: breakData.id }),
     };
+
+    console.log('💾 Saving break with data:', {
+      name: breakToSave.name,
+      emoji: breakToSave.emoji,
+      start_date: breakToSave.start_date,
+      end_date: breakToSave.end_date,
+      id: breakToSave.id || 'NEW',
+    });
 
     try {
       await onSave(breakToSave);
@@ -129,7 +144,10 @@ export default function EditBreakModal({
               <TextInput
                 style={styles.input}
                 value={name}
-                onChangeText={setName}
+                onChangeText={(text) => {
+                  console.log('📝 Break name changed:', text);
+                  setName(text);
+                }}
                 placeholder="e.g., Christmas Break"
                 placeholderTextColor={Colors.ui.textLight}
               />
@@ -170,6 +188,7 @@ export default function EditBreakModal({
                         selectedEmoji === emoji && styles.emojiButtonActive
                       ]}
                       onPress={() => {
+                        console.log('😀 Emoji selected:', emoji);
                         setSelectedEmoji(emoji);
                         setShowEmojiPicker(false);
                       }}

@@ -17,7 +17,8 @@ import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-f
 import { BookOpen, Calendar, CheckCircle2, Trash2 } from 'lucide-react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Modal, Platform } from 'react-native';
-import React, { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import React, { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   Alert,
   FlatList,
@@ -56,13 +57,36 @@ export default function AllLessonsScreen() {
   const [selectedLessonIds, setSelectedLessonIds] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<'upcoming' | 'past'>('upcoming');
 
-  const { lessons, fetchLessons, loading } = useLessonStore();
+  const { lessons, fetchLessons, loading, deleteLessons } = useLessonStore();
   const { students } = useStudentStore();
 
+  // Debug logging at component level (only log when lessons change significantly)
   useEffect(() => {
-    fetchLessons();
+    console.log('📊 ALL LESSONS TAB - Total lessons:', lessons.length);
+    // Only log sample lessons if there are few lessons
+    if (lessons.length > 0 && lessons.length < 10) {
+      console.log('  Sample lessons:', lessons.slice(0, 3).map(l => ({
+        id: l.id,
+        title: l.title,
+        subject: l.subject,
+        date: l.date
+      })));
+    }
+  }, [lessons.length]);
+
+  useEffect(() => {
+    // Only log on initial mount
+    fetchLessons(); // Fetch ALL lessons (no filters)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Only fetch once on mount
+
+  // Refresh lessons when tab comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      // Reduced logging - only log if needed for debugging
+      fetchLessons(); // Fetch ALL lessons (no filters)
+    }, [fetchLessons])
+  );
 
   // Get unique subjects from ALL lessons (dynamically)
   const allSubjects = useMemo(() => {
@@ -78,11 +102,10 @@ export default function AllLessonsScreen() {
     return Array.from(subjectSet).sort();
   }, [lessons]);
 
-  // Add debug logging to verify
+  // Log subject count (not full array)
   useEffect(() => {
-    console.log('📚 Available subjects in lessons:', allSubjects);
     console.log('📚 Total unique subjects:', allSubjects.length);
-  }, [allSubjects]);
+  }, [allSubjects.length]);
 
   // Debug: Compare subjects from lessons vs student profiles
   useEffect(() => {
@@ -100,32 +123,43 @@ export default function AllLessonsScreen() {
       }
     });
     
-    console.log('📊 SUBJECT COMPARISON:');
-    console.log('  Subjects in LESSONS:', Array.from(lessonSubjects).sort());
-    console.log('  Subjects in STUDENT PROFILES:', Array.from(studentSubjects).sort());
-    console.log('  Lessons count:', lessons.length);
-    console.log('  Students count:', students.length);
+    // Only log subject comparison if there are few subjects
+    const lessonSubjectsArray = Array.from(lessonSubjects).sort();
+    const studentSubjectsArray = Array.from(studentSubjects).sort();
+    if (lessonSubjectsArray.length < 20 && studentSubjectsArray.length < 20) {
+      console.log('📊 SUBJECT COMPARISON:', {
+        lessonSubjectsCount: lessonSubjectsArray.length,
+        studentSubjectsCount: studentSubjectsArray.length,
+        lessonsCount: lessons.length,
+        studentsCount: students.length
+      });
+    }
   }, [lessons, students]);
 
   // Filter and sort lessons
   const today = format(new Date(), 'yyyy-MM-dd');
 
+  // Log total lessons (reduced frequency)
+  useEffect(() => {
+    console.log('📚 All Lessons - Total:', lessons.length, 'Active tab:', activeTab);
+  }, [lessons.length, activeTab]);
+
   // Split into upcoming and past
   const upcomingLessons = useMemo(() => {
-    return lessons
+    const filtered = lessons
       .filter(lesson => lesson.date >= today)
       .filter((lesson) => {
-        // Student filter
+        // Student filter - only apply if not 'all'
         if (filterStudent !== 'all' && lesson.student_id !== filterStudent) {
           return false;
         }
         
-        // Subject filter
+        // Subject filter - only apply if not 'all'
         if (filterSubject !== 'all' && lesson.subject !== filterSubject) {
           return false;
         }
         
-        // Date range filter
+        // Date range filter - only apply if not 'all'
         if (filterDateRange !== 'all') {
           const lessonDate = new Date(lesson.date);
           const now = new Date();
@@ -159,23 +193,26 @@ export default function AllLessonsScreen() {
         return true;
       })
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()); // Closest first
+    
+    // Only log if count changed significantly
+    return filtered;
   }, [lessons, filterStudent, filterSubject, filterDateRange, customStartDate, customEndDate, today]);
 
   const pastLessons = useMemo(() => {
-    return lessons
+    const filtered = lessons
       .filter(lesson => lesson.date < today)
       .filter((lesson) => {
-        // Student filter
+        // Student filter - only apply if not 'all'
         if (filterStudent !== 'all' && lesson.student_id !== filterStudent) {
           return false;
         }
         
-        // Subject filter
+        // Subject filter - only apply if not 'all'
         if (filterSubject !== 'all' && lesson.subject !== filterSubject) {
           return false;
         }
         
-        // Date range filter
+        // Date range filter - only apply if not 'all'
         if (filterDateRange !== 'all') {
           const lessonDate = new Date(lesson.date);
           const now = new Date();
@@ -209,9 +246,41 @@ export default function AllLessonsScreen() {
         return true;
       })
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()); // Most recent first
+    
+    // Only log if count changed significantly
+    return filtered;
   }, [lessons, filterStudent, filterSubject, filterDateRange, customStartDate, customEndDate, today]);
 
   const filteredLessons = activeTab === 'upcoming' ? upcomingLessons : pastLessons;
+
+  // Debug logging for filtered results (only log when filters change)
+  useEffect(() => {
+    console.log('📊 FILTERED RESULTS:', {
+      count: filteredLessons.length,
+      upcoming: upcomingLessons.length,
+      past: pastLessons.length,
+      activeTab,
+      filters: {
+        student: filterStudent === 'all' ? 'all' : 'filtered',
+        subject: filterSubject === 'all' ? 'all' : 'filtered',
+        dateRange: filterDateRange === 'all' ? 'all' : filterDateRange
+      }
+    });
+    // Only log sample lessons if there are few filtered results
+    if (filteredLessons.length > 0 && filteredLessons.length < 10) {
+      console.log('  Sample filtered lessons:', filteredLessons.slice(0, 3).map(l => ({
+        id: l.id,
+        title: l.title,
+        subject: l.subject,
+        date: l.date
+      })));
+    }
+  }, [filteredLessons.length, upcomingLessons.length, pastLessons.length, activeTab, filterStudent, filterSubject, filterDateRange]);
+
+  // Log final filtered count
+  useEffect(() => {
+    console.log(`📚 All Lessons - Showing ${filteredLessons.length} lessons (${activeTab} tab)`);
+  }, [filteredLessons.length, activeTab]);
 
   const handleEditLesson = (lesson: Lesson) => {
     setSelectedLesson(lesson);
@@ -246,30 +315,37 @@ export default function AllLessonsScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              const { error } = await supabase
-                .from('lessons')
-                .delete()
-                .in('id', selectedLessonIds);
+              console.log('🗑️ Deleting lessons:', selectedLessonIds.length);
               
-              if (error) {
-                console.error('Error deleting lessons:', error);
-                Alert.alert('Error', 'Failed to delete lessons');
+              // Delete using store method (updates store automatically)
+              const result = await deleteLessons(selectedLessonIds);
+              
+              if (!result.success) {
+                console.error('❌ Delete failed:', result.error);
+                Alert.alert('Error', result.error || 'Failed to delete lessons');
                 return;
               }
+              
+              console.log('✅ Deleted from database');
+              
+              // CRITICAL: Clear selection FIRST
+              setSelectedLessonIds([]);
+              setSelectionMode(false);
+              
+              // CRITICAL: Force fresh fetch from database
+              console.log('🔄 Force refreshing lessons from database...');
+              await fetchLessons();
+              
+              console.log('✅ Store refreshed, current count:', lessons.length);
               
               // Success
               Alert.alert(
                 'Deleted! 🗑️', 
                 `Successfully deleted ${count} lesson${count > 1 ? 's' : ''}!`
               );
-              
-              // Exit selection mode and refresh
-              setSelectionMode(false);
-              setSelectedLessonIds([]);
-              fetchLessons();
             } catch (error) {
-              console.error('Error in handleDeleteSelected:', error);
-              Alert.alert('Error', 'Something went wrong');
+              console.error('❌ Delete error:', error);
+              Alert.alert('Error', 'Failed to delete');
             }
           },
         },
@@ -321,16 +397,24 @@ export default function AllLessonsScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              const { error } = await supabase
-                .from('lessons')
-                .delete()
-                .in('id', lessonIds);
+              console.log('🗑️ Deleting filtered lessons:', lessonIds.length);
               
-              if (error) {
-                console.error('Error deleting filtered lessons:', error);
-                Alert.alert('Error', 'Failed to delete lessons');
+              // Delete using store method (updates store automatically)
+              const result = await deleteLessons(lessonIds);
+              
+              if (!result.success) {
+                console.error('❌ Delete failed:', result.error);
+                Alert.alert('Error', result.error || 'Failed to delete lessons');
                 return;
               }
+              
+              console.log('✅ Deleted from database');
+              
+              // CRITICAL: Force fresh fetch from database
+              console.log('🔄 Force refreshing lessons from database...');
+              await fetchLessons();
+              
+              console.log('✅ Store refreshed, current count:', lessons.length);
               
               // Success
               Alert.alert(
@@ -339,13 +423,12 @@ export default function AllLessonsScreen() {
                 [{
                   text: 'OK',
                   onPress: () => {
-                    // Reset filters and refresh
+                    // Reset filters
                     setFilterStudent('all');
                     setFilterSubject('all');
                     setFilterDateRange('all');
                     setCustomStartDate(null);
                     setCustomEndDate(null);
-                    fetchLessons();
                   }
                 }]
               );

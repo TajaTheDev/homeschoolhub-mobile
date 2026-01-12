@@ -8,6 +8,7 @@ import Skeleton from '@/components/ui/Skeleton';
 import Colors from '@/constants/Colors';
 import Typography from '@/constants/Typography';
 import { supabase } from '@/lib/supabase/client';
+import { useBreakStore } from '@/store/breakStore';
 import { useLessonStore } from '@/store/lessonStore';
 import { useScheduleStore } from '@/store/scheduleStore';
 import { useStudentStore } from '@/store/studentStore';
@@ -76,7 +77,8 @@ export default function AddLessonScreen() {
   const studentId = params.id as string | undefined;
   const { students, fetchStudents, subjects, fetchSubjects } = useStudentStore();
   const lessonStore = useLessonStore();
-  const { getSchoolDays, isBreakDay } = useScheduleStore();
+  const { getSchoolDays } = useScheduleStore();
+  const { breaks, fetchBreaks, isBreakDay } = useBreakStore();
   
   // Convert day numbers to day name strings (e.g., [1,2,3,4,5] -> ['monday', 'tuesday', ...])
   const dayNumberToName: { [key: number]: string } = {
@@ -119,6 +121,8 @@ export default function AddLessonScreen() {
 
   useEffect(() => {
     fetchStudents();
+    // Fetch breaks when component mounts
+    fetchBreaks();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -190,90 +194,77 @@ export default function AddLessonScreen() {
     startDate: Date,
     endDate: Date,
     pattern: 'daily' | 'weekly' | 'custom',
-    days: string[], // For custom pattern
-    weeklyDay: string, // For weekly pattern
+    selectedDays: string[],
+    selectedWeeklyDay: string,
     schoolDays: string[],
-    isBreakDay: (date: Date) => boolean
+    isBreakDay: (date: Date) => boolean  // ← Function to check breaks
   ) => {
     const lessons = [];
+    let currentDate = new Date(startDate);
+    const finalDate = new Date(endDate);
+    
+    console.log('📅 Generating recurring lessons...');
+    console.log(`  Start: ${format(startDate, 'MMM dd, yyyy')}`);
+    console.log(`  End: ${format(endDate, 'MMM dd, yyyy')}`);
+    console.log(`  Pattern: ${pattern}`);
+    console.log(`  School days: ${schoolDays.join(', ')}`);
+    
     let skippedBreaks = 0;
-    const current = new Date(startDate);
-    const end = new Date(endDate);
+    let skippedWeekends = 0;
+    let lessonsCreated = 0;
     
-    // Don't go more than 1 year out (safety limit)
-    const maxDate = new Date(startDate);
-    maxDate.setFullYear(maxDate.getFullYear() + 1);
-    const finalEndDate = end > maxDate ? maxDate : end;
-    
-    console.log(`📅 Generating recurring lessons from ${current.toDateString()} to ${finalEndDate.toDateString()}`);
-    console.log(`🏫 School days:`, schoolDays);
-    
-    const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-    
-    while (current <= finalEndDate) {
-      let shouldCreate = false;
-      const currentDayName = dayNames[current.getDay()];
+    while (currentDate <= finalDate) {
+      const dayName = format(currentDate, 'EEEE').toLowerCase();
       
-      // CHECK 1: Is it a school day?
-      const isSchoolDay = schoolDays.includes(currentDayName);
-      
-      if (!isSchoolDay) {
-        // Skip non-school days entirely
-        current.setDate(current.getDate() + 1);
-        continue;
-      }
-      
-      // CHECK 2: Is it during a break?
-      if (isBreakDay(current)) {
-        skippedBreaks++;
-        current.setDate(current.getDate() + 1);
-        continue; // Skip break days
-      }
+      // Check if matches pattern
+      let matchesPattern = false;
       
       if (pattern === 'daily') {
-        // "Daily" means every school day
-        shouldCreate = true; // Already checked isSchoolDay above
+        matchesPattern = schoolDays.includes(dayName);
       } else if (pattern === 'weekly') {
-        // Create on the selected weekly day
-        const weeklyDayIndex = {
-          'sunday': 0,
-          'monday': 1,
-          'tuesday': 2,
-          'wednesday': 3,
-          'thursday': 4,
-          'friday': 5,
-          'saturday': 6
-        }[weeklyDay];
-        
-        if (current.getDay() === weeklyDayIndex) {
-          shouldCreate = true;
-        }
+        matchesPattern = dayName === selectedWeeklyDay;
       } else if (pattern === 'custom') {
-        // Check if current day is in selected days
-        shouldCreate = days.includes(currentDayName);
+        matchesPattern = selectedDays.includes(dayName);
       }
       
-      if (shouldCreate) {
-        lessons.push({
-          ...baseLesson,
-          date: current.toISOString().split('T')[0], // YYYY-MM-DD
-          is_recurring: true,
-          recurrence_pattern: pattern,
-          recurrence_days: pattern === 'custom' ? JSON.stringify(days) : null,
-          recurrence_end_date: finalEndDate.toISOString().split('T')[0],
-        });
+      if (matchesPattern) {
+        // Check if it's a school day
+        if (schoolDays.includes(dayName)) {
+          // NEW: Check if it's a break day
+          if (!isBreakDay(currentDate)) {
+            // Not a break - add the lesson!
+            lessons.push({
+              ...baseLesson,
+              date: format(currentDate, 'yyyy-MM-dd'),
+            });
+            lessonsCreated++;
+          } else {
+            // Skip this day - it's a break
+            console.log(`  ⏭️  Skipping ${format(currentDate, 'MMM dd')} - break day`);
+            skippedBreaks++;
+          }
+        } else {
+          skippedWeekends++;
+        }
       }
       
-      // Move to next day
-      current.setDate(current.getDate() + 1);
+      currentDate.setDate(currentDate.getDate() + 1);
     }
     
-    console.log(`✅ Generated ${lessons.length} recurring lessons (only on school days)`);
-    console.log(`⏭️  Skipped ${skippedBreaks} days due to breaks/holidays`);
+    console.log(`✅ Generated ${lessonsCreated} lessons`);
+    console.log(`⏭️  Skipped ${skippedBreaks} days due to breaks`);
+    console.log(`⏭️  Skipped ${skippedWeekends} non-school days`);
+    
     return lessons;
   };
 
   const handleSave = async () => {
+    // Prevent double-tap
+    if (loading) {
+      console.log('⚠️ Already creating lesson, ignoring tap');
+      return;
+    }
+
     // Validate required fields
     if (selectedStudents.length === 0) {
       Alert.alert('Error', 'Please select at least one student');
@@ -329,6 +320,23 @@ export default function AddLessonScreen() {
           Alert.alert('Error', 'Please select at least one day for custom recurring lessons');
           setLoading(false);
           return;
+        }
+
+        // Ensure breaks are loaded before generating lessons
+        if (breaks.length === 0) {
+          console.log('📅 No breaks in store, fetching...');
+          await fetchBreaks();
+          // Get updated breaks from store after fetching
+          const updatedBreaks = useBreakStore.getState().breaks;
+          console.log(`📅 Fetched ${updatedBreaks.length} breaks`);
+          updatedBreaks.forEach(b => {
+            console.log(`  - ${b.reason || 'Break'}: ${b.start_date} to ${b.end_date}`);
+          });
+        } else {
+          console.log(`📅 Current breaks in system: ${breaks.length}`);
+          breaks.forEach(b => {
+            console.log(`  - ${b.reason || 'Break'}: ${b.start_date} to ${b.end_date}`);
+          });
         }
 
         // Generate all recurring lessons
@@ -430,17 +438,28 @@ export default function AddLessonScreen() {
                     console.log('✅ Students linked to recurring lessons');
                   }
 
-                  // Refresh lessons in store
-                  await lessonStore.fetchLessons();
+                  // Refresh lessons in store (force fresh fetch)
+                  await lessonStore.fetchLessons(undefined, undefined, true);
+                  console.log('✅ Lessons created, store refreshed');
 
                   // Success!
                   Alert.alert(
                     'Success! 🎉',
                     `Created ${insertedLessons.length} recurring lessons!`,
-                    [{ text: 'OK', onPress: () => router.back() }]
+                    [{
+                      text: 'OK',
+                      onPress: async () => {
+                        // Navigate back ONCE
+                        router.back();
+                        
+                        // Reset loading (prevents double-tap)
+                        setLoading(false);
+                      }
+                    }]
                   );
                   
-                  setLoading(false);
+                  // Don't set loading false here - wait for user to dismiss alert
+                  // This prevents double-tap creating duplicates
                 } catch (err: any) {
                   console.error('Error saving recurring lessons:', err);
                   Alert.alert('Error', err.message || 'Something went wrong');
@@ -524,14 +543,25 @@ export default function AddLessonScreen() {
         console.log('✅ Students linked:', linkedData?.length);
       }
 
-        // Refresh lesson data
-      await lessonStore.fetchLessons();
+        // Refresh lesson data (force fresh fetch)
+      await lessonStore.fetchLessons(undefined, undefined, true);
+      console.log('✅ Lessons created, store refreshed');
 
       Alert.alert('Success', 'Lesson created!', [
-        { text: 'OK', onPress: () => router.back() },
+        {
+          text: 'OK',
+          onPress: async () => {
+            // Navigate back ONCE
+            router.back();
+            
+            // Reset loading (prevents double-tap)
+            setLoading(false);
+          }
+        },
       ]);
 
-        setLoading(false);
+        // Don't set loading false here - wait for user to dismiss alert
+        // This prevents double-tap creating duplicates
       }
     } catch (error: any) {
       console.error('Error creating lesson:', error);

@@ -2,7 +2,8 @@ import Avatar from '@/components/ui/Avatar';
 import Colors from '@/constants/Colors';
 import Typography from '@/constants/Typography';
 import { Lesson, Student } from '@/types';
-import { format, startOfMonth, startOfWeek, startOfYear } from 'date-fns';
+import { format, startOfYear } from 'date-fns';
+import { filterLessonsByStudent, getEndOfMonth, getEndOfWeek, getStartOfMonth, getStartOfWeek, isDateInRange } from '@/utils/dateFilters';
 import { Award, Calendar, CheckCircle, Circle, TrendingUp, X } from 'lucide-react-native';
 import React from 'react';
 import {
@@ -29,16 +30,18 @@ export default function StudentSummaryModal({
 }: StudentSummaryModalProps) {
   if (!student) return null;
 
-  const studentLessons = lessons.filter(l => l.student_id === student.id);
+  const studentLessons = filterLessonsByStudent(lessons, student.id);
   
-  // Time period filters
+  // Time period filters with proper date ranges
   const now = new Date();
-  const weekStart = startOfWeek(now, { weekStartsOn: 1 });
-  const monthStart = startOfMonth(now);
+  const weekStart = getStartOfWeek(now);
+  const weekEnd = getEndOfWeek(now);
+  const monthStart = getStartOfMonth(now);
+  const monthEnd = getEndOfMonth(now);
   const yearStart = startOfYear(now);
 
-  const thisWeek = studentLessons.filter(l => new Date(l.date) >= weekStart);
-  const thisMonth = studentLessons.filter(l => new Date(l.date) >= monthStart);
+  const thisWeek = studentLessons.filter(l => isDateInRange(l.date, weekStart, weekEnd));
+  const thisMonth = studentLessons.filter(l => isDateInRange(l.date, monthStart, monthEnd));
   const thisYear = studentLessons.filter(l => new Date(l.date) >= yearStart);
 
   // Get subjects

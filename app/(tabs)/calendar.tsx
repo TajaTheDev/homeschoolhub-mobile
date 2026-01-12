@@ -16,6 +16,7 @@ import Typography from '@/constants/Typography';
 import { supabase } from '@/lib/supabase/client';
 import { useLessonStore } from '@/store/lessonStore';
 import { useScheduleStore } from '@/store/scheduleStore';
+import { useBreakStore } from '@/store/breakStore';
 import { useStudentStore } from '@/store/studentStore';
 import { useAttendanceStore } from '@/store/attendanceStore';
 import type { Lesson } from '@/types';
@@ -32,7 +33,8 @@ import {
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus, X } from 'lucide-react-native';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   Animated,
   Dimensions,
@@ -105,7 +107,8 @@ export default function CalendarScreen() {
   const { students, fetchStudents } = useStudentStore();
   const lessonStore = useLessonStore();
   const { lessons, fetchLessons, toggleCompleteOptimistic } = lessonStore;
-  const { breaks, isBreakDay, fetchBreaks } = useScheduleStore();
+  const { getSchoolDays } = useScheduleStore();
+  const { breaks, isBreakDay, fetchBreaks } = useBreakStore();
   const { attendance, hasAttendanceForDate, fetchAttendance } = useAttendanceStore();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
@@ -141,6 +144,15 @@ export default function CalendarScreen() {
     loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Refresh lessons when calendar screen comes into focus
+  // This ensures calendar shows newly created lessons immediately
+  useFocusEffect(
+    useCallback(() => {
+      console.log('📅 Calendar screen focused - refreshing lessons');
+      fetchLessons(undefined, undefined, true); // Force fresh fetch
+    }, [fetchLessons])
+  );
 
   // Debug: Check attendance data
   useEffect(() => {

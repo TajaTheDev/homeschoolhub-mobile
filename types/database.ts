@@ -20,11 +20,15 @@ export interface SchoolSchedule {
 export interface SchoolBreak {
   id: string;
   user_id: string;
-  name: string;
+  name?: string;
+  reason?: string;
   start_date: string; // Format: 'YYYY-MM-DD'
   end_date: string;   // Format: 'YYYY-MM-DD'
   emoji?: string;
+  caused_shifts: boolean;
+  shift_days: number;
   created_at: string;
+  updated_at: string;
 }
 
 export interface DayOfWeek {

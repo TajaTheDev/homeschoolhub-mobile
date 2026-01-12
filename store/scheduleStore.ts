@@ -2,6 +2,7 @@ import { supabase } from '@/lib/supabase';
 import { SchoolBreak, SchoolSchedule } from '@/types/database';
 import { format } from 'date-fns';
 import { create } from 'zustand';
+import { useBreakStore } from '@/store/breakStore';
 
 interface ScheduleStore {
   schedule: SchoolSchedule | null;
@@ -173,7 +174,9 @@ export const useScheduleStore = create<ScheduleStore>((set, get) => ({
   },
 
   isBreakDay: (date: Date | string) => {
-    const breaks = get().breaks;
+    // Use breakStore instead of local breaks
+    const { breaks } = useBreakStore.getState();
+    
     // Handle both Date objects and strings
     const dateStr = typeof date === 'string' 
       ? date 
@@ -181,8 +184,12 @@ export const useScheduleStore = create<ScheduleStore>((set, get) => ({
         ? format(date, 'yyyy-MM-dd')
         : '';
 
-    return breaks.some((breakItem) => {
+    const isBreak = breaks.some((breakItem) => {
       return dateStr >= breakItem.start_date && dateStr <= breakItem.end_date;
     });
+    
+    console.log(`🔍 isBreakDay(${dateStr}): ${isBreak}`);
+    
+    return isBreak;
   },
 }));

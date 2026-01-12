@@ -78,13 +78,20 @@ export const useStudentStore = create<StudentState>((set, get) => ({
 
       const { data, error } = await supabase
         .from('students')
-        .select('*')
+        .select(`
+          *,
+          student_subjects (
+            id,
+            subject,
+            goal
+          )
+        `)
         .eq('user_id', user.id)
         .order('created_at', { ascending: true })
         .limit(100); // Reasonable limit for student records
 
       if (error) {
-        console.error('Error fetching students:', error);
+        console.error('❌ Error fetching students:', error);
         // Try to use cached data on error
         const cached = await getCachedData('students', CACHE_DURATION * 2); // Use older cache on error
         if (cached) {
@@ -95,6 +102,11 @@ export const useStudentStore = create<StudentState>((set, get) => ({
         set({ loading: false });
         return;
       }
+
+      console.log('👨‍🎓 Fetched students:', data?.length);
+      data?.forEach((student: any) => {
+        console.log(`  - ${student.name}: ${student.student_subjects?.length || 0} subjects`);
+      });
 
       set({ students: data || [], loading: false });
       lastFetch = now; // Update cache timestamp
@@ -242,21 +254,35 @@ export const useStudentStore = create<StudentState>((set, get) => ({
   addSubject: async (subject) => {
     set({ loading: true });
     try {
+      console.log('➕ Adding subject:', { studentId: subject.student_id, subject: subject.subject });
+      
       const { data, error } = await supabase
         .from('student_subjects')
-        .insert(subject)
+        .insert({
+          student_id: subject.student_id,
+          subject: subject.subject,
+          goal: subject.goal,
+        })
         .select()
         .single();
 
       if (error) {
+        console.error('❌ Add subject error:', error);
         set({ loading: false });
         return { success: false, error: error.message };
       }
 
-      // Refresh subjects list
-      await get().fetchSubjects();
-      return { success: true };
+      console.log('✅ Subject added:', data);
+      
+      // Refresh students to get updated subjects (this includes the join)
+      await get().fetchStudents();
+      
+      // Also refresh subjects list for compatibility
+      await get().fetchSubjects(subject.student_id);
+      
+      return { success: true, data };
     } catch (error) {
+      console.error('❌ Add subject exception:', error);
       set({ loading: false });
       return {
         success: false,
@@ -274,14 +300,22 @@ export const useStudentStore = create<StudentState>((set, get) => ({
         .eq('id', id);
 
       if (error) {
+        console.error('❌ Update subject error:', error);
         set({ loading: false });
         return { success: false, error: error.message };
       }
 
-      // Refresh subjects list
+      console.log('✅ Subject updated:', id);
+      
+      // Refresh students to get updated subjects
+      await get().fetchStudents();
+      
+      // Also refresh subjects list for compatibility
       await get().fetchSubjects();
+      
       return { success: true };
     } catch (error) {
+      console.error('❌ Update subject exception:', error);
       set({ loading: false });
       return {
         success: false,
@@ -299,14 +333,22 @@ export const useStudentStore = create<StudentState>((set, get) => ({
         .eq('id', id);
 
       if (error) {
+        console.error('❌ Delete subject error:', error);
         set({ loading: false });
         return { success: false, error: error.message };
       }
 
-      // Refresh subjects list
+      console.log('✅ Subject deleted:', id);
+      
+      // Refresh students to get updated subjects
+      await get().fetchStudents();
+      
+      // Also refresh subjects list for compatibility
       await get().fetchSubjects();
+      
       return { success: true };
     } catch (error) {
+      console.error('❌ Delete subject exception:', error);
       set({ loading: false });
       return {
         success: false,

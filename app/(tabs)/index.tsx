@@ -18,6 +18,7 @@ import { useAttendanceStore } from '@/store/attendanceStore';
 import { useSubscription } from '@/contexts/SubscriptionContext';
 import type { Lesson, Student } from '@/types';
 import { getGradeDisplay } from '@/utils/gradeHelpers';
+import { getLessonCountsByPeriod } from '@/utils/dateFilters';
 // import { LessonPhoto } from '@/types/database';
 import PhotoGalleryModal from '@/components/lessons/PhotoGalleryModal';
 import { useFocusEffect } from '@react-navigation/native';
@@ -150,6 +151,7 @@ export default function Dashboard() {
   const lessonStore = useLessonStore();
   const { lessons, fetchLessons, toggleCompleteOptimistic } = lessonStore;
   const { user, signOut } = useAuthStore();
+
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showStudentForm, setShowStudentForm] = useState(false);
@@ -181,6 +183,17 @@ export default function Dashboard() {
   const { hasAttendanceForDate } = useAttendanceStore();
   const [hasError, setHasError] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
+
+  // Force fetch students and lessons on dashboard mount
+  useEffect(() => {
+    console.log('📊 Dashboard mounted - fetching data');
+    fetchStudents();
+    fetchLessons();
+  }, []);
+
+  // Debug logging for dashboard data
+  console.log('👨‍🎓 Dashboard students:', students.length);
+  console.log('📚 Dashboard lessons:', lessons.length);
 
   // ⚠️ TEMPORARILY DISABLED FOR DEVELOPMENT TESTING
   // TODO: Re-enable this before production!
@@ -406,16 +419,11 @@ export default function Dashboard() {
 
   // Weekly stats calculations
   const weeklyStats = useMemo(() => {
-    const weekAgo = new Date();
-    weekAgo.setDate(weekAgo.getDate() - 7);
+    // Use the utility function to get proper week filtering (Monday-Sunday)
+    const counts = getLessonCountsByPeriod(lessons);
     
-    const thisWeekLessons = lessons.filter(
-      (l) => new Date(l.date) >= weekAgo
-    );
-    
-    const completedThisWeek = thisWeekLessons.filter((l) => l.completed).length;
-    const completionRate = thisWeekLessons.length > 0
-      ? Math.round((completedThisWeek / thisWeekLessons.length) * 100)
+    const completionRate = counts.thisWeek > 0
+      ? Math.round((counts.completedThisWeek / counts.thisWeek) * 100)
       : 0;
     
     // Calculate streak (consecutive days with completed lessons)
@@ -436,7 +444,7 @@ export default function Dashboard() {
     }
     
     return {
-      thisWeekCount: thisWeekLessons.length,
+      thisWeekCount: counts.thisWeek,
       completionRate,
       streak,
     };

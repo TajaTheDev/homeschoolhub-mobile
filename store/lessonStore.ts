@@ -11,7 +11,7 @@ import { create } from 'zustand';
 interface LessonState {
   lessons: Lesson[];
   loading: boolean;
-  fetchLessons: (studentId?: string, date?: string) => Promise<void>;
+  fetchLessons: (studentId?: string, date?: string, forceRefresh?: boolean) => Promise<void>;
   addLesson: (
     lesson: Omit<Lesson, 'id' | 'created_at' | 'updated_at'>
   ) => Promise<{ success: boolean; error?: string }>;
@@ -20,6 +20,7 @@ interface LessonState {
     updates: Partial<Lesson>
   ) => Promise<{ success: boolean; error?: string }>;
   deleteLesson: (id: string) => Promise<{ success: boolean; error?: string }>;
+  deleteLessons: (ids: string[]) => Promise<{ success: boolean; error?: string }>;
   toggleComplete: (id: string) => Promise<{ success: boolean; error?: string }>;
   toggleCompleteOptimistic: (id: string) => void;
   updateLessonOptimistic: (id: string, updates: Partial<Lesson>) => void;
@@ -34,14 +35,19 @@ export const useLessonStore = create<LessonState>((set, get) => ({
   lessons: [],
   loading: false,
 
-  fetchLessons: async (studentId?: string, date?: string) => {
-    // Check in-memory cache first
+  fetchLessons: async (studentId?: string, date?: string, forceRefresh: boolean = false) => {
+    console.log('📚 Fetching lessons from database...', { studentId, date, forceRefresh });
+    
+    // Always fetch fresh during active session (bypass cache)
+    // Only use cache if explicitly not forcing refresh AND we're offline
     const now = Date.now();
     const filters = { studentId, date };
     const cacheKey = JSON.stringify(filters);
     const cachedKey = JSON.stringify(cachedFilters);
     
-    if (now - lastFetch < CACHE_DURATION && 
+    // Skip cache if force refresh is requested
+    if (!forceRefresh && 
+        now - lastFetch < CACHE_DURATION && 
         cacheKey === cachedKey && 
         get().lessons.length > 0) {
       console.log('📦 Using in-memory cached lessons');
@@ -54,7 +60,7 @@ export const useLessonStore = create<LessonState>((set, get) => ({
       const online = await isOnline();
       const cacheKeyForStorage = `lessons_${cacheKey}`;
       
-      if (!online) {
+      if (!online && !forceRefresh) {
         console.log('📡 Offline - checking local cache');
         const cached = await getCachedData(cacheKeyForStorage, CACHE_DURATION);
         if (cached) {
@@ -74,6 +80,9 @@ export const useLessonStore = create<LessonState>((set, get) => ({
         set({ loading: false });
         return;
       }
+      
+      // Always fetch fresh from database (no caching during active session)
+      console.log('🔄 Fetching fresh lessons from database (cache bypassed)');
 
       // First, let's see what columns actually exist
       console.log('🔍 Testing lessons table schema...');
@@ -108,12 +117,15 @@ export const useLessonStore = create<LessonState>((set, get) => ({
       }
       
       if (schemaTest && schemaTest[0]) {
-        console.log('✅ Lessons table columns found:', Object.keys(schemaTest[0]));
-        console.log('📋 Column details:', Object.keys(schemaTest[0]).map(col => ({
-          name: col,
-          type: typeof schemaTest[0][col],
-          sampleValue: schemaTest[0][col]
-        })));
+        // Only log column details if there are few columns
+        const columns = Object.keys(schemaTest[0]);
+        console.log('✅ Lessons table columns:', columns.length);
+        if (columns.length < 30) {
+          console.log('📋 Column details:', columns.map(col => ({
+            name: col,
+            type: typeof schemaTest[0][col]
+          })));
+        }
       }
 
       console.log('🔍 Fetching lessons with pagination...', { studentId, date });
@@ -447,40 +459,72 @@ export const useLessonStore = create<LessonState>((set, get) => ({
   },
 
   addLesson: async (lessonData) => {
-    set({ loading: true });
+    console.log('➕ Creating lesson:', {
+      title: lessonData.title,
+      subject: lessonData.subject,
+      date: lessonData.date,
+      student_id: lessonData.student_id
+    });
+    
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      return { success: false, error: 'Not authenticated' };
+    }
+
+    // Generate temporary ID for optimistic update
+    const tempId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const now = new Date().toISOString();
+    
+    // Create optimistic lesson object
+    const optimisticLesson: Lesson = {
+      ...lessonData,
+      id: tempId,
+      created_at: now,
+      updated_at: now,
+      completed: lessonData.completed || false,
+    } as Lesson;
+    
+    // IMMEDIATELY update local state (UI updates instantly)
+    set((state) => ({ 
+      lessons: [...state.lessons, optimisticLesson],
+      loading: false,
+    }));
+    
+    console.log('➕ Lesson added optimistically with temp ID:', tempId);
+    
+    // Save to database in background
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (!user) {
-        set({ loading: false });
-        return { success: false, error: 'Not authenticated' };
-      }
-      
       const { data, error } = await supabase
         .from('lessons')
         .insert({
           ...lessonData,
-          user_id: user.id,  // ← ADD THIS!
+          user_id: user.id,
         })
         .select()
         .single();
       
       if (error) {
-        console.error('Error adding lesson:', error);
-        set({ loading: false });
+        console.error('❌ Error saving lesson to database:', error);
+        // Rollback: Remove the optimistic lesson
+        set((state) => ({
+          lessons: state.lessons.filter((l) => l.id !== tempId),
+        }));
         return { success: false, error: error.message };
       }
       
-      // Update local state immediately with new lesson
-      set((state) => ({ 
-        lessons: [...state.lessons, data],
-        loading: false,
+      // Replace temp lesson with real one (with real ID)
+      set((state) => ({
+        lessons: state.lessons.map((l) => l.id === tempId ? data : l),
       }));
       
+      console.log('✅ Lesson saved to database, replaced temp with real ID:', data.id);
       return { success: true, data };
     } catch (error) {
-      console.error('Error adding lesson:', error);
-      set({ loading: false });
+      console.error('❌ Unexpected error saving lesson:', error);
+      // Rollback: Remove the optimistic lesson
+      set((state) => ({
+        lessons: state.lessons.filter((l) => l.id !== tempId),
+      }));
       return {
         success: false,
         error: error instanceof Error ? error.message : 'An unexpected error occurred',
@@ -489,7 +533,26 @@ export const useLessonStore = create<LessonState>((set, get) => ({
   },
 
   updateLesson: async (id, updates) => {
-    set({ loading: true });
+    // Find the lesson to update
+    const lesson = get().lessons.find((l) => l.id === id);
+    if (!lesson) {
+      return { success: false, error: 'Lesson not found' };
+    }
+    
+    // Store previous state for rollback
+    const previousLesson = { ...lesson };
+    
+    // IMMEDIATELY update local state (UI updates instantly)
+    set((state) => ({
+      lessons: state.lessons.map((l) =>
+        l.id === id ? { ...l, ...updates, updated_at: new Date().toISOString() } : l
+      ),
+      loading: false,
+    }));
+    
+    console.log('✏️ Lesson updated optimistically:', id);
+    
+    // Save to database in background
     try {
       const { error } = await supabase
         .from('lessons')
@@ -497,15 +560,22 @@ export const useLessonStore = create<LessonState>((set, get) => ({
         .eq('id', id);
 
       if (error) {
-        set({ loading: false });
+        console.error('❌ Error saving lesson update to database:', error);
+        // Rollback: Restore previous lesson state
+        set((state) => ({
+          lessons: state.lessons.map((l) => l.id === id ? previousLesson : l),
+        }));
         return { success: false, error: error.message };
       }
 
-      // Refresh lessons list
-      await get().fetchLessons();
+      console.log('✅ Lesson update saved to database:', id);
       return { success: true };
     } catch (error) {
-      set({ loading: false });
+      console.error('❌ Unexpected error saving lesson update:', error);
+      // Rollback: Restore previous lesson state
+      set((state) => ({
+        lessons: state.lessons.map((l) => l.id === id ? previousLesson : l),
+      }));
       return {
         success: false,
         error: error instanceof Error ? error.message : 'An unexpected error occurred',
@@ -514,20 +584,104 @@ export const useLessonStore = create<LessonState>((set, get) => ({
   },
 
   deleteLesson: async (id) => {
-    set({ loading: true });
+    console.log('🗑️ Deleting lesson:', id);
+    
+    // Store the lesson for potential rollback
+    const lessonToDelete = get().lessons.find((l) => l.id === id);
+    if (!lessonToDelete) {
+      return { success: false, error: 'Lesson not found' };
+    }
+    
+    // IMMEDIATELY update local state (UI updates instantly)
+    set((state) => ({
+      lessons: state.lessons.filter((l) => l.id !== id),
+      loading: false,
+    }));
+    
+    console.log('🗑️ Lesson removed optimistically from store');
+    
+    // Delete from database in background
     try {
       const { error } = await supabase.from('lessons').delete().eq('id', id);
 
       if (error) {
-        set({ loading: false });
+        console.error('❌ Error deleting lesson from database:', error);
+        // Rollback: Restore the lesson
+        set((state) => ({
+          lessons: [...state.lessons, lessonToDelete].sort((a, b) => 
+            new Date(b.date).getTime() - new Date(a.date).getTime()
+          ),
+        }));
         return { success: false, error: error.message };
       }
 
-      // Refresh lessons list
-      await get().fetchLessons();
+      console.log('✅ Lesson deleted from database:', id);
       return { success: true };
     } catch (error) {
-      set({ loading: false });
+      console.error('❌ Unexpected error deleting lesson:', error);
+      // Rollback: Restore the lesson
+      set((state) => ({
+        lessons: [...state.lessons, lessonToDelete].sort((a, b) => 
+          new Date(b.date).getTime() - new Date(a.date).getTime()
+        ),
+      }));
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'An unexpected error occurred',
+      };
+    }
+  },
+
+  deleteLessons: async (ids) => {
+    console.log('🗑️ Deleting lessons (bulk):', ids.length, 'lessons');
+    // Only log IDs if there are few lessons
+    if (ids.length < 10) {
+      console.log('  Lesson IDs:', ids);
+    }
+    
+    if (ids.length === 0) {
+      return { success: false, error: 'No lessons to delete' };
+    }
+    
+    // Store the lessons for potential rollback
+    const lessonsToDelete = get().lessons.filter((l) => ids.includes(l.id));
+    
+    // IMMEDIATELY update local state (UI updates instantly)
+    set((state) => ({
+      lessons: state.lessons.filter((l) => !ids.includes(l.id)),
+      loading: false,
+    }));
+    
+    console.log(`🗑️ ${ids.length} lessons removed optimistically from store`);
+    
+    // Delete from database in background
+    try {
+      const { error } = await supabase
+        .from('lessons')
+        .delete()
+        .in('id', ids);
+
+      if (error) {
+        console.error('❌ Error deleting lessons from database:', error);
+        // Rollback: Restore the lessons
+        set((state) => ({
+          lessons: [...state.lessons, ...lessonsToDelete].sort((a, b) => 
+            new Date(b.date).getTime() - new Date(a.date).getTime()
+          ),
+        }));
+        return { success: false, error: error.message };
+      }
+
+      console.log(`✅ ${ids.length} lessons deleted from database`);
+      return { success: true };
+    } catch (error) {
+      console.error('❌ Unexpected error deleting lessons:', error);
+      // Rollback: Restore the lessons
+      set((state) => ({
+        lessons: [...state.lessons, ...lessonsToDelete].sort((a, b) => 
+          new Date(b.date).getTime() - new Date(a.date).getTime()
+        ),
+      }));
       return {
         success: false,
         error: error instanceof Error ? error.message : 'An unexpected error occurred',

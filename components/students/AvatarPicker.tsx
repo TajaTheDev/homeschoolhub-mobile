@@ -6,6 +6,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Camera, Image as ImageIcon, X } from 'lucide-react-native';
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Animated,
   Modal,
@@ -123,9 +124,16 @@ export default function AvatarPicker({
         throw uploadError;
       }
 
-      console.log('Upload successful:', data);
+      console.log('✅ Photo uploaded:', data.path);
 
-      // Return the file path
+      // Get public URL for immediate display
+      const { data: { publicUrl } } = supabase.storage
+        .from('student-avatars')
+        .getPublicUrl(data.path);
+
+      console.log('📷 Public URL:', publicUrl);
+
+      // Return the file path (and public URL for immediate display)
       onSelect('photo', fileName);
       onClose();
     } catch (error: any) {
@@ -168,7 +176,7 @@ export default function AvatarPicker({
               <Text style={styles.sectionTitle}>Upload Photo</Text>
               <View style={styles.photoButtons}>
                 <TouchableOpacity
-                  style={styles.photoButton}
+                  style={[styles.photoButton, uploading && styles.photoButtonDisabled]}
                   onPress={takePhoto}
                   disabled={uploading}
                 >
@@ -176,7 +184,7 @@ export default function AvatarPicker({
                   <Text style={styles.photoButtonText}>Take Photo</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={styles.photoButton}
+                  style={[styles.photoButton, uploading && styles.photoButtonDisabled]}
                   onPress={pickImage}
                   disabled={uploading}
                 >
@@ -184,6 +192,12 @@ export default function AvatarPicker({
                   <Text style={styles.photoButtonText}>Choose Photo</Text>
                 </TouchableOpacity>
               </View>
+              {uploading && (
+                <View style={styles.uploadingOverlay}>
+                  <ActivityIndicator size="large" color={Colors.brand[500]} />
+                  <Text style={styles.uploadingText}>Uploading photo...</Text>
+                </View>
+              )}
             </View>
 
             {/* Illustration Options */}
@@ -286,6 +300,22 @@ const styles = StyleSheet.create({
   photoButtonText: {
     ...Typography.label,
     color: Colors.brand[600],
+  },
+  photoButtonDisabled: {
+    opacity: 0.5,
+  },
+  uploadingOverlay: {
+    marginTop: 16,
+    padding: 20,
+    backgroundColor: Colors.brand[50],
+    borderRadius: 12,
+    alignItems: 'center',
+    gap: 12,
+  },
+  uploadingText: {
+    ...Typography.body,
+    color: Colors.brand[700],
+    fontWeight: '600',
   },
   illustrationsGrid: {
     flexDirection: 'row',

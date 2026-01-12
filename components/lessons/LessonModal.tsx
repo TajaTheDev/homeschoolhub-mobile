@@ -243,8 +243,6 @@ export default function LessonModal({ visible, lesson, onClose, onSave }: Lesson
       }
     }
 
-    setLoading(true);
-
     // Prepare grade data
     let gradeData = {};
     if (showGradeInput && gradeType && gradeValue.trim()) {
@@ -264,6 +262,7 @@ export default function LessonModal({ visible, lesson, onClose, onSave }: Lesson
       };
     }
 
+    // Update lesson optimistically (UI updates instantly, modal closes immediately)
     const result = await lessonStore.updateLesson(lesson.id, {
       subject: subject.trim(),
       title: title.trim(),
@@ -273,13 +272,12 @@ export default function LessonModal({ visible, lesson, onClose, onSave }: Lesson
       ...gradeData, // Include grade data
     });
 
-    setLoading(false);
+    // Close modal immediately (optimistic UX)
+    onSave();
 
-    if (result.success) {
-      Alert.alert('Success', 'Lesson updated!');
-      onSave();
-    } else {
-      Alert.alert('Error', result.error || 'Failed to update lesson');
+    // Handle errors in background (if any)
+    if (!result.success) {
+      Alert.alert('Error', result.error || 'Failed to update lesson. Changes may not have been saved.');
     }
   };
 
@@ -293,13 +291,15 @@ export default function LessonModal({ visible, lesson, onClose, onSave }: Lesson
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
-            setLoading(true);
+            // Delete optimistically (UI updates instantly, modal closes immediately)
             const result = await lessonStore.deleteLesson(lesson.id);
-            setLoading(false);
-            if (result.success) {
-              onSave();
-            } else {
-              Alert.alert('Error', result.error || 'Failed to delete');
+            
+            // Close modal immediately (optimistic UX)
+            onSave();
+            
+            // Handle errors in background (if any)
+            if (!result.success) {
+              Alert.alert('Error', result.error || 'Failed to delete lesson. It may still appear in the list.');
             }
           },
         },

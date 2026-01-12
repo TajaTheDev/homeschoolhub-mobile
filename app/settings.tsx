@@ -3,7 +3,7 @@ import Colors from '@/constants/Colors';
 import Typography from '@/constants/Typography';
 import { supabase } from '@/lib/supabase';
 import type { AvatarType } from '@/types';
-import { requestNotificationPermissions, scheduleAttendanceReminder } from '@/utils/notificationManager';
+import { requestNotificationPermissions, scheduleAttendanceReminder, cancelAttendanceReminder } from '@/utils/notificationManager';
 import { useSubscription } from '@/contexts/SubscriptionContext';
 import { presentCustomerCenter } from '@/components/subscription/CustomerCenter';
 import { restorePurchases } from '@/lib/revenuecat';
@@ -12,6 +12,7 @@ import {
   Bell,
   Calendar,
   ChevronRight,
+  Clock,
   CreditCard,
   Download,
   Image as ImageIcon,
@@ -19,6 +20,7 @@ import {
   LogOut,
   Moon,
   RefreshCw,
+  Settings,
   Shield,
   Share2,
   TrendingUp,
@@ -27,12 +29,17 @@ import {
 import React, { useEffect, useState } from 'react';
 import {
   Alert,
+  Platform,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { format } from 'date-fns';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function SettingsScreen() {
@@ -42,10 +49,86 @@ export default function SettingsScreen() {
   const [displayName, setDisplayName] = useState('');
   const [avatarType, setAvatarType] = useState<AvatarType>('initial');
   const [avatarValue, setAvatarValue] = useState<string | null>(null);
+  const [attendanceReminders, setAttendanceReminders] = useState(false);
+  const [reminderTime, setReminderTime] = useState(() => {
+    const defaultTime = new Date();
+    defaultTime.setHours(9, 0, 0, 0); // Default 9:00 AM
+    return defaultTime;
+  });
 
   useEffect(() => {
     loadUserData();
+    loadReminderSettings();
   }, []);
+
+  const loadReminderSettings = async () => {
+    try {
+      const enabled = await AsyncStorage.getItem('attendanceRemindersEnabled');
+      const savedTime = await AsyncStorage.getItem('reminderTime');
+      
+      if (enabled === 'true') {
+        setAttendanceReminders(true);
+      }
+      
+      if (savedTime) {
+        const time = new Date(savedTime);
+        setReminderTime(time);
+      }
+    } catch (error) {
+      console.error('Error loading reminder settings:', error);
+    }
+  };
+
+  const handleTimeChange = async (event: any, selectedTime?: Date) => {
+    if (selectedTime) {
+      setReminderTime(selectedTime);
+      await AsyncStorage.setItem('reminderTime', selectedTime.toISOString());
+      
+      // If reminders are enabled, reschedule with new time
+      if (attendanceReminders) {
+        const result = await scheduleAttendanceReminder(selectedTime);
+        if (result.success) {
+          // Silent update - no alert for inline picker
+          console.log('✅ Reminder updated to', format(selectedTime, 'h:mm a'));
+        } else {
+          Alert.alert('Error', result.error || 'Failed to schedule reminder');
+        }
+      }
+    }
+  };
+
+  const handleToggleReminders = async (value: boolean) => {
+    try {
+      setAttendanceReminders(value);
+      await AsyncStorage.setItem('attendanceRemindersEnabled', value.toString());
+      
+      if (value) {
+        // Schedule notification
+        const permissionResult = await requestNotificationPermissions();
+        if (permissionResult.success) {
+          const result = await scheduleAttendanceReminder(reminderTime);
+          if (result.success) {
+            Alert.alert('Success', 'Daily reminder enabled!');
+          } else {
+            Alert.alert('Error', result.error || 'Failed to schedule reminder');
+            setAttendanceReminders(false);
+            await AsyncStorage.setItem('attendanceRemindersEnabled', 'false');
+          }
+        } else {
+          Alert.alert('Permission Required', permissionResult.error || 'Please enable notifications in your device settings');
+          setAttendanceReminders(false);
+          await AsyncStorage.setItem('attendanceRemindersEnabled', 'false');
+        }
+      } else {
+        // Cancel notifications
+        await cancelAttendanceReminder();
+        Alert.alert('Success', 'Daily reminder disabled');
+      }
+    } catch (error) {
+      console.error('Error toggling reminders:', error);
+      Alert.alert('Error', 'Something went wrong');
+    }
+  };
 
   const loadUserData = async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -119,7 +202,10 @@ export default function SettingsScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Settings</Text>
+        <View style={styles.headerLeft}>
+          <Settings size={28} color={Colors.brand[700]} />
+          <Text style={styles.headerTitle}>Settings</Text>
+        </View>
       </View>
 
       <ScrollView
@@ -184,20 +270,48 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Reminders</Text>
           <View style={styles.sectionContent}>
-            <SettingsItem
-              icon={Bell}
-              title="Attendance Reminder"
-              subtitle="Daily reminder at 9:00 AM"
-              onPress={async () => {
-                const hasPermission = await requestNotificationPermissions();
-                if (hasPermission) {
-                  await scheduleAttendanceReminder(9, 0); // 9 AM daily
-                  Alert.alert('Success!', 'Daily attendance reminder set for 9:00 AM');
-                } else {
-                  Alert.alert('Permission Required', 'Please enable notifications in your device settings');
-                }
-              }}
-            />
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <View style={styles.settingHeader}>
+                  <Bell size={20} color={Colors.brand[500]} style={styles.settingIcon} />
+                  <Text style={styles.settingTitle}>Daily Attendance Reminder</Text>
+                </View>
+                <Text style={styles.settingDescription}>
+                  Get notified to mark attendance
+                </Text>
+              </View>
+              <Switch
+                value={attendanceReminders}
+                onValueChange={handleToggleReminders}
+                trackColor={{ false: Colors.ui.border, true: Colors.brand[300] }}
+                thumbColor={attendanceReminders ? Colors.brand[500] : Colors.ui.textLight}
+              />
+            </View>
+            
+            {attendanceReminders && (
+              <View style={styles.timePickerContainer}>
+                <Text style={styles.timePickerLabel}>Reminder Time</Text>
+                
+                <DateTimePicker
+                  value={reminderTime}
+                  mode="time"
+                  is24Hour={false}
+                  display="spinner"  // Always visible spinner style
+                  themeVariant="light"
+                  textColor="#000000"
+                  onChange={(event, selectedTime) => {
+                    if (selectedTime) {
+                      handleTimeChange(event, selectedTime);
+                    }
+                  }}
+                  style={styles.timePicker}
+                />
+                
+                <Text style={styles.selectedTimeText}>
+                  Daily reminder at {format(reminderTime, 'h:mm a')}
+                </Text>
+              </View>
+            )}
           </View>
         </View>
 
@@ -370,8 +484,15 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Colors.ui.border,
   },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
   headerTitle: {
-    ...Typography.h2,
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: Colors.brand[900],
   },
   scrollView: {
     flex: 1,
@@ -524,6 +645,64 @@ const styles = StyleSheet.create({
     ...Typography.caption,
     fontSize: 11,
     color: Colors.ui.textLight,
+  },
+  settingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.ui.border,
+  },
+  settingInfo: {
+    flex: 1,
+    marginRight: 12,
+  },
+  settingHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  settingIcon: {
+    marginRight: 8,
+  },
+  settingTitle: {
+    ...Typography.body,
+    marginBottom: 2,
+  },
+  settingDescription: {
+    ...Typography.caption,
+    color: Colors.ui.textLight,
+    marginLeft: 28,
+  },
+  timePickerContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    marginHorizontal: 20,
+    marginTop: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: Colors.ui.border,
+  },
+  timePickerLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.brand[900],
+    marginBottom: 12,
+  },
+  timePicker: {
+    backgroundColor: '#FFFFFF',
+    width: '100%',
+    height: 120,
+  },
+  selectedTimeText: {
+    fontSize: 14,
+    color: Colors.brand[600],
+    textAlign: 'center',
+    marginTop: 8,
+    fontWeight: '500',
   },
 });
 

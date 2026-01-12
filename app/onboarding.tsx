@@ -137,7 +137,16 @@ export default function OnboardingScreen() {
     }
     
     setTimeout(() => {
-      router.replace('/subscribe'); // Changed from /(tabs) to show trial celebration screen
+      // TEMPORARY: Bypass subscription screen during App Store review
+      // TODO: Re-enable after approval (Jan 15, 2026)
+      const REVIEW_MODE = true;
+      
+      if (REVIEW_MODE) {
+        console.log('⚠️ REVIEW MODE: Bypassing subscription screen');
+        router.replace('/(tabs)');
+      } else {
+        router.replace('/subscribe'); // Changed from /(tabs) to show trial celebration screen
+      }
     }, 2000);
   };
   

@@ -91,9 +91,31 @@ export default function StudentModal({ visible, student, onClose, onSave }: Stud
   
   console.log('🎨 StudentModal rendering Modal component - visible:', visible);
 
-  const handleAvatarSelect = (type: 'initial' | 'photo' | 'illustration', value?: string) => {
+  const handleAvatarSelect = async (type: 'initial' | 'photo' | 'illustration', value?: string) => {
     setAvatarType(type);
     setAvatarValue(value || null);
+    
+    // If editing existing student and photo was selected, save immediately
+    if (student && type === 'photo' && value) {
+      console.log('📸 Photo selected, saving immediately for student:', student.id);
+      setLoading(true);
+      
+      const result = await studentStore.updateStudent(student.id, {
+        avatar_type: 'photo',
+        avatar_value: value,
+      });
+      
+      setLoading(false);
+      
+      if (result.success) {
+        console.log('✅ Student photo saved immediately');
+        // Refresh students to get updated data
+        await studentStore.fetchStudents();
+      } else {
+        console.error('❌ Failed to save photo:', result.error);
+        Alert.alert('Error', 'Failed to save photo. Please try again.');
+      }
+    }
   };
 
   const handleSave = async () => {

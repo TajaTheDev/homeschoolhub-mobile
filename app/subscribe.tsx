@@ -7,6 +7,10 @@ import { Sparkles, Gift } from 'lucide-react-native';
 import { checkProStatus } from '@/lib/revenuecat';
 import Colors from '@/constants/Colors';
 
+// TEMPORARY: Bypass subscription for App Store review
+// TODO: Re-enable after approval (Jan 15, 2026)
+const REVIEW_MODE = true;
+
 export default function SubscribeScreen() {
   const router = useRouter();
   const confettiRef = useRef<any>(null);
@@ -14,6 +18,13 @@ export default function SubscribeScreen() {
   const [showCelebration, setShowCelebration] = useState(false);
 
   useEffect(() => {
+    // TEMPORARY: Skip subscription check during review
+    if (REVIEW_MODE) {
+      console.log('⚠️ REVIEW MODE: Bypassing subscription paywall');
+      router.replace('/(tabs)');
+      return;
+    }
+    
     checkSubscriptionAndShowPaywall();
   }, []);
 

@@ -1,8 +1,7 @@
 import * as Notifications from 'expo-notifications';
-import * as Device from 'expo-device';
 import { Platform } from 'react-native';
 
-// Configure how notifications behave when app is in foreground
+// Configure how notifications are handled when app is in foreground
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
@@ -11,12 +10,8 @@ Notifications.setNotificationHandler({
   }),
 });
 
-export const requestNotificationPermissions = async () => {
-  if (!Device.isDevice) {
-    console.log('Notifications only work on physical devices');
-    return false;
-  }
-
+// Request notification permissions
+export async function requestNotificationPermissions() {
   const { status: existingStatus } = await Notifications.getPermissionsAsync();
   let finalStatus = existingStatus;
   
@@ -26,73 +21,87 @@ export const requestNotificationPermissions = async () => {
   }
   
   if (finalStatus !== 'granted') {
-    console.log('Failed to get push token for notifications');
-    return false;
+    return { success: false, error: 'Permission not granted' };
   }
   
+  // For Android, set up notification channel
   if (Platform.OS === 'android') {
-    Notifications.setNotificationChannelAsync('default', {
-      name: 'default',
-      importance: Notifications.AndroidImportance.MAX,
+    await Notifications.setNotificationChannelAsync('attendance', {
+      name: 'Attendance Reminders',
+      importance: Notifications.AndroidImportance.HIGH,
       vibrationPattern: [0, 250, 250, 250],
-      lightColor: '#8B5CF6',
+      lightColor: '#6366F1',
     });
   }
   
-  return true;
-};
+  return { success: true };
+}
 
-export const scheduleAttendanceReminder = async (hour: number = 9, minute: number = 0) => {
+// Schedule daily attendance reminder
+export async function scheduleAttendanceReminder(time: Date) {
   try {
-    // Cancel any existing attendance reminders
-    const scheduledNotifications = await Notifications.getAllScheduledNotificationsAsync();
-    for (const notification of scheduledNotifications) {
-      if (notification.content.data?.type === 'attendance') {
-        await Notifications.cancelScheduledNotificationAsync(notification.identifier);
-      }
+    // First check permissions
+    const permissionResult = await requestNotificationPermissions();
+    if (!permissionResult.success) {
+      throw new Error('Notification permissions not granted');
     }
     
-    // Schedule new daily reminder
-    const identifier = await Notifications.scheduleNotificationAsync({
+    // Cancel existing reminders first
+    await cancelAttendanceReminder();
+    
+    const hour = time.getHours();
+    const minute = time.getMinutes();
+    
+    console.log(`⏰ Scheduling daily reminder for ${hour}:${minute}`);
+    
+    const notificationId = await Notifications.scheduleNotificationAsync({
       content: {
-        title: '📋 Time to Take Attendance!',
-        body: 'Don\'t forget to mark today\'s attendance for your students.',
-        data: { type: 'attendance' },
+        title: "📚 Attendance Reminder",
+        body: "Don't forget to mark today's attendance!",
         sound: true,
+        priority: Notifications.AndroidNotificationPriority.HIGH,
+        data: { type: 'attendance' },
       },
       trigger: {
-        hour,
-        minute,
+        type: Notifications.SchedulableTriggerInputTypes.DAILY,
+        hour: hour,
+        minute: minute,
         repeats: true,
+        channelId: Platform.OS === 'android' ? 'attendance' : undefined,
       },
     });
     
-    console.log('✅ Attendance reminder scheduled:', identifier);
-    return identifier;
-  } catch (error) {
-    console.error('Error scheduling notification:', error);
-    return null;
+    console.log('✅ Notification scheduled:', notificationId);
+    return { success: true, id: notificationId };
+    
+  } catch (error: any) {
+    console.error('❌ Error scheduling notification:', error);
+    return { success: false, error: error.message };
   }
-};
+}
 
-export const cancelAttendanceReminder = async () => {
-  const scheduledNotifications = await Notifications.getAllScheduledNotificationsAsync();
-  for (const notification of scheduledNotifications) {
-    if (notification.content.data?.type === 'attendance') {
-      await Notifications.cancelScheduledNotificationAsync(notification.identifier);
-    }
+// Cancel attendance reminders
+export async function cancelAttendanceReminder() {
+  try {
+    await Notifications.cancelAllScheduledNotificationsAsync();
+    console.log('✅ All scheduled notifications cancelled');
+    return { success: true };
+  } catch (error: any) {
+    console.error('❌ Error cancelling notifications:', error);
+    return { success: false, error: error.message };
   }
-  console.log('✅ Attendance reminders cancelled');
-};
+}
 
-export const sendImmediateNotification = async (title: string, body: string) => {
-  await Notifications.scheduleNotificationAsync({
-    content: {
-      title,
-      body,
-      sound: true,
-    },
-    trigger: null, // Send immediately
-  });
-};
+// Get all scheduled notifications (for debugging)
+export async function getScheduledNotifications() {
+  const notifications = await Notifications.getAllScheduledNotificationsAsync();
+  console.log('📋 Scheduled notifications:', notifications);
+  return notifications;
+}
 
+export default {
+  requestNotificationPermissions,
+  scheduleAttendanceReminder,
+  cancelAttendanceReminder,
+  getScheduledNotifications,
+};
