@@ -4,7 +4,7 @@
  */
 
 import { supabase } from '@/lib/supabase/client';
-import { cacheData, getCachedData, isOnline } from '@/lib/offline';
+import { cacheData, getCachedData, isOnline, clearAllCache } from '@/lib/offline';
 import type { Lesson } from '@/types';
 import { create } from 'zustand';
 
@@ -24,6 +24,8 @@ interface LessonState {
   toggleComplete: (id: string) => Promise<{ success: boolean; error?: string }>;
   toggleCompleteOptimistic: (id: string) => void;
   updateLessonOptimistic: (id: string, updates: Partial<Lesson>) => void;
+  clearCache: () => Promise<void>;
+  forceRefresh: () => Promise<void>;
 }
 
 // Cache configuration
@@ -195,8 +197,9 @@ export const useLessonStore = create<LessonState>((set, get) => ({
       const step2a = await supabase
         .from('lessons')
         .select('*, lesson_students(*)')
+        .eq('user_id', user.id)
         .order('date', { ascending: false })
-        .limit(500);
+        .limit(10000); // Increased from 500 to fetch all lessons (Supabase default max is 1000, but we use a higher limit for safety)
 
       if (step2a.error) {
         console.log('⚠️ STEP 2a failed, trying STEP 2b with explicit foreign key...');
@@ -205,8 +208,9 @@ export const useLessonStore = create<LessonState>((set, get) => ({
         const step2b = await supabase
           .from('lessons')
           .select('*, lesson_students!lesson_students_lesson_id_fkey(*)')
+          .eq('user_id', user.id)
           .order('date', { ascending: false })
-          .limit(500);
+          .limit(10000); // Increased from 500 to fetch all lessons
 
         if (step2b.error) {
           console.log('⚠️ STEP 2b failed, trying STEP 2c with reverse relationship...');
@@ -416,18 +420,8 @@ export const useLessonStore = create<LessonState>((set, get) => ({
 
       console.log('✅ Processed lessons with students and photos:', lessonsWithStudents.length);
 
-      // Apply date filtering if needed
+      // Apply student filtering if needed (date filtering is handled at display level, not in store)
       let filteredLessons = lessonsWithStudents;
-      if (date) {
-        filteredLessons = filteredLessons.filter((l: any) => l.date === date);
-      } else {
-        const threeMonthsAgo = new Date();
-        threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
-        const dateThreshold = threeMonthsAgo.toISOString().split('T')[0];
-        filteredLessons = filteredLessons.filter((l: any) => l.date >= dateThreshold);
-      }
-
-      // Apply student filtering if needed
       if (studentId) {
         filteredLessons = filteredLessons.filter((l: any) =>
           l.student_id === studentId ||
@@ -435,7 +429,31 @@ export const useLessonStore = create<LessonState>((set, get) => ({
         );
       }
 
+      // NOTE: We store ALL lessons in the store (no date filtering here)
+      // Date filtering should only be applied at the display/UI level for specific views
+      // The 'date' parameter is kept for backward compatibility but we don't filter by it in the store
+      // Components should filter lessons locally when displaying them for a specific date
+
       console.log('✅ Final processed lessons:', filteredLessons.length);
+      console.log('📊 LESSON FETCH SUMMARY:', {
+        totalCount: filteredLessons.length,
+        firstLesson: filteredLessons[0] ? {
+          id: filteredLessons[0].id,
+          title: filteredLessons[0].title,
+          date: filteredLessons[0].date,
+          subject: filteredLessons[0].subject
+        } : null,
+        lastLesson: filteredLessons[filteredLessons.length - 1] ? {
+          id: filteredLessons[filteredLessons.length - 1].id,
+          title: filteredLessons[filteredLessons.length - 1].title,
+          date: filteredLessons[filteredLessons.length - 1].date,
+        } : null,
+        dateRange: filteredLessons.length > 0 ? {
+          earliest: filteredLessons[filteredLessons.length - 1]?.date,
+          latest: filteredLessons[0]?.date
+        } : null
+      });
+      
       set({ lessons: filteredLessons, loading: false });
       lastFetch = Date.now(); // Update cache timestamp
       cachedFilters = filters; // Update cached filters
@@ -761,6 +779,40 @@ export const useLessonStore = create<LessonState>((set, get) => ({
         lesson.id === id ? { ...lesson, ...updates } : lesson
       ),
     }));
+  },
+
+  clearCache: async () => {
+    console.log('🗑️ Clearing all lesson cache...');
+    try {
+      // Clear AsyncStorage cache (all cache_ keys)
+      await clearAllCache();
+      
+      // Reset in-memory cache variables
+      lastFetch = 0;
+      cachedFilters = null;
+      
+      // Clear lessons from store
+      set({ lessons: [], loading: false });
+      
+      console.log('✅ Cache cleared successfully');
+    } catch (error) {
+      console.error('❌ Error clearing cache:', error);
+    }
+  },
+
+  forceRefresh: async () => {
+    console.log('🔄 Force refreshing lessons (clearing cache and fetching fresh)...');
+    try {
+      // Clear cache first
+      await get().clearCache();
+      
+      // Force fresh fetch (no cache)
+      await get().fetchLessons(undefined, undefined, true);
+      
+      console.log('✅ Force refresh complete');
+    } catch (error) {
+      console.error('❌ Error during force refresh:', error);
+    }
   },
 }));
 
