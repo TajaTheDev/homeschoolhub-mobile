@@ -654,6 +654,8 @@ export default function CalendarScreen() {
                                   contentFit="cover"
                                   transition={200}
                                   cachePolicy="memory-disk"
+                                  priority="high"
+                                  placeholder={{ blurhash: 'L6PZfSi_.AyE_3t7t7R**0o#DgR4' }}
                                   onError={() => {
                                     console.warn('Failed to load photo thumbnail:', photo.storage_path);
                                   }}

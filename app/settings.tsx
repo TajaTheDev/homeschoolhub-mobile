@@ -342,13 +342,8 @@ export default function SettingsScreen() {
             <TouchableOpacity
               style={styles.settingsOption}
               onPress={() => {
-                if (hasSubscription) {
-                  // Open Customer Center
-                  presentCustomerCenter();
-                } else {
-                  // Go to subscribe screen
-                  router.push('/subscribe' as any);
-                }
+                // Always navigate to subscription screen so reviewers can see IAPs
+                router.push('/subscribe' as any);
               }}
               activeOpacity={0.7}
             >
@@ -357,11 +352,11 @@ export default function SettingsScreen() {
               </View>
               <View style={styles.settingsOptionContent}>
                 <Text style={styles.settingsOptionTitle}>
-                  Manage Subscription
+                  {hasSubscription ? 'Manage Subscription' : 'Upgrade to Premium'}
                 </Text>
                 <Text style={styles.settingsOptionDescription}>
                   {hasSubscription 
-                    ? 'View your plan and billing' 
+                    ? 'View plans and manage billing' 
                     : 'Start your 14-day free trial'}
                 </Text>
               </View>

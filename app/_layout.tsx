@@ -188,9 +188,6 @@ export default function RootLayout() {
       // This ensures native modules are fully initialized
       await new Promise(resolve => InteractionManager.runAfterInteractions(() => resolve(undefined)));
       
-      // Add a small delay to ensure React Native bridge is ready
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
       console.log('🔍 Checking authentication...');
       
       try {

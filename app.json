@@ -39,7 +39,6 @@
         "NSPhotoLibraryUsageDescription": "HomeschoolHub needs photo library access to attach photos to lessons.",
         "NSPhotoLibraryAddUsageDescription": "HomeschoolHub needs permission to save photos to your library.",
         "NSUserNotificationsUsageDescription": "HomeschoolHub sends gentle reminders to help you stay on track with lessons and goals.",
-        "NSUserTrackingUsageDescription": "We use this to provide you with personalized educational recommendations and improve your experience.",
         "ITSAppUsesNonExemptEncryption": false
       },
       "config": {

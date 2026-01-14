@@ -184,101 +184,40 @@ export default function Dashboard() {
   const [hasError, setHasError] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
 
-  // Force fetch students and lessons on dashboard mount
-  useEffect(() => {
-    console.log('📊 Dashboard mounted - fetching data');
-    fetchStudents();
-    fetchLessons();
-  }, []);
-
-  // Debug logging for dashboard data
-  console.log('👨‍🎓 Dashboard students:', students.length);
-  console.log('📚 Dashboard lessons:', lessons.length);
-
-  // ⚠️ TEMPORARILY DISABLED FOR DEVELOPMENT TESTING
-  // TODO: Re-enable this before production!
-  // useEffect(() => {
-  //   // Wait for subscription check to complete
-  //   if (!isLoading) {
-  //     if (!hasSubscription) {
-  //       // No active subscription, redirect to subscribe screen
-  //       router.replace('/subscribe' as any);
-  //     }
-  //   }
-  // }, [hasSubscription, isLoading, router]);
-
+  // Load dashboard data - stores will load cached data first, then refresh in background
   useEffect(() => {
     const loadDashboardData = async () => {
       try {
-        console.log('📊 Loading dashboard data...');
+        console.log('📊 Loading dashboard data (parallel)...');
         
-        // Wrap each fetch in try-catch for detailed error logging
-        try {
-          console.log('📚 Fetching lessons...');
-          await fetchLessons();
-          console.log('✅ Lessons fetched successfully');
-        } catch (err: any) {
-          console.error('❌ Error fetching lessons:', {
-            error: err,
-            message: err?.message,
-            code: err?.code,
-            details: err?.details,
-            hint: err?.hint,
-            stack: err?.stack
-          });
-          // Set error state if lessons fail (critical)
-          if (err?.code === '42703' || err?.message?.includes('column') || err?.message?.includes('does not exist')) {
-            setHasError(true);
-            setErrorMessage(err?.hint || err?.message || 'Database column error. Check console for details.');
-          }
-        }
+        // Load data in parallel - stores handle cache-first loading internally
+        // This allows stores to show cached data immediately, then refresh in background
+        const loadPromises = [
+          fetchLessons().catch((err: any) => {
+            console.error('❌ Error fetching lessons:', err?.message);
+            if (err?.code === '42703' || err?.message?.includes('column') || err?.message?.includes('does not exist')) {
+              setHasError(true);
+              setErrorMessage(err?.hint || err?.message || 'Database column error. Check console for details.');
+            }
+          }),
+          fetchStudents().catch((err: any) => {
+            console.error('❌ Error fetching students:', err?.message);
+            if (err?.code === '42703' || err?.message?.includes('column') || err?.message?.includes('does not exist')) {
+              setHasError(true);
+              setErrorMessage(err?.hint || err?.message || 'Database column error. Check console for details.');
+            }
+          }),
+          loadParentData().catch((err: any) => {
+            console.error('❌ Error loading parent data:', err?.message);
+            // Parent data is not critical, so don't set error state
+          }),
+        ];
         
-        try {
-          console.log('👥 Fetching students...');
-          await fetchStudents();
-          console.log('✅ Students fetched successfully');
-        } catch (err: any) {
-          console.error('❌ Error fetching students:', {
-            error: err,
-            message: err?.message,
-            code: err?.code,
-            details: err?.details,
-            hint: err?.hint,
-            stack: err?.stack
-          });
-          // Set error state if students fail (critical)
-          if (err?.code === '42703' || err?.message?.includes('column') || err?.message?.includes('does not exist')) {
-            setHasError(true);
-            setErrorMessage(err?.hint || err?.message || 'Database column error. Check console for details.');
-          }
-        }
-        
-        try {
-          console.log('👤 Loading parent data...');
-          await loadParentData();
-          console.log('✅ Parent data loaded successfully');
-        } catch (err: any) {
-          console.error('❌ Error loading parent data:', {
-            error: err,
-            message: err?.message,
-            code: err?.code,
-            details: err?.details,
-            hint: err?.hint,
-            stack: err?.stack
-          });
-          // Parent data is not critical, so don't set error state
-        }
-        
+        // Wait for all parallel loads to complete
+        await Promise.all(loadPromises);
         console.log('✅ Dashboard data loading complete');
       } catch (error: any) {
-        console.error('❌ Dashboard load error:', {
-          error,
-          message: error?.message,
-          code: error?.code,
-          details: error?.details,
-          hint: error?.hint,
-          stack: error?.stack
-        });
+        console.error('❌ Dashboard load error:', error?.message);
         setHasError(true);
         setErrorMessage(error?.message || 'Failed to load dashboard data. Check console for details.');
       }
@@ -287,6 +226,10 @@ export default function Dashboard() {
     loadDashboardData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Debug logging for dashboard data
+  console.log('👨‍🎓 Dashboard students:', students.length);
+  console.log('📚 Dashboard lessons:', lessons.length);
 
   // Check onboarding status after successful login
   useEffect(() => {
@@ -953,6 +896,8 @@ export default function Dashboard() {
                               contentFit="cover"
                               transition={200}
                               cachePolicy="memory-disk"
+                              priority="high"
+                              placeholder={{ blurhash: 'L6PZfSi_.AyE_3t7t7R**0o#DgR4' }}
                               onError={() => {
                                 console.warn('Failed to load photo thumbnail:', photo.storage_path);
                               }}

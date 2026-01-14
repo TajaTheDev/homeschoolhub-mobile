@@ -26,10 +26,17 @@ interface PhotoUploadProps {
   onPhotosChange: (photos: LessonPhoto[]) => void;
 }
 
+interface OptimisticPhoto extends LessonPhoto {
+  localUri?: string;
+  uploading?: boolean;
+  uploadError?: boolean;
+}
+
 export default function PhotoUpload({ lessonId, photos, onPhotosChange }: PhotoUploadProps) {
   const [uploading, setUploading] = useState(false);
   const [showGallery, setShowGallery] = useState(false);
   const [galleryStartIndex, setGalleryStartIndex] = useState(0);
+  const [optimisticPhotos, setOptimisticPhotos] = useState<OptimisticPhoto[]>([]);
 
   const requestPermission = async (type: 'camera' | 'library') => {
     const permission = type === 'camera' 
@@ -80,67 +87,70 @@ export default function PhotoUpload({ lessonId, photos, onPhotosChange }: PhotoU
   };
 
   const uploadPhoto = async (uri: string) => {
+    const tempId = `temp-${Date.now()}`;
+    
     try {
-      setUploading(true);
+      // STEP 1: Show optimistic preview immediately with local URI
+      const optimisticPhoto: OptimisticPhoto = {
+        id: tempId,
+        lesson_id: lessonId,
+        storage_path: '', // Will be filled after upload
+        photo_path: '',
+        localUri: uri,
+        uploading: true,
+        uploadError: false,
+        created_at: new Date().toISOString(),
+      };
       
-      console.log('=== PHOTO UPLOAD START ===');
-      console.log('1. Original URI:', uri);
+      // Update photos immediately with local URI preview
+      const currentPhotos = [...photos, optimisticPhoto];
+      onPhotosChange(currentPhotos);
+      setOptimisticPhotos(prev => [...prev, optimisticPhoto]);
+      
+      console.log('⚡ Optimistic preview added - showing local URI immediately');
 
-      // Get user
+      // STEP 2: Get user (non-blocking, quick check)
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError || !user) {
         throw new Error('Not authenticated');
       }
-      console.log('2. User ID:', user.id);
 
-      // Convert to JPEG and resize (handles HEIC, PNG, etc.)
-      console.log('3. Converting image (will convert HEIC to JPEG)...');
+      // STEP 3: Compress full image for upload (background operation)
+      console.log('🖼️ Compressing full image...');
       const manipulated = await ImageManipulator.manipulateAsync(
         uri,
-        [{ resize: { width: 1200 } }],
+        [{ resize: { width: 1200 } }], // Full size but reasonable
         { 
           compress: 0.8, 
           format: ImageManipulator.SaveFormat.JPEG,
           base64: false
         }
       );
-      console.log('3. Converted size:', manipulated.width, 'x', manipulated.height);
-      console.log('3. Converted URI:', manipulated.uri);
 
-      // Read file as base64 using expo-file-system (better for React Native)
-      console.log('4. Reading file as base64 using expo-file-system...');
-      console.log('4. Manipulated URI:', manipulated.uri);
+      // STEP 5: Upload in background (don't block UI)
+      setUploading(true);
       
+      // Create storage path
+      const timestamp = Date.now();
+      const fileName = `${user.id}/${lessonId}/${timestamp}.jpg`;
+      
+      // Read compressed image as base64
       const base64Data = await FileSystem.readAsStringAsync(manipulated.uri, {
         encoding: 'base64' as any,
       });
       
-      console.log('4. Base64 length:', base64Data.length);
-      
       if (!base64Data || base64Data.length === 0) {
-        throw new Error('Failed to read file as base64');
+        throw new Error('Failed to read file');
       }
 
-      // Create storage path
-      const timestamp = Date.now();
-      const fileName = `${user.id}/${lessonId}/${timestamp}.jpg`;
-      console.log('5. Storage path:', fileName);
-
-      // Upload to Supabase Storage - convert base64 to ArrayBuffer for React Native
-      console.log('6. Uploading to storage...');
-      console.log('6. File name:', fileName);
-      console.log('6. Base64 data length:', base64Data.length);
-      
-      // Convert base64 to ArrayBuffer (React Native compatible way)
+      // Convert base64 to ArrayBuffer
       const binaryString = atob(base64Data);
       const bytes = new Uint8Array(binaryString.length);
       for (let i = 0; i < binaryString.length; i++) {
         bytes[i] = binaryString.charCodeAt(i);
       }
       
-      console.log('6. ArrayBuffer length:', bytes.length, 'bytes');
-      
-      // Upload the ArrayBuffer directly
+      // Upload to storage (background operation)
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('lesson-photos')
         .upload(fileName, bytes.buffer, {
@@ -150,25 +160,12 @@ export default function PhotoUpload({ lessonId, photos, onPhotosChange }: PhotoU
         });
 
       if (uploadError) {
-        console.error('6. Upload error:', uploadError);
         throw uploadError;
       }
-      console.log('6. Upload success:', uploadData.path);
 
-      // Get public URL to verify
-      const { data: urlData } = supabase.storage
-        .from('lesson-photos')
-        .getPublicUrl(fileName);
-      console.log('7. Public URL:', urlData.publicUrl);
-
-      // Save to database - use uploadData.path (this is what was actually created)
-      console.log('8. Saving to database...');
-      console.log('8. uploadData:', JSON.stringify(uploadData, null, 2));
       const actualStoragePath = uploadData?.path || fileName;
-      console.log('8. fileName we tried:', fileName);
-      console.log('8. uploadData.path (actual):', uploadData?.path);
-      console.log('8. Using storage path:', actualStoragePath);
       
+      // Save to database
       const { data: photoData, error: dbError } = await supabase
         .from('lesson_photos')
         .insert({
@@ -179,38 +176,46 @@ export default function PhotoUpload({ lessonId, photos, onPhotosChange }: PhotoU
         .single();
 
       if (dbError) {
-        console.error('8. Database error:', dbError);
         throw dbError;
       }
-      console.log('8. Database save success:', photoData.id);
-      console.log('8. Saved storage_path in DB:', photoData.storage_path);
-      
-      // Verify the URL works
-      const { data: verifyUrl } = supabase.storage
-        .from('lesson-photos')
-        .getPublicUrl(actualStoragePath);
-      console.log('8. Final verified URL:', verifyUrl.publicUrl);
-      
-      // Also try listing files to see what's actually in storage
-      const { data: listData } = await supabase.storage
-        .from('lesson-photos')
-        .list(`${user.id}/${lessonId}`, { limit: 10 });
-      console.log('8. Files actually in storage:', listData?.map(f => f.name));
 
-      // Update local state
-      onPhotosChange([...photos, photoData]);
+      // STEP 6: Replace optimistic photo with real data
+      const updatedPhotos = photos.filter(p => p.id !== tempId);
+      onPhotosChange([...updatedPhotos, photoData]);
+      setOptimisticPhotos(prev => prev.filter(p => p.id !== tempId));
       
-      console.log('=== PHOTO UPLOAD SUCCESS ===');
-      Alert.alert('Success', 'Photo uploaded!');
+      console.log('✅ Photo uploaded successfully');
       
     } catch (error: any) {
-      console.error('=== PHOTO UPLOAD FAILED ===');
-      console.error('Error:', error);
-      console.error('Message:', error.message);
+      console.error('❌ Photo upload failed:', error);
+      
+      // STEP 7: Mark optimistic photo as error (but keep showing it)
+      const updatedOptimistic = optimisticPhotos.map(p => 
+        p.id === tempId ? { ...p, uploading: false, uploadError: true } : p
+      );
+      setOptimisticPhotos(updatedOptimistic);
+      
+      // Update main photos array to show error state
+      const updatedPhotos = photos.map(p => 
+        p.id === tempId ? { ...p, uploading: false, uploadError: true } : p
+      );
+      onPhotosChange(updatedPhotos);
       
       Alert.alert(
         'Upload Failed',
-        error.message || 'Could not upload photo. Please try again.'
+        error.message || 'Could not upload photo. The preview will remain visible. You can retry or delete it.',
+        [
+          { text: 'OK' },
+          {
+            text: 'Retry',
+            onPress: () => {
+              // Remove failed photo and retry
+              onPhotosChange(photos.filter(p => p.id !== tempId));
+              setOptimisticPhotos(prev => prev.filter(p => p.id !== tempId));
+              uploadPhoto(uri);
+            }
+          },
+        ]
       );
     } finally {
       setUploading(false);
@@ -228,25 +233,38 @@ export default function PhotoUpload({ lessonId, photos, onPhotosChange }: PhotoU
           style: 'destructive',
           onPress: async () => {
             try {
-              // Delete from storage
-              const { error: storageError } = await supabase.storage
-                .from('lesson-photos')
-                .remove([photo.storage_path]);
-
-              if (storageError) {
-                console.error('Storage delete error:', storageError);
+              // If it's an optimistic photo (uploading or temp), just remove it
+              const optimisticPhoto = optimisticPhotos.find(p => p.id === photo.id);
+              if (optimisticPhoto && (!photo.storage_path || photo.id.startsWith('temp-'))) {
+                onPhotosChange(photos.filter(p => p.id !== photo.id));
+                setOptimisticPhotos(prev => prev.filter(p => p.id !== photo.id));
+                return;
               }
 
-              // Delete from database
-              const { error: dbError } = await supabase
-                .from('lesson_photos')
-                .delete()
-                .eq('id', photo.id);
+              // Delete from storage (only if it has a storage path)
+              if (photo.storage_path) {
+                const { error: storageError } = await supabase.storage
+                  .from('lesson-photos')
+                  .remove([photo.storage_path]);
 
-              if (dbError) throw dbError;
+                if (storageError) {
+                  console.error('Storage delete error:', storageError);
+                }
+              }
+
+              // Delete from database (only if it has a real ID)
+              if (!photo.id.startsWith('temp-')) {
+                const { error: dbError } = await supabase
+                  .from('lesson_photos')
+                  .delete()
+                  .eq('id', photo.id);
+
+                if (dbError) throw dbError;
+              }
 
               // Update local state
               onPhotosChange(photos.filter(p => p.id !== photo.id));
+              setOptimisticPhotos(prev => prev.filter(p => p.id !== photo.id));
               
             } catch (error: any) {
               console.error('Delete error:', error);
@@ -315,16 +333,14 @@ export default function PhotoUpload({ lessonId, photos, onPhotosChange }: PhotoU
           style={styles.photoScroll}
         >
           {photos.map((photo, index) => {
-            const photoUrl = getPhotoUrl(photo.storage_path);
-            console.log('Displaying photo:', {
-              id: photo.id,
-              storage_path: photo.storage_path,
-              photoUrl: photoUrl,
-            });
+            // Use local URI for optimistic preview if available, otherwise use uploaded URL
+            const optimisticPhoto = optimisticPhotos.find(p => p.id === photo.id);
+            const photoUri = optimisticPhoto?.localUri || (photo.storage_path ? getPhotoUrl(photo.storage_path) : '');
+            const isUploading = optimisticPhoto?.uploading || false;
+            const hasError = optimisticPhoto?.uploadError || false;
             
-            // Verify URL is valid before rendering
-            if (!photoUrl || photoUrl.trim() === '') {
-              console.warn('⚠️ Empty URL for photo:', photo.id, photo.storage_path);
+            // Verify URI is valid before rendering
+            if (!photoUri || photoUri.trim() === '') {
               return null;
             }
             
@@ -332,49 +348,44 @@ export default function PhotoUpload({ lessonId, photos, onPhotosChange }: PhotoU
               <View key={photo.id} style={styles.photoContainer}>
                 <TouchableOpacity
                   onPress={() => {
-                    setGalleryStartIndex(index);
-                    setShowGallery(true);
+                    // Don't open gallery if still uploading or if no storage path yet
+                    if (!isUploading && photo.storage_path) {
+                      setGalleryStartIndex(index);
+                      setShowGallery(true);
+                    }
                   }}
-                  activeOpacity={0.8}
+                  activeOpacity={isUploading ? 0.5 : 0.8}
+                  disabled={isUploading}
                 >
                   <Image
-                    source={{ uri: photoUrl }}
-                    style={styles.photo}
+                    source={{ uri: photoUri }}
+                    style={[styles.photo, (isUploading || hasError) && styles.photoUploading]}
                     contentFit="cover"
                     transition={200}
-                    cachePolicy="memory"
+                    cachePolicy="memory-disk" // Better caching
                     recyclingKey={photo.id}
-                    onError={(error) => {
-                      console.error('❌ Image load error for photo:', photo.id);
-                      console.error('Error details:', JSON.stringify(error, null, 2));
-                      console.error('Failed URL (full):', photoUrl);
-                      console.error('Storage path:', photo.storage_path);
-                      console.error('Full URL length:', photoUrl.length);
-                      console.error('URL starts with http?:', photoUrl.startsWith('http'));
-                      // Try to verify the URL is accessible
-                      fetch(photoUrl, { method: 'HEAD' })
-                        .then(response => {
-                          console.log('URL fetch test - Status:', response.status);
-                          console.log('URL fetch test - Headers:', Object.fromEntries(response.headers.entries()));
-                          if (!response.ok) {
-                            console.error('URL is not accessible - HTTP status:', response.status);
-                          }
-                        })
-                        .catch(fetchError => {
-                          console.error('URL fetch test failed:', fetchError);
-                        });
-                    }}
-                    onLoad={() => {
-                      console.log('✅ Image loaded successfully:', photoUrl);
-                    }}
-                    onLoadStart={() => {
-                      console.log('🔄 Image load started:', photoUrl.substring(0, 60) + '...');
-                    }}
+                    priority="high" // High priority for visible images
                   />
+                  
+                  {/* Uploading overlay */}
+                  {isUploading && (
+                    <View style={styles.uploadingOverlay}>
+                      <ActivityIndicator size="small" color="white" />
+                      <Text style={styles.uploadingText}>Uploading...</Text>
+                    </View>
+                  )}
+                  
+                  {/* Error overlay */}
+                  {hasError && (
+                    <View style={styles.errorOverlay}>
+                      <Text style={styles.errorText}>Failed</Text>
+                    </View>
+                  )}
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.deleteButton}
                   onPress={() => deletePhoto(photo)}
+                  disabled={isUploading}
                 >
                   <X size={16} color="white" />
                 </TouchableOpacity>
@@ -447,6 +458,42 @@ const styles = StyleSheet.create({
     width: 100,
     height: 100,
     borderRadius: 12,
+  },
+  photoUploading: {
+    opacity: 0.7,
+  },
+  uploadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+  },
+  uploadingText: {
+    color: 'white',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  errorOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(239, 68, 68, 0.7)',
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  errorText: {
+    color: 'white',
+    fontSize: 11,
+    fontWeight: '600',
   },
   deleteButton: {
     position: 'absolute',

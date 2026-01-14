@@ -30,6 +30,10 @@ interface AttendanceStore {
   getStudentStats: (studentId: string, startDate?: string, endDate?: string) => AttendanceStats | null;
 }
 
+// Track last local modification to prevent fetch from overwriting recent changes
+let lastLocalModification: number = 0;
+const GRACE_PERIOD = 3000; // 3 seconds grace period after local modification
+
 export const useAttendanceStore = create<AttendanceStore>((set, get) => ({
   attendance: [],
   loading: false,
@@ -37,6 +41,14 @@ export const useAttendanceStore = create<AttendanceStore>((set, get) => ({
 
   fetchAttendance: async () => {
     try {
+      const now = Date.now();
+      
+      // Don't overwrite if we just modified locally (within grace period)
+      if (now - lastLocalModification < GRACE_PERIOD) {
+        console.log('⏭️ Skipping fetch - recent local modification detected');
+        return;
+      }
+
       set({ loading: true, error: null });
       
       const { data: { user } } = await supabase.auth.getUser();
@@ -57,7 +69,14 @@ export const useAttendanceStore = create<AttendanceStore>((set, get) => ({
         return;
       }
 
-      set({ attendance: data || [], loading: false });
+      // Only update if we're not in grace period (double-check)
+      const checkTime = Date.now();
+      if (checkTime - lastLocalModification >= GRACE_PERIOD) {
+        set({ attendance: data || [], loading: false });
+      } else {
+        console.log('⏭️ Skipping state update - recent local modification');
+        set({ loading: false });
+      }
     } catch (error: any) {
       console.error('Error in fetchAttendance:', error);
       set({ loading: false, error: error.message });
@@ -75,6 +94,9 @@ export const useAttendanceStore = create<AttendanceStore>((set, get) => ({
   },
 
   markAttendance: async (date: string, presentStudentIds: string[], notes?: string) => {
+    // Save current state for rollback
+    const previousAttendance = get().attendance;
+    
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
@@ -97,7 +119,33 @@ export const useAttendanceStore = create<AttendanceStore>((set, get) => ({
 
       console.log('  Total students:', students.length);
 
-      // STEP 1: Delete existing attendance for this date (clean slate)
+      // STEP 1: Optimistic update - update UI immediately
+      const now = Date.now();
+      lastLocalModification = now;
+      
+      const optimisticRecords: AttendanceRecord[] = students.map(student => {
+        const isPresent = presentStudentIds.includes(student.id);
+        return {
+          id: `temp-${student.id}-${date}`, // Temporary ID
+          user_id: user.id,
+          student_id: student.id,
+          date: date,
+          present: isPresent,
+          notes: notes || null,
+          created_at: new Date().toISOString(),
+        };
+      });
+
+      // Update state optimistically (remove old records for this date, add new ones)
+      const updatedAttendance = [
+        ...previousAttendance.filter(a => a.date !== date),
+        ...optimisticRecords,
+      ];
+      
+      set({ attendance: updatedAttendance });
+      console.log('⚡ Optimistic update applied - UI updated immediately');
+
+      // STEP 2: Delete existing attendance for this date (clean slate)
       console.log('🗑️ Deleting existing attendance for', date);
       
       const { error: deleteError } = await supabase
@@ -108,12 +156,15 @@ export const useAttendanceStore = create<AttendanceStore>((set, get) => ({
 
       if (deleteError) {
         console.error('❌ Error deleting old attendance:', deleteError);
-        // Continue anyway - maybe there was no old data
-      } else {
-        console.log('✅ Old attendance deleted');
+        // Rollback on error
+        set({ attendance: previousAttendance });
+        lastLocalModification = 0;
+        return { success: false, error: deleteError.message };
       }
 
-      // STEP 2: Create new attendance records for ALL students
+      console.log('✅ Old attendance deleted');
+
+      // STEP 3: Create new attendance records for ALL students
       const attendanceRecords = students.map(student => {
         const isPresent = presentStudentIds.includes(student.id);
         console.log(`  ${isPresent ? '✓' : '✗'} ${student.name} (${student.id}): ${isPresent ? 'PRESENT' : 'ABSENT'}`);
@@ -129,7 +180,7 @@ export const useAttendanceStore = create<AttendanceStore>((set, get) => ({
 
       console.log('📝 Inserting', attendanceRecords.length, 'new records');
 
-      // STEP 3: Insert all records
+      // STEP 4: Insert all records
       const { data: insertedData, error: insertError } = await supabase
         .from('attendance')
         .insert(attendanceRecords)
@@ -137,6 +188,9 @@ export const useAttendanceStore = create<AttendanceStore>((set, get) => ({
 
       if (insertError) {
         console.error('❌ Error inserting attendance:', insertError);
+        // Rollback on error
+        set({ attendance: previousAttendance });
+        lastLocalModification = 0;
         return { success: false, error: insertError.message };
       }
 
@@ -145,42 +199,74 @@ export const useAttendanceStore = create<AttendanceStore>((set, get) => ({
       // VALIDATE: Check that we inserted correct number of records
       if (insertedData?.length !== students.length) {
         console.error('❌ MISMATCH! Expected', students.length, 'records, got', insertedData?.length);
+        // Rollback on error
+        set({ attendance: previousAttendance });
+        lastLocalModification = 0;
         return { 
           success: false, 
           error: `Only saved ${insertedData?.length} of ${students.length} students` 
         };
       }
 
+      // STEP 5: Update with real data from server (replace optimistic records)
+      const finalAttendance = [
+        ...previousAttendance.filter(a => a.date !== date),
+        ...insertedData,
+      ];
+      
+      set({ attendance: finalAttendance });
+      
+      // Reset grace period after successful save (allow future fetches)
+      setTimeout(() => {
+        lastLocalModification = 0;
+      }, GRACE_PERIOD);
+
       console.log('✅ ATTENDANCE SAVE COMPLETE - All students saved');
-
-      // STEP 4: Refresh attendance data
-      await get().fetchAttendance();
-
-      // STEP 5: Verify the data is in the store
-      const updatedAttendance = get().attendance;
-      const recordsForDate = updatedAttendance.filter(a => a.date === date);
-
-      console.log('✅ Verification: Found', recordsForDate.length, 'records for', date, 'in store');
-
-      if (recordsForDate.length !== students.length) {
-        console.warn('⚠️ Store has', recordsForDate.length, 'but should have', students.length);
-      }
 
       return { success: true };
     } catch (error: any) {
       console.error('❌ CRITICAL ERROR in markAttendance:', error);
+      // Rollback on error
+      set({ attendance: previousAttendance });
+      lastLocalModification = 0;
       return { success: false, error: error.message };
     }
   },
 
   updateAttendance: async (studentId: string, date: string, present: boolean, notes?: string) => {
+    const previousAttendance = get().attendance;
+    
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         return { success: false, error: 'Not authenticated' };
       }
 
-      const { error } = await supabase
+      // Optimistic update
+      lastLocalModification = Date.now();
+      const updatedAttendance = previousAttendance.map(a => 
+        a.student_id === studentId && a.date === date
+          ? { ...a, present, notes: notes || null }
+          : a
+      );
+      
+      // If record doesn't exist, add it
+      const exists = updatedAttendance.some(a => a.student_id === studentId && a.date === date);
+      if (!exists) {
+        updatedAttendance.push({
+          id: `temp-${studentId}-${date}`,
+          user_id: user.id,
+          student_id: studentId,
+          date,
+          present,
+          notes: notes || null,
+          created_at: new Date().toISOString(),
+        });
+      }
+      
+      set({ attendance: updatedAttendance });
+
+      const { data, error } = await supabase
         .from('attendance')
         .upsert({
           user_id: user.id,
@@ -191,27 +277,52 @@ export const useAttendanceStore = create<AttendanceStore>((set, get) => ({
         }, {
           onConflict: 'student_id,date',
           ignoreDuplicates: false
-        });
+        })
+        .select()
+        .single();
 
       if (error) {
         console.error('Error updating attendance:', error);
+        set({ attendance: previousAttendance });
+        lastLocalModification = 0;
         return { success: false, error: error.message };
       }
 
-      await get().fetchAttendance();
+      // Update with real data
+      const finalAttendance = previousAttendance.filter(a => 
+        !(a.student_id === studentId && a.date === date)
+      );
+      if (data) {
+        finalAttendance.push(data);
+      }
+      set({ attendance: finalAttendance });
+      
+      setTimeout(() => {
+        lastLocalModification = 0;
+      }, GRACE_PERIOD);
+
       return { success: true };
     } catch (error: any) {
       console.error('Error in updateAttendance:', error);
+      set({ attendance: previousAttendance });
+      lastLocalModification = 0;
       return { success: false, error: error.message };
     }
   },
 
   deleteAttendanceForDate: async (date: string) => {
+    const previousAttendance = get().attendance;
+    
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         return { success: false, error: 'Not authenticated' };
       }
+
+      // Optimistic update
+      lastLocalModification = Date.now();
+      const updatedAttendance = previousAttendance.filter(a => a.date !== date);
+      set({ attendance: updatedAttendance });
 
       const { error } = await supabase
         .from('attendance')
@@ -221,13 +332,20 @@ export const useAttendanceStore = create<AttendanceStore>((set, get) => ({
 
       if (error) {
         console.error('Error deleting attendance:', error);
+        set({ attendance: previousAttendance });
+        lastLocalModification = 0;
         return { success: false, error: error.message };
       }
 
-      await get().fetchAttendance();
+      setTimeout(() => {
+        lastLocalModification = 0;
+      }, GRACE_PERIOD);
+
       return { success: true };
     } catch (error: any) {
       console.error('Error in deleteAttendanceForDate:', error);
+      set({ attendance: previousAttendance });
+      lastLocalModification = 0;
       return { success: false, error: error.message };
     }
   },

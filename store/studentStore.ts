@@ -42,29 +42,32 @@ export const useStudentStore = create<StudentState>((set, get) => ({
   loading: false,
 
   fetchStudents: async () => {
-    // Check in-memory cache first
+    // Check in-memory cache first (instant)
     const now = Date.now();
     if (now - lastFetch < CACHE_DURATION && get().students.length > 0) {
       console.log('📦 Using in-memory cached students');
       return;
     }
 
-    set({ loading: true });
+    // STEP 1: Load cached data immediately (instant UI)
+    const cached = await getCachedData('students', CACHE_DURATION * 24); // Use cache up to 24 hours old
+    if (cached && cached.length > 0) {
+      console.log('⚡ Loading cached students immediately:', cached.length);
+      set({ students: cached, loading: false }); // Show cached data instantly
+    } else {
+      set({ loading: true });
+    }
+
+    // STEP 2: Refresh from server in background
     try {
-      // Check if online
       const online = await isOnline();
       
       if (!online) {
-        console.log('📡 Offline - checking local cache');
-        const cached = await getCachedData('students', CACHE_DURATION);
-        if (cached) {
-          set({ students: cached, loading: false });
-          return;
-        } else {
-          console.log('⚠️ No cached students available offline');
+        console.log('📡 Offline - using cached data only');
+        if (!cached || cached.length === 0) {
           set({ loading: false });
-          return;
         }
+        return;
       }
 
       const {
@@ -88,41 +91,31 @@ export const useStudentStore = create<StudentState>((set, get) => ({
         `)
         .eq('user_id', user.id)
         .order('created_at', { ascending: true })
-        .limit(100); // Reasonable limit for student records
+        .limit(100);
 
       if (error) {
         console.error('❌ Error fetching students:', error);
-        // Try to use cached data on error
-        const cached = await getCachedData('students', CACHE_DURATION * 2); // Use older cache on error
-        if (cached) {
-          console.log('📦 Using cached students due to fetch error');
-          set({ students: cached, loading: false });
-          return;
+        // Keep cached data if available, otherwise clear loading
+        if (!cached || cached.length === 0) {
+          set({ loading: false });
         }
-        set({ loading: false });
         return;
       }
 
-      console.log('👨‍🎓 Fetched students:', data?.length);
-      data?.forEach((student: any) => {
-        console.log(`  - ${student.name}: ${student.student_subjects?.length || 0} subjects`);
-      });
-
-      set({ students: data || [], loading: false });
-      lastFetch = now; // Update cache timestamp
+      console.log('👨‍🎓 Fetched fresh students:', data?.length);
       
-      // Cache data for offline use
+      // Update with fresh data
+      set({ students: data || [], loading: false });
+      lastFetch = now;
+      
+      // Cache fresh data
       await cacheData('students', data || []);
     } catch (error) {
       console.error('Error fetching students:', error);
-      // Try to use cached data on error
-      const cached = await getCachedData('students', CACHE_DURATION * 2);
-      if (cached) {
-        console.log('📦 Using cached students due to exception');
-        set({ students: cached, loading: false });
-        return;
+      // Keep cached data if available
+      if (!cached || cached.length === 0) {
+        set({ loading: false });
       }
-      set({ loading: false });
     }
   },
 
