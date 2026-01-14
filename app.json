@@ -25,7 +25,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.tajamoxey.homeschoolhub",
-      "buildNumber": "25",
+      "buildNumber": "26",
       "infoPlist": {
         "UIRequiresFullScreen": true,
         "UISupportedInterfaceOrientations": [
@@ -52,7 +52,7 @@
       },
       "icon": "./assets/icon.png",
       "package": "com.tajamoxey.homeschoolhub",
-      "versionCode": 25,
+      "versionCode": 26,
       "permissions": [
         "android.permission.RECEIVE_BOOT_COMPLETED",
         "android.permission.VIBRATE",
