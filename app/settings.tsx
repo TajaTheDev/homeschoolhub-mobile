@@ -1,6 +1,7 @@
 import Avatar from '@/components/ui/Avatar';
 import Colors from '@/constants/Colors';
 import Typography from '@/constants/Typography';
+import { useSnackbar } from '@/contexts/SnackbarContext';
 import { supabase } from '@/lib/supabase';
 import type { AvatarType } from '@/types';
 import { requestNotificationPermissions, scheduleAttendanceReminder, cancelAttendanceReminder } from '@/utils/notificationManager';
@@ -44,6 +45,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function SettingsScreen() {
   const router = useRouter();
+  const { showSnackbar } = useSnackbar();
   const { hasSubscription, refreshSubscriptionStatus } = useSubscription();
   const [userEmail, setUserEmail] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -122,7 +124,7 @@ export default function SettingsScreen() {
       } else {
         // Cancel notifications
         await cancelAttendanceReminder();
-        Alert.alert('Success', 'Daily reminder disabled');
+        showSnackbar('Daily reminder disabled', 'success');
       }
     } catch (error) {
       console.error('Error toggling reminders:', error);
@@ -373,7 +375,7 @@ export default function SettingsScreen() {
                   await refreshSubscriptionStatus();
                   
                   if (result.hasProAccess) {
-                    Alert.alert('Success!', 'Your subscription has been restored!');
+                    showSnackbar('Your subscription has been restored!', 'success');
                   } else {
                     Alert.alert('No Subscription', 'No active subscription found to restore');
                   }

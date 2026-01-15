@@ -5,6 +5,7 @@ import Purchases, {
   PurchasesPackage,
 } from 'react-native-purchases';
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 
 // API Keys - Production keys
 const REVENUECAT_API_KEYS = {
@@ -16,10 +17,31 @@ const REVENUECAT_API_KEYS = {
 const PRO_ENTITLEMENT_ID = 'The Homeschool Hub Pro';
 
 /**
+ * Check if we're in Expo Go or development mode
+ */
+const isDevelopmentMode = (): boolean => {
+  // Check if we're in Expo Go
+  const isExpoGo = Constants.appOwnership === 'expo';
+  
+  // Check if we're in development mode
+  const isDev = __DEV__;
+  
+  return isExpoGo || isDev;
+};
+
+/**
  * Initialize RevenueCat SDK
  * Call this once when app starts (in _layout.tsx)
+ * Skips initialization in Expo Go/development mode
  */
 export const initializeRevenueCat = async (): Promise<boolean> => {
+  // Skip RevenueCat in Expo Go or development mode
+  if (isDevelopmentMode()) {
+    console.log('⏭️ Skipping RevenueCat initialization in Expo Go/development mode');
+    console.log('💡 Subscriptions will work in production builds');
+    return false;
+  }
+
   try {
     // Enable debug logging in development
     if (__DEV__) {
@@ -47,8 +69,15 @@ export const initializeRevenueCat = async (): Promise<boolean> => {
 /**
  * Check if user has "The Homeschool Hub Pro" entitlement
  * @returns Promise<boolean> - true if user has Pro access
+ * In development/Expo Go, returns true to allow full access
  */
 export const checkProStatus = async (): Promise<boolean> => {
+  // In development mode, grant premium access
+  if (isDevelopmentMode()) {
+    console.log('📊 Pro Status Check (Dev Mode): Granting premium access');
+    return true;
+  }
+
   try {
     const customerInfo = await Purchases.getCustomerInfo();
     
@@ -68,8 +97,14 @@ export const checkProStatus = async (): Promise<boolean> => {
 /**
  * Get available subscription offerings
  * @returns Promise<PurchasesOffering | null>
+ * Returns null in development/Expo Go
  */
 export const getOfferings = async (): Promise<PurchasesOffering | null> => {
+  if (isDevelopmentMode()) {
+    console.log('⏭️ Skipping offerings fetch in development mode');
+    return null;
+  }
+
   try {
     console.log('📦 Fetching offerings...');
     
@@ -99,6 +134,7 @@ export const getOfferings = async (): Promise<PurchasesOffering | null> => {
  * Purchase a subscription package
  * @param packageToPurchase - The package to purchase
  * @returns Promise with success status and customer info
+ * In development/Expo Go, simulates successful purchase
  */
 export const purchasePackage = async (
   packageToPurchase: PurchasesPackage
@@ -108,6 +144,15 @@ export const purchasePackage = async (
   cancelled?: boolean;
   error?: string;
 }> => {
+  if (isDevelopmentMode()) {
+    console.log('⏭️ Skipping purchase in development mode');
+    console.log('💡 Purchase would be:', packageToPurchase.identifier, packageToPurchase.product.priceString);
+    return {
+      success: false,
+      error: 'Purchases not available in development mode',
+    };
+  }
+
   try {
     console.log('💳 Starting purchase:', packageToPurchase.identifier);
     console.log('   Price:', packageToPurchase.product.priceString);
@@ -154,12 +199,21 @@ export const purchasePackage = async (
 /**
  * Restore previous purchases
  * Useful when user reinstalls app or switches devices
+ * In development/Expo Go, simulates no purchases to restore
  */
 export const restorePurchases = async (): Promise<{
   success: boolean;
   hasProAccess: boolean;
   error?: string;
 }> => {
+  if (isDevelopmentMode()) {
+    console.log('⏭️ Skipping restore in development mode');
+    return {
+      success: true,
+      hasProAccess: false, // No purchases in dev mode
+    };
+  }
+
   try {
     console.log('🔄 Restoring purchases...');
     
@@ -191,6 +245,7 @@ export const restorePurchases = async (): Promise<{
 /**
  * Get detailed customer information
  * @returns Promise with customer info and Pro status
+ * In development/Expo Go, returns simulated premium access
  */
 export const getCustomerInfo = async (): Promise<{
   success: boolean;
@@ -199,6 +254,15 @@ export const getCustomerInfo = async (): Promise<{
   activeSubscriptions: string[];
   error?: string;
 }> => {
+  if (isDevelopmentMode()) {
+    console.log('⏭️ Skipping customer info fetch in development mode');
+    return {
+      success: true,
+      hasProAccess: true, // Grant premium in dev mode
+      activeSubscriptions: [],
+    };
+  }
+
   try {
     const customerInfo = await Purchases.getCustomerInfo();
     
@@ -228,8 +292,13 @@ export const getCustomerInfo = async (): Promise<{
 
 /**
  * Check if user is in free trial
+ * In development/Expo Go, returns false (user has full access)
  */
 export const isInFreeTrial = async (): Promise<boolean> => {
+  if (isDevelopmentMode()) {
+    return false; // Not in trial, has full access in dev mode
+  }
+
   try {
     const customerInfo = await Purchases.getCustomerInfo();
     const proEntitlement = customerInfo.entitlements.active[PRO_ENTITLEMENT_ID];
@@ -252,8 +321,13 @@ export const isInFreeTrial = async (): Promise<boolean> => {
 
 /**
  * Get subscription expiration date
+ * In development/Expo Go, returns null (no expiration)
  */
 export const getSubscriptionExpirationDate = async (): Promise<Date | null> => {
+  if (isDevelopmentMode()) {
+    return null; // No expiration in dev mode
+  }
+
   try {
     const customerInfo = await Purchases.getCustomerInfo();
     const proEntitlement = customerInfo.entitlements.active[PRO_ENTITLEMENT_ID];

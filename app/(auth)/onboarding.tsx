@@ -81,7 +81,10 @@ export default function OnboardingWelcome() {
             }
           }}
           activeOpacity={0.95}
-          style={{ width: '100%', height: '100%' }}
+          style={[
+            styles.imageContainer,
+            index === onboardingData.length - 1 && styles.imageContainerLastScreen
+          ]}
         >
           <Image 
             source={item.image} 
@@ -92,7 +95,7 @@ export default function OnboardingWelcome() {
           />
         </TouchableOpacity>
 
-        {/* Show "Already have an account?" on last screen */}
+        {/* Show "Already have an account?" on last screen - positioned outside image container */}
         {index === onboardingData.length - 1 && (
           <View style={styles.loginPrompt}>
             <Text style={styles.loginPromptText}>
@@ -114,7 +117,7 @@ export default function OnboardingWelcome() {
   );
 
   return (
-    <SafeAreaView style={styles.container} edges={[]}>
+    <SafeAreaView style={styles.container} edges={['bottom']}>
       {/* Skip Button - only show on first 3 screens */}
       {currentIndex < onboardingData.length - 1 && (
         <TouchableOpacity style={styles.skipButton} onPress={handleSkip}>
@@ -181,11 +184,22 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    justifyContent: 'center',
-    paddingVertical: 20, // Add vertical padding
+    justifyContent: 'flex-start',
+    paddingVertical: 20,
+    paddingBottom: 0, // Remove bottom padding, let loginPrompt handle spacing
   },
   scrollContentLastScreen: {
     paddingTop: 40, // Extra top padding for screen 4 to prevent pill cutoff
+    paddingBottom: 120, // Extra bottom padding to make room for login text and pagination
+    minHeight: SCREEN_HEIGHT - 200, // Ensure enough space for all content
+  },
+  imageContainer: {
+    width: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  imageContainerLastScreen: {
+    marginBottom: 32, // More space between image and login text on last screen
   },
   fullScreenImage: {
     width: SCREEN_WIDTH,
@@ -194,7 +208,7 @@ const styles = StyleSheet.create({
   },
   pagination: {
     position: 'absolute',
-    bottom: 40,
+    bottom: 60, // Positioned above login text with proper spacing
     flexDirection: 'row',
     alignSelf: 'center',
     gap: 8,
@@ -211,12 +225,12 @@ const styles = StyleSheet.create({
     width: 24,
   },
   loginPrompt: {
-    position: 'absolute',
-    bottom: 80, // Changed from 40 to 80 (moved up 40px to avoid pagination dots)
-    left: 0,
-    right: 0,
+    width: '100%',
     alignItems: 'center',
     paddingHorizontal: 20,
+    paddingVertical: 20,
+    marginTop: 16, // More space above login text to separate from image
+    marginBottom: 20, // Space below login text
     zIndex: 5,
   },
   loginPromptText: {

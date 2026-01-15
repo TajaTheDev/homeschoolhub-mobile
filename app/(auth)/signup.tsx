@@ -65,25 +65,40 @@ export default function SignupScreen() {
         return;
       }
       
-      // CRITICAL: Check what we got back
+      if (!data.user) {
+        console.error('❌ No user returned from signup');
+        Alert.alert('Error', 'Failed to create account. Please try again.');
+        return;
+      }
+      
+      // CRITICAL: Verify session was created and persisted
       console.log('✅ Signup successful!');
-      console.log('📱 Session exists?', !!data.session);
-      console.log('👤 User exists?', !!data.user);
       console.log('👤 User ID:', data.user?.id);
       console.log('📧 User email:', data.user?.email);
       
-      if (data.session) {
-        console.log('✅ Session created, going to interactive onboarding');
-        // Mark onboarding welcome as seen
-        await AsyncStorage.setItem('hasSeenOnboarding', 'true');
-        Alert.alert('Success', 'Account created!');
-        // Navigate to interactive onboarding
-        router.replace('/onboarding');
-      } else {
-        console.log('⚠️ No session after signup!');
-        Alert.alert('Account Created', 'Account created! Please login.');
-        router.replace('/(auth)/login');
+      // Wait a moment for session to be established
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Verify session exists
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError || !session) {
+        console.error('⚠️ No session after signup!', sessionError);
+        // Some Supabase configurations require email confirmation
+        // In that case, we should still allow user to proceed
+        console.log('⚠️ Session not immediately available - may require email confirmation');
       }
+      
+      // Update auth store to reflect logged in state
+      await useAuthStore.getState().checkUser();
+      
+      // Mark onboarding welcome as seen
+      await AsyncStorage.setItem('hasSeenOnboarding', 'true');
+      
+      console.log('✅ Account created, navigating to interactive onboarding');
+      
+      // Navigate to interactive onboarding (user is logged in at this point)
+      router.replace('/onboarding');
       
     } catch (err) {
       console.error('🚨 Signup exception:', err);

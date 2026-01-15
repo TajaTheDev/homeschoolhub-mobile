@@ -6,6 +6,7 @@
 import EmptyState from '@/components/ui/EmptyState';
 import Skeleton from '@/components/ui/Skeleton';
 import Colors from '@/constants/Colors';
+import { useSnackbar } from '@/contexts/SnackbarContext';
 import { getSubjectColor } from '@/constants/Subjects';
 import Typography from '@/constants/Typography';
 import { supabase } from '@/lib/supabase/client';
@@ -19,6 +20,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { Modal, Platform } from 'react-native';
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
+import { useRouter } from 'expo-router';
 import {
   Alert,
   FlatList,
@@ -45,6 +47,8 @@ const formatDate = (dateString: string) => {
 };
 
 export default function AllLessonsScreen() {
+  const router = useRouter();
+  const { showSnackbar } = useSnackbar();
   const [selectedLesson, setSelectedLesson] = useState<Lesson | null>(null);
   const [showLessonModal, setShowLessonModal] = useState(false);
   const [filterStudent, setFilterStudent] = useState<string>('all');
@@ -339,10 +343,7 @@ export default function AllLessonsScreen() {
               console.log('✅ Store refreshed, current count:', lessons.length);
               
               // Success
-              Alert.alert(
-                'Deleted! 🗑️', 
-                `Successfully deleted ${count} lesson${count > 1 ? 's' : ''}!`
-              );
+              showSnackbar(`Successfully deleted ${count} lesson${count > 1 ? 's' : ''}!`, 'success');
             } catch (error) {
               console.error('❌ Delete error:', error);
               Alert.alert('Error', 'Failed to delete');
@@ -417,21 +418,13 @@ export default function AllLessonsScreen() {
               console.log('✅ Store refreshed, current count:', lessons.length);
               
               // Success
-              Alert.alert(
-                'Deleted! 🗑️',
-                `Successfully deleted all ${count} filtered lesson${count > 1 ? 's' : ''}!`,
-                [{
-                  text: 'OK',
-                  onPress: () => {
-                    // Reset filters
-                    setFilterStudent('all');
+              showSnackbar(`Successfully deleted all ${count} filtered lesson${count > 1 ? 's' : ''}!`, 'success');
+              // Reset filters
+              setFilterStudent('all');
                     setFilterSubject('all');
                     setFilterDateRange('all');
                     setCustomStartDate(null);
                     setCustomEndDate(null);
-                  }
-                }]
-              );
             } catch (error) {
               console.error('Error in handleDeleteAllFiltered:', error);
               Alert.alert('Error', 'Something went wrong');
@@ -794,6 +787,24 @@ export default function AllLessonsScreen() {
               filterStudent !== 'all' || filterSubject !== 'all' || filterDateRange !== 'all'
               ? 'Try adjusting your filters to see more lessons.'
               : 'Add lessons to start tracking your homeschooling progress!'
+          }
+          actionText={
+            filterStudent !== 'all' || filterSubject !== 'all' || filterDateRange !== 'all'
+              ? undefined
+              : students.length === 0
+              ? '+ Add Student First'
+              : '+ Add Your First Lesson'
+          }
+          onAction={
+            filterStudent !== 'all' || filterSubject !== 'all' || filterDateRange !== 'all'
+              ? undefined
+              : students.length === 0
+              ? () => {
+                  router.push('/add-student' as any);
+                }
+              : () => {
+                  router.push('/add-lesson' as any);
+                }
           }
         />
         }

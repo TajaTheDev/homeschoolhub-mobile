@@ -62,7 +62,11 @@
         "WRITE_EXTERNAL_STORAGE"
       ],
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "navigationBar": {
+        "visible": "leanback",
+        "backgroundColor": "#ffffff"
+      }
     },
     "web": {
       "output": "static",

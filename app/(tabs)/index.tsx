@@ -44,6 +44,7 @@ import ConfettiCannon from 'react-native-confetti-cannon';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const isSmallScreen = SCREEN_WIDTH < 375; // iPhone SE and smaller devices
 
 // Get photo URL from storage
 const getPhotoUrl = (path: string): string => {
@@ -428,6 +429,43 @@ export default function Dashboard() {
     return filtered;
   }, [lessons, selectedDateStr]);
 
+  // Group lessons by student for the selected date
+  const lessonsByStudent = useMemo(() => {
+    const grouped: Record<string, { student: Student; lessons: Lesson[] }> = {};
+    
+    selectedDateLessons.forEach(lesson => {
+      // Handle both many-to-many (students array) and legacy (student_id) relationships
+      const lessonStudents: Student[] = [];
+      
+      if (lesson.students && lesson.students.length > 0) {
+        // Many-to-many relationship
+        lessonStudents.push(...lesson.students);
+      } else if (lesson.student_id) {
+        // Legacy single student relationship
+        const student = students.find(s => s.id === lesson.student_id);
+        if (student) {
+          lessonStudents.push(student);
+        }
+      }
+      
+      // Group by each student
+      lessonStudents.forEach(student => {
+        if (!grouped[student.id]) {
+          grouped[student.id] = {
+            student,
+            lessons: [],
+          };
+        }
+        grouped[student.id].lessons.push(lesson);
+      });
+    });
+    
+    // Convert to array and sort by student name
+    return Object.values(grouped).sort((a, b) => 
+      a.student.name.localeCompare(b.student.name)
+    );
+  }, [selectedDateLessons, students]);
+
   // Generate dynamic section title based on selected date
   const getLessonSectionTitle = () => {
     const today = format(new Date(), 'yyyy-MM-dd');
@@ -636,60 +674,98 @@ export default function Dashboard() {
           >
         {/* Header Section */}
         <View style={styles.headerContainer}>
-          <View style={styles.headerTop}>
-            {/* Left: Parent Avatar + Greeting */}
-            <TouchableOpacity 
-              style={styles.headerLeft}
-              onPress={() => router.push('/settings/profile' as any)}
+          {/* 1. Name and Date Section - At TOP */}
+          <TouchableOpacity 
+            style={styles.headerNameSection}
+            onPress={() => router.push('/settings/profile' as any)}
+            activeOpacity={0.7}
+          >
+            <Avatar
+              type={parentAvatar.type}
+              value={parentAvatar.value}
+              name={parentAvatar.name}
+              color={Colors.brand[400]}
+              size={isSmallScreen ? 40 : 44}
+            />
+            <View style={styles.greetingContainer}>
+              <Text 
+                style={[styles.greetingText, isSmallScreen && styles.greetingTextSmall]}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
+                Hello, {parentAvatar.name.split(' ')[0]}
+              </Text>
+              <Text style={[styles.dateText, isSmallScreen && styles.dateTextSmall]}>
+                {format(new Date(), 'EEEE, dd MMM')}
+              </Text>
+            </View>
+          </TouchableOpacity>
+
+          {/* 2. Action Buttons - BELOW name/date */}
+          <View style={[
+            styles.attendanceSection,
+            isSmallScreen && styles.attendanceSectionSmall
+          ]}>
+            <TouchableOpacity
+              style={[
+                styles.attendanceButton,
+                isSmallScreen && styles.attendanceButtonSmall,
+                hasAttendanceForDate(format(new Date(), 'yyyy-MM-dd')) && styles.attendanceButtonTaken
+              ]}
+              onPress={() => setShowAttendanceModal(true)}
               activeOpacity={0.7}
             >
-              <Avatar
-                type={parentAvatar.type}
-                value={parentAvatar.value}
-                name={parentAvatar.name}
-                color={Colors.brand[400]}
-                size={44}
-              />
-              <View style={styles.greetingContainer}>
-                <Text style={styles.greetingText}>Hello, {parentAvatar.name.split(' ')[0]}</Text>
-                <Text style={styles.dateText}>{format(new Date(), 'EEEE, dd MMM')}</Text>
-              </View>
+              {hasAttendanceForDate(format(new Date(), 'yyyy-MM-dd')) ? (
+                <>
+                  <Text style={styles.attendanceButtonIcon}>✓</Text>
+                  <Text 
+                    style={[
+                      styles.attendanceButtonText,
+                      isSmallScreen && styles.attendanceButtonTextSmall
+                    ]}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.8}
+                  >
+                    Attendance Taken
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.attendanceButtonIcon}>📋</Text>
+                  <Text 
+                    style={[
+                      styles.attendanceButtonText,
+                      isSmallScreen && styles.attendanceButtonTextSmall
+                    ]}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.8}
+                  >
+                    Take Attendance
+                  </Text>
+                </>
+              )}
             </TouchableOpacity>
-
-            {/* Attendance Section */}
-            <View style={styles.attendanceSection}>
-              <TouchableOpacity
-                style={[
-                  styles.attendanceButton,
-                  hasAttendanceForDate(format(new Date(), 'yyyy-MM-dd')) && styles.attendanceButtonTaken
-                ]}
-                onPress={() => setShowAttendanceModal(true)}
-                activeOpacity={0.7}
-              >
-                {hasAttendanceForDate(format(new Date(), 'yyyy-MM-dd')) ? (
-                  <>
-                    <Text style={styles.attendanceButtonIcon}>✓</Text>
-                    <Text style={styles.attendanceButtonText}>Attendance Taken</Text>
-                  </>
-                ) : (
-                  <>
-                    <Text style={styles.attendanceButtonIcon}>📋</Text>
-                    <Text style={styles.attendanceButtonText}>Take Attendance</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-              
-              <TouchableOpacity
-                style={styles.historyButton}
-                onPress={() => router.push('/attendance-history' as any)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.historyButtonText}>View History →</Text>
-              </TouchableOpacity>
-            </View>
+            
+            <TouchableOpacity
+              style={[
+                styles.historyButton,
+                isSmallScreen && styles.historyButtonSmall
+              ]}
+              onPress={() => router.push('/attendance-history' as any)}
+              activeOpacity={0.7}
+            >
+              <Text style={[
+                styles.historyButtonText,
+                isSmallScreen && styles.historyButtonTextSmall
+              ]}>
+                View History →
+              </Text>
+            </TouchableOpacity>
           </View>
 
-          {/* Right: Settings Gear */}
+          {/* 3. Settings Icon - At BOTTOM */}
           <TouchableOpacity 
             style={styles.settingsButton}
             onPress={() => router.push('/settings' as any)}
@@ -734,191 +810,218 @@ export default function Dashboard() {
               <EmptyState
                 icon={BookOpen}
                 title={`No Lessons ${selectedDateStr === format(new Date(), 'yyyy-MM-dd') ? 'Today' : 'on This Day'}`}
-                description="Add a lesson to get started!"
+                description={
+                  lessons.length === 0
+                    ? "Get started by adding your first lesson!"
+                    : `No lessons scheduled for ${selectedDateStr === format(new Date(), 'yyyy-MM-dd') ? 'today' : 'this day'}.`
+                }
+                actionText={lessons.length === 0 ? "+ Add Your First Lesson" : "+ Add Lesson for This Day"}
+                onAction={() => {
+                  if (students.length === 0) {
+                    Alert.alert(
+                      'Add a Student First',
+                      'You need to add a student before creating lessons.',
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        { 
+                          text: 'Add Student', 
+                          onPress: () => setShowStudentForm(true)
+                        }
+                      ]
+                    );
+                  } else {
+                    router.push('/add-lesson' as any);
+                  }
+                }}
               />
             </Animated.View>
           ) : (
             <Animated.View style={{ opacity: contentFadeAnim }}>
-              {selectedDateLessons.map((lesson, index) => {
-              // Get subject color
-              const subjectColor = getSubjectColor(lesson.subject);
-              
-              return (
-                <AnimatedCard
-                  key={lesson.id}
-                  style={[
-                    styles.lessonCard,
-                    { borderLeftColor: subjectColor }
-                  ]}
-                  onPress={() => {
-                    setSelectedLesson(lesson);
-                    setShowLessonModal(true);
-                  }}
-                >
-                  <View style={styles.lessonHeader}>
-                    <View style={styles.lessonHeaderLeft}>
-                      {/* Subject Pill */}
-                      <View
-                        style={[
-                          styles.subjectPill,
-                          { backgroundColor: subjectColor }
-                        ]}
-                      >
-                        <Text style={styles.subjectPillText}>{lesson.subject}</Text>
-                      </View>
-                    </View>
-                    
-                    {/* Completion Checkbox + Status */}
-                    <TouchableOpacity
-                      onPress={(e) => {
-                        e.stopPropagation();
-                        handleLessonComplete(lesson.id, lesson.completed);
-                      }}
-                      style={styles.completionRow}
-                      activeOpacity={0.7}
-                    >
-                      {/* Checkbox */}
-                      <View style={[
-                        styles.checkbox,
-                        lesson.completed && styles.checkboxChecked
-                      ]}>
-                        {lesson.completed && (
-                          <Text style={styles.checkmark}>✓</Text>
-                        )}
-                      </View>
-                      
-                      {/* Status Text */}
-                      <Text style={[
-                        styles.statusText,
-                        lesson.completed && styles.statusTextComplete
-                      ]}>
-                        {lesson.completed ? 'Done' : 'Todo'}
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                  
-                  <Text style={styles.lessonTitle}>{lesson.title}</Text>
-                  
-                  {/* Grade Badge */}
-                  {(() => {
-                    const gradeDisplay = getGradeDisplay(
-                      lesson.grade_type,
-                      lesson.grade_value,
-                      lesson.grade_max_points
-                    );
-                    
-                    if (gradeDisplay) {
-                      return (
-                        <View style={[
-                          styles.gradeBadge,
-                          { backgroundColor: gradeDisplay.backgroundColor }
-                        ]}>
-                          <Text style={[
-                            styles.gradeBadgeText,
-                            { color: gradeDisplay.color }
-                          ]}>
-                            {gradeDisplay.display}
+              {lessonsByStudent.map(({ student, lessons: studentLessons }) => {
+                const colorTheme = student.color_theme || 'purple';
+                const studentColor = Colors.student[colorTheme as keyof typeof Colors.student] || Colors.student.purple;
+                
+                return (
+                  <View
+                    key={student.id}
+                    style={styles.studentGroupCard}
+                  >
+                    {/* Student Header */}
+                    <View style={styles.studentGroupHeader}>
+                      <View style={styles.studentGroupHeaderLeft}>
+                        <Avatar
+                          type={student.avatar_type || 'initial'}
+                          value={student.avatar_value}
+                          name={student.name}
+                          color={studentColor}
+                          size={32}
+                        />
+                        <View style={styles.studentGroupInfo}>
+                          <Text style={styles.studentGroupName}>
+                            {student.name}
+                          </Text>
+                          <Text style={styles.studentGroupLessonCount}>
+                            {studentLessons.length} {studentLessons.length === 1 ? 'lesson' : 'lessons'} {selectedDateStr === format(new Date(), 'yyyy-MM-dd') ? 'today' : 'on this day'}
                           </Text>
                         </View>
-                      );
-                    }
-                    return null;
-                  })()}
-                  
-                  {/* Multiple Student Avatars */}
-                  {lesson.students && lesson.students.length > 0 && (
-                    <View style={styles.lessonStudents}>
-                      <View style={styles.avatarStack}>
-                        {lesson.students.slice(0, 3).map((student: any, index: number) => {
-                          const colorTheme = student.color_theme || 'purple';
-                          const studentColor = Colors.student[colorTheme as keyof typeof Colors.student] || Colors.student.purple;
-                          return (
-                            <View
-                              key={student.id}
-                              style={[
-                                styles.avatarStackItem,
-                                { marginLeft: index > 0 ? -12 : 0, zIndex: (lesson.students?.length || 0) - index }
-                              ]}
-                            >
-                              <Avatar
-                                type={student.avatar_type || 'initial'}
-                                value={student.avatar_value}
-                                name={student.name || 'Student'}
-                                color={studentColor}
-                                size={28}
-                              />
-                            </View>
-                          );
-                        })}
                       </View>
-                      <Text style={styles.lessonStudentNames}>
-                        {lesson.students.length === 1
-                          ? lesson.students[0]?.name || 'Student'
-                          : lesson.students.length === 2
-                          ? `${lesson.students[0]?.name || 'Student'} & ${lesson.students[1]?.name || 'Student'}`
-                          : `${lesson.students.slice(0, 2).map((s: any) => s.name || 'Student').join(', ')} +${lesson.students.length - 2}`
-                        }
-                      </Text>
                     </View>
-                  )}
-                  
-                  {lesson.notes && (
-                    <Text style={styles.lessonNotes} numberOfLines={2}>
-                      {lesson.notes}
-                    </Text>
-                  )}
+                    
+                    {/* Lessons for this student */}
+                    <View style={styles.studentLessonsContainer}>
+                      {studentLessons.map((lesson) => {
+                        // Get subject color
+                        const subjectColor = getSubjectColor(lesson.subject);
+                        
+                        return (
+                          <AnimatedCard
+                            key={lesson.id}
+                            style={[
+                              styles.lessonCard,
+                              { borderLeftColor: subjectColor }
+                            ]}
+                            onPress={() => {
+                              setSelectedLesson(lesson);
+                              setShowLessonModal(true);
+                            }}
+                          >
+                            <View style={styles.lessonHeader}>
+                              <View style={styles.lessonHeaderLeft}>
+                                {/* Subject Pill */}
+                                <View
+                                  style={[
+                                    styles.subjectPill,
+                                    { backgroundColor: subjectColor }
+                                  ]}
+                                >
+                                  <Text style={styles.subjectPillText}>{lesson.subject}</Text>
+                                </View>
+                              </View>
+                              
+                              {/* Completion Checkbox + Status */}
+                              <TouchableOpacity
+                                onPress={(e) => {
+                                  e.stopPropagation();
+                                  handleLessonComplete(lesson.id, lesson.completed);
+                                }}
+                                style={styles.completionRow}
+                                activeOpacity={0.7}
+                              >
+                                {/* Checkbox */}
+                                <View style={[
+                                  styles.checkbox,
+                                  lesson.completed && styles.checkboxChecked
+                                ]}>
+                                  {lesson.completed && (
+                                    <Text style={styles.checkmark}>✓</Text>
+                                  )}
+                                </View>
+                                
+                                {/* Status Text */}
+                                <Text style={[
+                                  styles.statusText,
+                                  lesson.completed && styles.statusTextComplete
+                                ]}>
+                                  {lesson.completed ? 'Done' : 'Todo'}
+                                </Text>
+                              </TouchableOpacity>
+                            </View>
+                            
+                            <Text 
+                              style={styles.lessonTitle}
+                              numberOfLines={2}
+                              ellipsizeMode="tail"
+                            >
+                              {lesson.title}
+                            </Text>
+                            
+                            {/* Grade Badge */}
+                            {(() => {
+                              const gradeDisplay = getGradeDisplay(
+                                lesson.grade_type,
+                                lesson.grade_value,
+                                lesson.grade_max_points
+                              );
+                              
+                              if (gradeDisplay) {
+                                return (
+                                  <View style={[
+                                    styles.gradeBadge,
+                                    { backgroundColor: gradeDisplay.backgroundColor }
+                                  ]}>
+                                    <Text style={[
+                                      styles.gradeBadgeText,
+                                      { color: gradeDisplay.color }
+                                    ]}>
+                                      {gradeDisplay.display}
+                                    </Text>
+                                  </View>
+                                );
+                              }
+                              return null;
+                            })()}
+                            
+                            {lesson.notes && (
+                              <Text style={styles.lessonNotes} numberOfLines={2}>
+                                {lesson.notes}
+                              </Text>
+                            )}
 
-                  {/* Photo Thumbnails - CLICKABLE */}
-                  {lesson.photos && lesson.photos.length > 0 && (
-                    <TouchableOpacity
-                      style={styles.lessonPhotos}
-                      onPress={(e) => {
-                        e.stopPropagation();
-                        setGalleryPhotos(lesson.photos || []);
-                        setGalleryStartIndex(0);
-                        setShowPhotoGallery(true);
-                      }}
-                      activeOpacity={0.7}
-                    >
-                      <View style={styles.photoThumbnails}>
-                        {lesson.photos.slice(0, 3).map((photo, index) => {
-                          const photoUrl = getPhotoUrl(photo.storage_path);
-                          if (!photoUrl) return null;
-                          
-                          return (
-                            <Image
-                              key={photo.id}
-                              source={{ uri: photoUrl }}
-                              style={[
-                                styles.photoThumbnail,
-                                { marginLeft: index > 0 ? -8 : 0, zIndex: 3 - index }
-                              ]}
-                              contentFit="cover"
-                              transition={200}
-                              cachePolicy="memory-disk"
-                              priority="high"
-                              placeholder={{ blurhash: 'L6PZfSi_.AyE_3t7t7R**0o#DgR4' }}
-                              onError={() => {
-                                console.warn('Failed to load photo thumbnail:', photo.storage_path);
-                              }}
-                            />
-                          );
-                        })}
-                      </View>
-                      {lesson.photos.length > 3 && (
-                        <Text style={styles.photoCount}>+{lesson.photos.length - 3}</Text>
-                      )}
-                      {/* Visual hint that it's tappable */}
-                      <Text style={styles.viewPhotosHint}>Tap to view</Text>
-                    </TouchableOpacity>
-                  )}
-                  
-                  <Text style={styles.lessonDate}>
-                    {formatDate(lesson.date)}
-                  </Text>
-                </AnimatedCard>
-              );
-            })}
+                            {/* Photo Thumbnails - CLICKABLE */}
+                            {lesson.photos && lesson.photos.length > 0 && (
+                              <TouchableOpacity
+                                style={styles.lessonPhotos}
+                                onPress={(e) => {
+                                  e.stopPropagation();
+                                  setGalleryPhotos(lesson.photos || []);
+                                  setGalleryStartIndex(0);
+                                  setShowPhotoGallery(true);
+                                }}
+                                activeOpacity={0.7}
+                              >
+                                <View style={styles.photoThumbnails}>
+                                  {lesson.photos.slice(0, 3).map((photo, index) => {
+                                    const photoUrl = getPhotoUrl(photo.storage_path);
+                                    if (!photoUrl) return null;
+                                    
+                                    return (
+                                      <Image
+                                        key={photo.id}
+                                        source={{ uri: photoUrl }}
+                                        style={[
+                                          styles.photoThumbnail,
+                                          { marginLeft: index > 0 ? -8 : 0, zIndex: 3 - index }
+                                        ]}
+                                        contentFit="cover"
+                                        transition={200}
+                                        cachePolicy="memory-disk"
+                                        priority="high"
+                                        placeholder={{ blurhash: 'L6PZfSi_.AyE_3t7t7R**0o#DgR4' }}
+                                        onError={() => {
+                                          console.warn('Failed to load photo thumbnail:', photo.storage_path);
+                                        }}
+                                      />
+                                    );
+                                  })}
+                                </View>
+                                {lesson.photos.length > 3 && (
+                                  <Text style={styles.photoCount}>+{lesson.photos.length - 3}</Text>
+                                )}
+                                {/* Visual hint that it's tappable */}
+                                <Text style={styles.viewPhotosHint}>Tap to view</Text>
+                              </TouchableOpacity>
+                            )}
+                            
+                            <Text style={styles.lessonDate}>
+                              {formatDate(lesson.date)}
+                            </Text>
+                          </AnimatedCard>
+                        );
+                      })}
+                    </View>
+                  </View>
+                );
+              })}
             </Animated.View>
           )}
         </View>
@@ -1020,8 +1123,20 @@ export default function Dashboard() {
                     <View style={styles.studentCardRight}>
                       <View style={styles.studentCardHeader}>
                         <View style={styles.studentCardNameSection}>
-                          <Text style={styles.studentCardName}>{student.name}</Text>
-                          <Text style={styles.studentCardGrade}>{student.grade}</Text>
+                          <Text 
+                            style={styles.studentCardName}
+                            numberOfLines={1}
+                            ellipsizeMode="tail"
+                          >
+                            {student.name}
+                          </Text>
+                          <Text 
+                            style={styles.studentCardGrade}
+                            numberOfLines={1}
+                            ellipsizeMode="tail"
+                          >
+                            {student.grade}
+                          </Text>
                         </View>
                         
                         {/* Edit Button */}
@@ -1238,37 +1353,58 @@ const styles = StyleSheet.create({
     paddingBottom: 100,
   },
   headerContainer: {
-    paddingHorizontal: 20,
-    paddingTop: 12,
+    paddingHorizontal: isSmallScreen ? 16 : 20,
+    paddingTop: 16,
     paddingBottom: 16,
     backgroundColor: Colors.background.card,
     marginBottom: 24,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  headerNameSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: isSmallScreen ? 10 : 12,
+    marginBottom: 16, // Space before buttons
   },
   headerTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     marginBottom: 20,
+    gap: 12,
   },
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: isSmallScreen ? 10 : 12,
     flex: 1,
+    minWidth: 0, // Allow flex shrinking
   },
   attendanceButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'center',
+    gap: 6,
     backgroundColor: Colors.brand[500],
     paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingHorizontal: 18,
     borderRadius: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+    flex: isSmallScreen ? undefined : 1,
+    minWidth: 0, // Allow text to shrink
+  },
+  attendanceButtonSmall: {
+    paddingVertical: 10,
+    paddingHorizontal: 14,
   },
   attendanceButtonTaken: {
     backgroundColor: '#10B981', // Green when taken
@@ -1280,9 +1416,22 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: 'white',
+    flexShrink: 1, // Allow text to shrink if needed
+  },
+  attendanceButtonTextSmall: {
+    fontSize: 13,
   },
   attendanceSection: {
     gap: 8,
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    flexShrink: 0,
+    marginBottom: 12, // Space before settings button
+  },
+  attendanceSectionSmall: {
+    flexDirection: 'column',
+    width: isSmallScreen ? '100%' : undefined,
+    gap: 6,
   },
   historyButton: {
     paddingVertical: 10,
@@ -1292,14 +1441,23 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: Colors.brand[200],
     alignItems: 'center',
+    flex: isSmallScreen ? undefined : 1,
+  },
+  historyButtonSmall: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
   },
   historyButtonText: {
     fontSize: 14,
     fontWeight: '600',
     color: Colors.brand[600],
   },
+  historyButtonTextSmall: {
+    fontSize: 13,
+  },
   greetingContainer: {
     flex: 1,
+    minWidth: 0, // Allow text to shrink
   },
   greetingText: {
     ...Typography.label,
@@ -1307,15 +1465,25 @@ const styles = StyleSheet.create({
     color: Colors.ui.text,
     marginBottom: 2,
   },
+  greetingTextSmall: {
+    fontSize: 14,
+  },
   dateText: {
     ...Typography.caption,
     fontSize: 12,
     color: Colors.ui.textLight,
   },
+  dateTextSmall: {
+    fontSize: 11,
+  },
   settingsButton: {
-    padding: 8,
-    borderRadius: 12,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: Colors.ui.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'flex-start', // Align to left
   },
   section: {
     marginBottom: 32,
@@ -1505,6 +1673,44 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: Colors.ui.textLight,
     marginRight: 2,
+  },
+  studentGroupCard: {
+    backgroundColor: Colors.background.card,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  studentGroupHeader: {
+    marginBottom: 12,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.ui.border,
+  },
+  studentGroupHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  studentGroupInfo: {
+    flex: 1,
+  },
+  studentGroupName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.ui.text,
+    marginBottom: 2,
+  },
+  studentGroupLessonCount: {
+    fontSize: 13,
+    color: Colors.ui.textLight,
+  },
+  studentLessonsContainer: {
+    gap: 12,
   },
   lessonCard: {
     backgroundColor: Colors.background.card,

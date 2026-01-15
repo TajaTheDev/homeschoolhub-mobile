@@ -20,6 +20,7 @@ import * as SplashScreen from 'expo-splash-screen';
 
 import Colors from '@/constants/Colors';
 import { SubscriptionProvider } from '@/contexts/SubscriptionContext';
+import { SnackbarProvider } from '@/contexts/SnackbarContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { initializeRevenueCat } from '@/lib/revenuecat';
 import { supabase } from '@/lib/supabase/client';
@@ -40,6 +41,9 @@ export default function RootLayout() {
   const [appReady, setAppReady] = useState(false);
   const [subscriptionStatus, setSubscriptionStatus] = useState<'active' | 'trial' | 'expired' | null>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  
+  // Track auth initialization to prevent infinite loops
+  const authInitializedRef = useRef(false);
 
   const [fontsLoaded] = useFonts({
     Quicksand_400Regular,
@@ -183,7 +187,15 @@ export default function RootLayout() {
   }, []);
 
   useEffect(() => {
+    // CRITICAL: Only run auth check once - prevent infinite loops
+    if (authInitializedRef.current || !fontsLoaded) {
+      return;
+    }
+
     const initializeAuth = async () => {
+      // Mark as initialized immediately to prevent re-runs
+      authInitializedRef.current = true;
+      
       // Wait for all interactions to complete before checking auth
       // This ensures native modules are fully initialized
       await new Promise(resolve => InteractionManager.runAfterInteractions(() => resolve(undefined)));
@@ -255,6 +267,7 @@ export default function RootLayout() {
               // Check onboarding status even in offline mode
               const hasCompletedOnboarding = await AsyncStorage.getItem('hasCompletedOnboarding');
               if (hasCompletedOnboarding === 'true') {
+                console.log('✅ User has completed onboarding, going to main app (offline)');
                 router.replace('/(tabs)');
               } else {
                 router.replace('/onboarding');
@@ -296,9 +309,12 @@ export default function RootLayout() {
             const hasCompletedOnboarding = await AsyncStorage.getItem('hasCompletedOnboarding');
             if (hasCompletedOnboarding === 'true') {
               console.log('✅ User has completed onboarding, going to main app');
+              // User is logged in AND onboarding complete - go directly to main app
+              // No delay needed - navigation should be immediate
               router.replace('/(tabs)');
             } else {
               console.log('📝 User needs to complete interactive onboarding');
+              // User is logged in but hasn't completed onboarding - go to onboarding
               router.replace('/onboarding');
             }
           }
@@ -308,28 +324,32 @@ export default function RootLayout() {
           const hasSeenOnboarding = await AsyncStorage.getItem('hasSeenOnboarding');
           if (hasSeenOnboarding === 'true') {
             console.log('✅ User has seen welcome, going to signup');
-            router.replace('/(auth)/signup');
+            setTimeout(() => {
+              router.replace('/(auth)/signup');
+            }, 100);
           } else {
             console.log('📝 New user, showing Canva welcome');
-            router.replace('/(auth)/onboarding');
+            setTimeout(() => {
+              router.replace('/(auth)/onboarding');
+            }, 100);
           }
         }
       } catch (error) {
         console.error('🚨 Auth error:', error);
         // On error, always route to onboarding to prevent crashes
-        router.replace('/(auth)/onboarding');
+        setTimeout(() => {
+          router.replace('/(auth)/onboarding');
+        }, 100);
       }
     };
     
     // Run auth initialization after fonts are loaded AND React Native is ready
-    if (fontsLoaded) {
-      // Use InteractionManager to ensure native modules are ready
-      InteractionManager.runAfterInteractions(() => {
-        initializeAuth();
-      });
-    }
+    // Use InteractionManager to ensure native modules are ready
+    InteractionManager.runAfterInteractions(() => {
+      initializeAuth();
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fontsLoaded]);
+  }, [fontsLoaded]); // Only depend on fontsLoaded - ref prevents re-runs
 
   useEffect(() => {
     // Listen for notification taps
@@ -405,55 +425,67 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <Animated.View style={{ flex: 1, backgroundColor: Colors.ui.background, opacity: fadeAnim }}>
           <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-            <SubscriptionProvider>
-              <Stack initialRouteName="welcome">
-              <Stack.Screen
-                name="welcome"
-                options={{ title: 'Welcome', headerShown: false }}
-              />
-              <Stack.Screen
-                name="(auth)"
-                options={{ 
-                  headerShown: false,
-                  gestureEnabled: false,
-                }}
-              />
-              <Stack.Screen
-                name="onboarding"
-                options={{
-                  headerShown: false,
-                  gestureEnabled: false,
-                }}
-              />
-              <Stack.Screen
-                name="onboarding/welcome"
-                options={{
-                  headerShown: false,
-                  gestureEnabled: false,
-                }}
-              />
-              <Stack.Screen
-                name="subscribe"
-                options={{
-                  headerShown: false,
-                  gestureEnabled: false,
-                }}
-              />
-              <Stack.Screen
-                name="(tabs)"
-                options={{
-                  title: 'Home',
-                  headerShown: false,
-                  contentStyle: { backgroundColor: Colors.ui.background },
-                }}
-              />
-              <Stack.Screen
-                name="modal"
-                options={{ presentation: 'modal', title: 'Modal' }}
-              />
-              </Stack>
-              <StatusBar style="auto" />
-            </SubscriptionProvider>
+            <SnackbarProvider>
+              <SubscriptionProvider>
+                <Stack initialRouteName="welcome">
+                  <Stack.Screen
+                    name="welcome"
+                    options={{ title: 'Welcome', headerShown: false }}
+                  />
+                  <Stack.Screen
+                    name="(auth)"
+                    options={{ 
+                      headerShown: false,
+                      gestureEnabled: false,
+                    }}
+                  />
+                  <Stack.Screen
+                    name="onboarding"
+                    options={{
+                      headerShown: false,
+                      gestureEnabled: false,
+                    }}
+                  />
+                  <Stack.Screen
+                    name="onboarding/welcome"
+                    options={{
+                      headerShown: false,
+                      gestureEnabled: false,
+                    }}
+                  />
+                  <Stack.Screen
+                    name="subscribe"
+                    options={{
+                      title: 'Premium Subscription',
+                      headerShown: true,
+                      headerBackTitle: 'Settings',
+                      gestureEnabled: true,
+                      headerStyle: {
+                        backgroundColor: Colors.ui.background,
+                      },
+                      headerTintColor: Colors.ui.text,
+                      headerTitleStyle: {
+                        fontFamily: 'Quicksand_600SemiBold',
+                        fontSize: 18,
+                      },
+                    }}
+                  />
+                  <Stack.Screen
+                    name="(tabs)"
+                    options={{
+                      title: 'Home',
+                      headerShown: false,
+                      contentStyle: { backgroundColor: Colors.ui.background },
+                    }}
+                  />
+                  <Stack.Screen
+                    name="modal"
+                    options={{ presentation: 'modal', title: 'Modal' }}
+                  />
+                </Stack>
+                <StatusBar style="auto" />
+              </SubscriptionProvider>
+            </SnackbarProvider>
           </ThemeProvider>
         </Animated.View>
       </SafeAreaProvider>

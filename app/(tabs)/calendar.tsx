@@ -511,12 +511,23 @@ export default function CalendarScreen() {
               <EmptyState
                 icon={CalendarIcon}
                 title="No Lessons Today"
-                description={`No lessons scheduled for ${format(selectedDate, 'MMMM d, yyyy')}`}
-                actionText="Add Lesson"
+                description={
+                  students.length === 0
+                    ? `Add a student first, then add lessons for ${format(selectedDate, 'MMMM d, yyyy')}`
+                    : `No lessons scheduled for ${format(selectedDate, 'MMMM d, yyyy')}`
+                }
+                actionText={
+                  students.length === 0
+                    ? '+ Add Student First'
+                    : '+ Add Lesson'
+                }
                 onAction={() => {
-                  // Navigate to add lesson
-                  if (students[0]) {
+                  if (students.length === 0) {
+                    router.push('/add-student' as any);
+                  } else if (students[0]) {
                     router.push(`/students/${students[0].id}/add-lesson` as any);
+                  } else {
+                    router.push('/add-lesson' as any);
                   }
                 }}
               />

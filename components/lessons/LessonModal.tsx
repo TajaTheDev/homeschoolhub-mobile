@@ -1,6 +1,7 @@
 import PhotoUpload from '@/components/lessons/PhotoUpload';
 import PhotoGallery from '@/components/lessons/PhotoGallery';
 import Colors from '@/constants/Colors';
+import { useSnackbar } from '@/contexts/SnackbarContext';
 import { PRESET_SUBJECTS, getSubjectColor } from '@/constants/Subjects';
 import { supabase } from '@/lib/supabase/client';
 import { useLessonStore } from '@/store/lessonStore';
@@ -53,6 +54,7 @@ const formatDate = (dateString: string) => {
 };
 
 export default function LessonModal({ visible, lesson, onClose, onSave }: LessonModalProps) {
+  const { showSnackbar } = useSnackbar();
   const [subject, setSubject] = useState('');
   const [title, setTitle] = useState('');
   const [notes, setNotes] = useState('');
@@ -424,10 +426,10 @@ export default function LessonModal({ visible, lesson, onClose, onSave }: Lesson
             }
           }
           
-          Alert.alert('Success', 'Photo deleted');
+          showSnackbar('Photo deleted', 'success');
         } else {
           console.warn('⚠️ Could not find photo record to delete');
-          Alert.alert('Success', 'Photo removed from lesson');
+          showSnackbar('Photo removed from lesson', 'success');
         }
       }
       

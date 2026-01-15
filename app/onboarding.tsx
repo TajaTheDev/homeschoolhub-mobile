@@ -13,6 +13,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import ConfettiCannon from 'react-native-confetti-cannon';
 import { Calendar, Users, BookOpen, Repeat, Sparkles } from 'lucide-react-native';
 import Colors from '@/constants/Colors';
+import { supabase } from '@/lib/supabase/client';
 import { useStudentStore } from '@/store/studentStore';
 import { useLessonStore } from '@/store/lessonStore';
 import { useScheduleStore } from '@/store/scheduleStore';
@@ -130,24 +131,58 @@ export default function OnboardingScreen() {
     shootConfetti();
     
     try {
+      // Verify user is still logged in BEFORE marking onboarding complete
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        console.error('❌ No session found after onboarding completion!');
+        Alert.alert(
+          'Session Expired',
+          'Please log in again to continue.',
+          [
+            {
+              text: 'OK',
+              onPress: () => router.replace('/(auth)/login')
+            }
+          ]
+        );
+        return;
+      }
+      
+      console.log('✅ User session verified');
+      
+      // Mark onboarding as complete - CRITICAL: Do this AFTER verifying session
       await AsyncStorage.setItem('hasCompletedOnboarding', 'true');
-      console.log('✅ Onboarding marked complete');
-    } catch (error) {
-      console.error('Error saving onboarding status:', error);
-    }
-    
-    setTimeout(() => {
+      console.log('✅ Onboarding marked complete in AsyncStorage');
+      
+      // Wait a moment to ensure AsyncStorage write completes
+      await new Promise(resolve => setTimeout(resolve, 200));
+      
+      // Verify the write succeeded
+      const verifyComplete = await AsyncStorage.getItem('hasCompletedOnboarding');
+      if (verifyComplete !== 'true') {
+        console.error('❌ Failed to save onboarding completion status!');
+        Alert.alert('Error', 'Failed to save onboarding status. Please try again.');
+        return;
+      }
+      
+      console.log('✅ Onboarding completion verified, navigating to main app');
+      
       // TEMPORARY: Bypass subscription screen during App Store review
       // TODO: Re-enable after approval (Jan 15, 2026)
       const REVIEW_MODE = true;
       
       if (REVIEW_MODE) {
         console.log('⚠️ REVIEW MODE: Bypassing subscription screen');
+        // Navigate directly to main app - user is logged in and onboarding is complete
+        // Use replace to prevent back navigation to onboarding
         router.replace('/(tabs)');
       } else {
-        router.replace('/subscribe'); // Changed from /(tabs) to show trial celebration screen
+        router.replace('/subscribe');
       }
-    }, 2000);
+    } catch (error) {
+      console.error('Error completing onboarding:', error);
+      Alert.alert('Error', 'Failed to complete onboarding. Please try again.');
+    }
   };
   
   return (

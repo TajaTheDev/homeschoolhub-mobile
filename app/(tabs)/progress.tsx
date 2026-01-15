@@ -7,6 +7,7 @@ import Avatar from '@/components/ui/Avatar';
 import EmptyState from '@/components/ui/EmptyState';
 import Skeleton from '@/components/ui/Skeleton';
 import Colors from '@/constants/Colors';
+import { useSnackbar } from '@/contexts/SnackbarContext';
 import { getSubjectColor } from '@/constants/Subjects';
 import Typography from '@/constants/Typography';
 import * as notificationService from '@/services/notificationService';
@@ -311,6 +312,7 @@ const isGoalCelebrationsEnabled = async () => {
 
 export default function ProgressScreen() {
   const router = useRouter();
+  const { showSnackbar } = useSnackbar();
   const { students, fetchStudents, subjects, fetchSubjects, updateSubject } = useStudentStore();
   const { lessons, fetchLessons } = useLessonStore();
   const { schedule, getSchoolDays, fetchSchedule } = useScheduleStore();
@@ -475,7 +477,7 @@ export default function ProgressScreen() {
 
     if (result.success) {
       await fetchSubjects(selectedStudentId);
-      Alert.alert('Success', newGoal === null ? 'Goal removed!' : 'Goal updated!');
+      showSnackbar(newGoal === null ? 'Goal removed!' : 'Goal updated!', 'success');
       setShowEditGoalModal(false);
       setEditGoalSubject('');
       setEditGoalCurrentGoal(0);
@@ -536,13 +538,13 @@ export default function ProgressScreen() {
         <View style={styles.header}>
           <Text style={styles.title}>Progress Tracking 📊</Text>
         </View>
-        <View style={styles.emptyState}>
-          <BarChart3 size={48} color={Colors.ui.textLight} />
-          <Text style={styles.emptyTitle}>No Students Yet</Text>
-          <Text style={styles.emptyText}>
-            Add a student from the Home tab to start tracking progress!
-          </Text>
-        </View>
+        <EmptyState
+          icon={BarChart3}
+          title="No Students Yet"
+          description="Add your first student to start tracking their homeschool progress and see detailed analytics!"
+          actionText="+ Add Student"
+          onAction={() => router.push('/add-student' as any)}
+        />
         </ScrollView>
       </SafeAreaView>
     );
@@ -642,20 +644,13 @@ export default function ProgressScreen() {
 
       {/* No Lessons Empty State */}
       {studentLessons.length === 0 ? (
-        <View style={styles.emptyState}>
-          <Calendar size={48} color={Colors.ui.textLight} />
-          <Text style={styles.emptyTitle}>No Lessons Yet</Text>
-          <Text style={styles.emptyText}>
-            Add lessons for {selectedStudent?.name} to see progress tracking!
-          </Text>
-          <TouchableOpacity
-            style={styles.emptyButton}
-            onPress={() => router.push('/add-lesson' as any)}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.emptyButtonText}>Add First Lesson</Text>
-          </TouchableOpacity>
-        </View>
+        <EmptyState
+          icon={Calendar}
+          title="No Lessons Yet"
+          description={`Add lessons for ${selectedStudent?.name || 'this student'} to see progress tracking, completion rates, and insights!`}
+          actionText="+ Add Lesson"
+          onAction={() => router.push('/add-lesson' as any)}
+        />
       ) : (
         <>
           {/* Overview Stats Card */}

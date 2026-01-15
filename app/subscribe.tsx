@@ -1,17 +1,25 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, ScrollView } from 'react-native';
-import { useRouter } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import { RevenueCatUI, PAYWALL_RESULT } from 'react-native-purchases-ui';
 import ConfettiCannon from 'react-native-confetti-cannon';
 import { Sparkles, Gift, Check, Crown } from 'lucide-react-native';
 import { checkProStatus } from '@/lib/revenuecat';
 import { useSubscription } from '@/contexts/SubscriptionContext';
 import { presentCustomerCenter } from '@/components/subscription/CustomerCenter';
+import Constants from 'expo-constants';
 import Colors from '@/constants/Colors';
 
 // TEMPORARY: Bypass feature gating for App Store review (but still show subscription screen)
 // TODO: Re-enable after approval (Jan 15, 2026)
 const REVIEW_MODE = true;
+
+// Check if we're in Expo Go or development mode
+const isDevelopmentMode = (): boolean => {
+  const isExpoGo = Constants.appOwnership === 'expo';
+  const isDev = __DEV__;
+  return isExpoGo || isDev;
+};
 
 export default function SubscribeScreen() {
   const router = useRouter();
@@ -51,6 +59,16 @@ export default function SubscribeScreen() {
 
   const presentPaywall = async () => {
     try {
+      // Skip in development/Expo Go
+      if (isDevelopmentMode()) {
+        Alert.alert(
+          'Development Mode',
+          'Subscription purchases are not available in Expo Go. They will work in production builds.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
       // Check if RevenueCatUI is available
       if (!RevenueCatUI || typeof RevenueCatUI.presentPaywall !== 'function') {
         console.error('❌ RevenueCatUI not available');
@@ -152,7 +170,15 @@ export default function SubscribeScreen() {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.containerContent}>
+    <>
+      <Stack.Screen 
+        options={{
+          title: 'Premium Subscription',
+          headerShown: true,
+          headerBackTitle: 'Settings',
+        }} 
+      />
+      <ScrollView style={styles.container} contentContainerStyle={styles.containerContent}>
       {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={Colors.brand[500]} />
@@ -280,6 +306,7 @@ export default function SubscribeScreen() {
         </View>
       )}
     </ScrollView>
+    </>
   );
 }
 
@@ -290,7 +317,7 @@ const styles = StyleSheet.create({
   },
   containerContent: {
     padding: 24,
-    paddingTop: 60,
+    paddingTop: 24,
     paddingBottom: 40,
   },
   loadingContainer: {
