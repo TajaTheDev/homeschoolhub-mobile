@@ -61,7 +61,7 @@ export default function AllLessonsScreen() {
   const [selectedLessonIds, setSelectedLessonIds] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<'upcoming' | 'past'>('upcoming');
 
-  const { lessons, fetchLessons, loading, deleteLessons } = useLessonStore();
+  const { lessons, fetchLessons, loading, deleteLessons, toggleCompleteOptimistic } = useLessonStore();
   const { students } = useStudentStore();
 
   // Debug logging at component level (only log when lessons change significantly)
@@ -875,7 +875,36 @@ export default function AllLessonsScreen() {
                       </View>
                     )}
                   </View>
-                  <Text style={styles.date}>{formatDate(item.date)}</Text>
+                  <View style={styles.lessonHeaderRight}>
+                    <Text style={styles.date}>{formatDate(item.date)}</Text>
+                    {/* Completion toggle for past lessons (only when not in selection mode) */}
+                    {activeTab === 'past' && !selectionMode && (
+                      <TouchableOpacity
+                        style={styles.completionToggle}
+                        onPress={(e) => {
+                          e.stopPropagation(); // Prevent triggering parent TouchableOpacity
+                          const willBeCompleted = !item.completed;
+                          toggleCompleteOptimistic(item.id);
+                          showSnackbar(
+                            willBeCompleted 
+                              ? 'Marked as complete' 
+                              : 'Marked as incomplete',
+                            'success'
+                          );
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <View style={[
+                          styles.completionCheckbox,
+                          item.completed && styles.completionCheckboxChecked
+                        ]}>
+                          {item.completed && (
+                            <CheckCircle2 size={18} color="white" />
+                          )}
+                        </View>
+                      </TouchableOpacity>
+                    )}
+                  </View>
                 </View>
 
                 <Text style={styles.title} numberOfLines={2}>
@@ -1130,6 +1159,17 @@ const styles = StyleSheet.create({
     color: Colors.ui.textLight,
     fontWeight: '500',
   },
+  lessonHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  lessonHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
   studentName: {
     fontSize: 14,
     color: Colors.ui.textLight,
@@ -1154,6 +1194,9 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   completedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
     backgroundColor: '#D1FAE5',
     paddingVertical: 4,
     paddingHorizontal: 10,
@@ -1163,6 +1206,23 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: '#10B981',
+  },
+  completionToggle: {
+    marginLeft: 8,
+  },
+  completionCheckbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: Colors.ui.border,
+    backgroundColor: 'white',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  completionCheckboxChecked: {
+    backgroundColor: Colors.ui.success,
+    borderColor: Colors.ui.success,
   },
   gradeBadge: {
     alignSelf: 'flex-start',

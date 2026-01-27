@@ -4,12 +4,14 @@ import { RevenueCatUI, CUSTOMER_CENTER_RESULT } from 'react-native-purchases-ui'
 import Constants from 'expo-constants';
 
 /**
- * Check if we're in Expo Go or development mode
+ * Check if we're in Expo Go
+ * Only blocks Expo Go - allows TestFlight and production builds (including simulators)
  */
 const isDevelopmentMode = (): boolean => {
+  // Only check for Expo Go - don't block based on __DEV__
+  // This allows TestFlight builds (even on simulators) to work
   const isExpoGo = Constants.appOwnership === 'expo';
-  const isDev = __DEV__;
-  return isExpoGo || isDev;
+  return isExpoGo;
 };
 
 /**

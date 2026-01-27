@@ -5,7 +5,7 @@ import * as Notifications from 'expo-notifications';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState } from 'react';
-import { Animated, InteractionManager, View } from 'react-native';
+import { Animated, InteractionManager, Platform, View } from 'react-native';
 import 'react-native-reanimated';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
@@ -170,16 +170,51 @@ export default function RootLayout() {
     }
   }, [fontsLoaded, appReady]);
 
-  // Initialize RevenueCat on app start
+  // Initialize RevenueCat on app start (production builds only)
   useEffect(() => {
-    const init = async () => {
-      const success = await initializeRevenueCat();
-      if (!success) {
-        console.warn('RevenueCat initialization failed - subscriptions may not work');
+    const initRevenueCat = async () => {
+      try {
+        // Initialize RevenueCat (will skip in Expo Go/dev mode automatically)
+        const success = await initializeRevenueCat();
+        
+        if (!success) {
+          // This is expected in Expo Go/development - function already logs the skip message
+          return;
+        }
+        
+        // Verify initialization by fetching offerings (iOS only)
+        if (Platform.OS === 'ios') {
+          try {
+            const { getOfferings } = await import('@/lib/revenuecat');
+            const offering = await getOfferings();
+            
+            if (offering && offering.availablePackages) {
+              const packageCount = offering.availablePackages.length;
+              console.log('📦 Offerings loaded:', packageCount, 'packages');
+              
+              // Log package details for debugging
+              if (packageCount > 0) {
+                offering.availablePackages.forEach(pkg => {
+                  console.log(`   - ${pkg.identifier}: ${pkg.product.priceString}`);
+                });
+              } else {
+                console.warn('⚠️ No packages available in current offering');
+              }
+            } else {
+              console.warn('⚠️ No current offering found');
+            }
+          } catch (offeringsError: any) {
+            console.error('❌ Error fetching offerings:', offeringsError?.message || offeringsError);
+            // Don't fail initialization - offerings might not be configured yet
+          }
+        }
+      } catch (error: any) {
+        console.error('❌ RevenueCat initialization error:', error?.message || error);
+        // Don't crash app - continue without subscriptions
       }
     };
     
-    init();
+    initRevenueCat();
   }, []);
 
   useEffect(() => {
@@ -192,15 +227,22 @@ export default function RootLayout() {
       return;
     }
 
+    // Mark as initialized IMMEDIATELY (before async operations) to prevent re-runs
+    authInitializedRef.current = true;
+
     const initializeAuth = async () => {
-      // Mark as initialized immediately to prevent re-runs
-      authInitializedRef.current = true;
-      
       // Wait for all interactions to complete before checking auth
       // This ensures native modules are fully initialized
       await new Promise(resolve => InteractionManager.runAfterInteractions(() => resolve(undefined)));
       
       console.log('🔍 Checking authentication...');
+      
+      // Check if we're already navigating to avoid duplicate navigation
+      const currentSegment = segments[0];
+      if (currentSegment === '(tabs)' || currentSegment === 'onboarding' || currentSegment === '(auth)') {
+        console.log('📍 Already navigating, skipping auth check');
+        return;
+      }
       
       try {
         if (!supabase) {
@@ -266,11 +308,16 @@ export default function RootLayout() {
               }
               // Check onboarding status even in offline mode
               const hasCompletedOnboarding = await AsyncStorage.getItem('hasCompletedOnboarding');
+              const currentSegment = segments[0];
               if (hasCompletedOnboarding === 'true') {
                 console.log('✅ User has completed onboarding, going to main app (offline)');
-                router.replace('/(tabs)');
+                if (currentSegment !== '(tabs)') {
+                  router.replace('/(tabs)');
+                }
               } else {
-                router.replace('/onboarding');
+                if (currentSegment !== 'onboarding') {
+                  router.replace('/onboarding');
+                }
               }
               return;
             } else {
@@ -310,12 +357,19 @@ export default function RootLayout() {
             if (hasCompletedOnboarding === 'true') {
               console.log('✅ User has completed onboarding, going to main app');
               // User is logged in AND onboarding complete - go directly to main app
-              // No delay needed - navigation should be immediate
-              router.replace('/(tabs)');
+              // Only navigate if not already on tabs
+              const currentSegment = segments[0];
+              if (currentSegment !== '(tabs)') {
+                router.replace('/(tabs)');
+              }
             } else {
               console.log('📝 User needs to complete interactive onboarding');
               // User is logged in but hasn't completed onboarding - go to onboarding
-              router.replace('/onboarding');
+              // Only navigate if not already on onboarding
+              const currentSegment = segments[0];
+              if (currentSegment !== 'onboarding') {
+                router.replace('/onboarding');
+              }
             }
           }
         } else {

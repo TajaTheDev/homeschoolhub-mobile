@@ -25,6 +25,7 @@ import {
   Shield,
   Share2,
   TrendingUp,
+  Trash2,
   User
 } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
@@ -57,6 +58,7 @@ export default function SettingsScreen() {
     defaultTime.setHours(9, 0, 0, 0); // Default 9:00 AM
     return defaultTime;
   });
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     loadUserData();
@@ -159,6 +161,90 @@ export default function SettingsScreen() {
         },
       ]
     );
+  };
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Delete Account?',
+      'This will permanently delete your account and all associated data including:\n\n• All students\n• All lessons and schedules\n• All assignments and grades\n• All attendance records\n• All progress tracking\n\nThis action cannot be undone.',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Continue',
+          style: 'destructive',
+          onPress: () => showFinalConfirmation(),
+        },
+      ]
+    );
+  };
+
+  const showFinalConfirmation = () => {
+    Alert.alert(
+      'Are You Absolutely Sure?',
+      'This action is permanent and cannot be reversed. All your data will be permanently deleted.\n\nIf you\'re having issues with the app, please contact support first.',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'I Understand, Delete My Account',
+          style: 'destructive',
+          onPress: () => performAccountDeletion(),
+        },
+      ]
+    );
+  };
+
+  const performAccountDeletion = async () => {
+    setIsDeleting(true);
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+
+      if (!user) {
+        throw new Error('No user found');
+      }
+
+      // Call Supabase RPC function to delete user account
+      const { error: deleteError } = await supabase.rpc('delete_user_account', {
+        user_id: user.id,
+      });
+
+      if (deleteError) {
+        throw deleteError;
+      }
+
+      // Sign out the user
+      await supabase.auth.signOut();
+
+      Alert.alert(
+        'Account Deleted',
+        'Your account and all data have been permanently deleted.',
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              router.replace('/welcome');
+            },
+          },
+        ]
+      );
+    } catch (error: any) {
+      console.error('Account deletion error:', error);
+      Alert.alert(
+        'Deletion Failed',
+        error?.message?.includes('permission') || error?.message?.includes('policy')
+          ? 'Unable to delete account. Please contact support at support@thehomeschoolhub.com for assistance.'
+          : 'We couldn\'t delete your account. Please try again or contact support at support@thehomeschoolhub.com',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   const SettingsItem = ({
@@ -447,6 +533,27 @@ export default function SettingsScreen() {
           </View>
         </View>
 
+        {/* Danger Zone Section */}
+        <View style={styles.dangerZone}>
+          <Text style={styles.dangerZoneTitle}>Danger Zone</Text>
+          <View style={styles.dangerZoneContent}>
+            <TouchableOpacity
+              style={[styles.deleteButton, isDeleting && styles.deleteButtonDisabled]}
+              onPress={handleDeleteAccount}
+              disabled={isDeleting}
+              activeOpacity={0.7}
+            >
+              <Trash2 size={20} color={Colors.background.card} />
+              <Text style={styles.deleteButtonText}>
+                {isDeleting ? 'Deleting Account...' : 'Delete Account'}
+              </Text>
+            </TouchableOpacity>
+            <Text style={styles.deleteWarning}>
+              This action is permanent and cannot be undone
+            </Text>
+          </View>
+        </View>
+
         {/* Sign Out Button */}
         <TouchableOpacity 
           style={styles.signOutButton} 
@@ -700,6 +807,50 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 8,
     fontWeight: '500',
+  },
+  dangerZone: {
+    marginTop: 32,
+    paddingHorizontal: 20,
+  },
+  dangerZoneTitle: {
+    ...Typography.label,
+    fontSize: 13,
+    color: Colors.ui.error,
+    textTransform: 'uppercase',
+    marginBottom: 12,
+  },
+  dangerZoneContent: {
+    backgroundColor: Colors.background.card,
+    borderRadius: 12,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#FFEBEE',
+  },
+  deleteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: Colors.ui.error,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+  },
+  deleteButtonDisabled: {
+    opacity: 0.6,
+  },
+  deleteButtonText: {
+    ...Typography.button,
+    color: Colors.background.card,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  deleteWarning: {
+    ...Typography.caption,
+    fontSize: 12,
+    color: Colors.ui.textLight,
+    textAlign: 'center',
+    marginTop: 12,
   },
 });
 

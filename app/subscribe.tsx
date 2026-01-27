@@ -14,11 +14,14 @@ import Colors from '@/constants/Colors';
 // TODO: Re-enable after approval (Jan 15, 2026)
 const REVIEW_MODE = true;
 
-// Check if we're in Expo Go or development mode
+// Check if we're in Expo Go
+// Only blocks Expo Go - allows TestFlight and production builds (including simulators)
+// Apple reviewers test on simulators, so we must allow purchases there
 const isDevelopmentMode = (): boolean => {
+  // Only check for Expo Go - don't block based on __DEV__
+  // This allows TestFlight builds (even on simulators) to work
   const isExpoGo = Constants.appOwnership === 'expo';
-  const isDev = __DEV__;
-  return isExpoGo || isDev;
+  return isExpoGo;
 };
 
 export default function SubscribeScreen() {
@@ -59,25 +62,14 @@ export default function SubscribeScreen() {
 
   const presentPaywall = async () => {
     try {
-      // Skip in development/Expo Go
-      if (isDevelopmentMode()) {
-        Alert.alert(
-          'Development Mode',
-          'Subscription purchases are not available in Expo Go. They will work in production builds.',
-          [{ text: 'OK' }]
-        );
-        return;
-      }
-
+      // Removed device/simulator checks - Apple reviewers test on simulators
+      // RevenueCat works on simulators in sandbox mode
+      
       // Check if RevenueCatUI is available
       if (!RevenueCatUI || typeof RevenueCatUI.presentPaywall !== 'function') {
         console.error('❌ RevenueCatUI not available');
-        Alert.alert(
-          'Feature Unavailable',
-          'Subscription feature is not available on emulators. Please test on a physical device.',
-          [{ text: 'OK' }]
-        );
-        return;
+        // Don't block - let RevenueCat handle the error
+        // This allows Apple reviewers to test on simulators
       }
 
       console.log('📱 Showing subscription paywall...');
@@ -108,11 +100,14 @@ export default function SubscribeScreen() {
         console.log('❌ User cancelled paywall');
         // Stay on screen - user can try again
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Paywall error:', error);
+      // Removed simulator blocking - allow Apple reviewers to test on simulators
+      // Show user-friendly error instead
+      const errorMessage = error?.message || error?.readableErrorMessage || 'Unable to show subscription options. Please try again.';
       Alert.alert(
         'Cannot Show Paywall',
-        'Subscriptions are not available on emulators. Test on a real device for full functionality.',
+        errorMessage,
         [{ text: 'OK' }]
       );
     }

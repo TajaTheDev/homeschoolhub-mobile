@@ -17,16 +17,16 @@ const REVENUECAT_API_KEYS = {
 const PRO_ENTITLEMENT_ID = 'The Homeschool Hub Pro';
 
 /**
- * Check if we're in Expo Go or development mode
+ * Check if we're in Expo Go
+ * Only blocks Expo Go - allows TestFlight and production builds (including simulators)
+ * Apple reviewers test on simulators, so we must allow purchases there
  */
 const isDevelopmentMode = (): boolean => {
-  // Check if we're in Expo Go
+  // Only check for Expo Go - don't block based on __DEV__
+  // This allows TestFlight builds (even on simulators) to work
   const isExpoGo = Constants.appOwnership === 'expo';
   
-  // Check if we're in development mode
-  const isDev = __DEV__;
-  
-  return isExpoGo || isDev;
+  return isExpoGo;
 };
 
 /**
@@ -154,17 +154,33 @@ export const purchasePackage = async (
   }
 
   try {
-    console.log('💳 Starting purchase:', packageToPurchase.identifier);
-    console.log('   Price:', packageToPurchase.product.priceString);
+    console.log('═══════════════════════════════════');
+    console.log('💳 REVENUECAT: Starting purchase');
+    console.log('═══════════════════════════════════');
+    console.log('📦 Package ID:', packageToPurchase.identifier);
+    console.log('🆔 Product ID:', packageToPurchase.product.identifier);
+    console.log('💵 Price:', packageToPurchase.product.priceString);
+    console.log('📅 Period:', packageToPurchase.product.subscriptionPeriod || 'N/A');
     
-    const { customerInfo } = await Purchases.purchasePackage(packageToPurchase);
+    const { customerInfo, productIdentifier } = await Purchases.purchasePackage(packageToPurchase);
+    
+    console.log('✅ RevenueCat API returned successfully');
+    console.log('🆔 Product purchased:', productIdentifier);
+    console.log('👤 Customer ID:', customerInfo.originalAppUserId);
+    console.log('🎫 Active Entitlements:', Object.keys(customerInfo.entitlements.active));
+    console.log('📅 Latest Expiration:', customerInfo.latestExpirationDate || 'N/A');
     
     // Check if purchase granted Pro access
     const hasProAccess = customerInfo.entitlements.active[PRO_ENTITLEMENT_ID] !== undefined;
     
     if (hasProAccess) {
-      console.log('✅ Purchase successful! User now has Pro access');
-      console.log('   Product:', packageToPurchase.product.identifier);
+      console.log('🎉 Purchase successful! User now has Pro access');
+      console.log('   Entitlement:', PRO_ENTITLEMENT_ID);
+      const entitlement = customerInfo.entitlements.active[PRO_ENTITLEMENT_ID];
+      console.log('   - Expiration:', entitlement.expirationDate || 'N/A');
+      console.log('   - Product:', entitlement.productIdentifier || 'N/A');
+      console.log('   - Will Renew:', entitlement.willRenew || 'N/A');
+      console.log('═══════════════════════════════════');
       
       return {
         success: true,
@@ -173,25 +189,68 @@ export const purchasePackage = async (
     }
     
     console.warn('⚠️ Purchase completed but no Pro entitlement found');
+    console.warn('   Expected entitlement:', PRO_ENTITLEMENT_ID);
+    console.warn('   Available entitlements:', Object.keys(customerInfo.entitlements.active));
+    console.warn('   All entitlements:', Object.keys(customerInfo.entitlements.all));
+    console.log('═══════════════════════════════════');
+    
     return {
       success: false,
       customerInfo,
+      error: 'Purchase completed but premium entitlement not found',
     };
   } catch (error: any) {
+    console.log('═══════════════════════════════════');
+    console.log('❌ REVENUECAT: Purchase Error');
+    console.log('═══════════════════════════════════');
+    console.error('Error type:', typeof error);
+    console.error('Error code:', error.code);
+    console.error('Error message:', error.message);
+    console.error('User cancelled:', error.userCancelled);
+    console.error('Underlying error:', error.underlyingErrorMessage || 'N/A');
+    console.error('Readable message:', error.readableErrorMessage || 'N/A');
+    console.error('Store error code:', error.storeErrorCode || 'N/A');
+    console.error('Store error string:', error.storeErrorString || 'N/A');
+    
+    // Log full error for debugging
+    try {
+      console.error('Full error object:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
+    } catch (stringifyError) {
+      console.error('Full error object:', error);
+    }
+    console.log('═══════════════════════════════════');
+    
     // Check if user cancelled the purchase
     if (error.userCancelled) {
-      console.log('🚫 User cancelled purchase');
+      console.log('🚫 User cancelled purchase (no error shown)');
       return {
         success: false,
         cancelled: true,
       };
     }
     
-    // Other purchase errors
-    console.error('❌ Purchase error:', error.message);
+    // Build comprehensive error message
+    let errorMessage = 'Purchase failed';
+    if (error.readableErrorMessage) {
+      errorMessage = error.readableErrorMessage;
+    } else if (error.message) {
+      errorMessage = error.message;
+    } else if (error.underlyingErrorMessage) {
+      errorMessage = error.underlyingErrorMessage;
+    }
+    
+    // Add specific guidance for common errors
+    if (error.code === 'PURCHASE_INVALID' || error.code === 'PRODUCT_NOT_AVAILABLE_FOR_PURCHASE') {
+      errorMessage += ' - Product may not be configured correctly in App Store Connect.';
+    } else if (error.code === 'PURCHASE_NOT_ALLOWED') {
+      errorMessage += ' - In-app purchases may be disabled on this device.';
+    } else if (error.code === 'NETWORK_ERROR') {
+      errorMessage += ' - Please check your internet connection.';
+    }
+    
     return {
       success: false,
-      error: error.message || 'Purchase failed',
+      error: errorMessage,
     };
   }
 };

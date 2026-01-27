@@ -158,6 +158,9 @@ export default function ScheduleSettingsScreen() {
     // Check if new schedule matches a preset
     const preset = detectActivePreset(newSchedule);
     setActivePreset(preset);
+    
+    // Reschedule attendance reminders if they're enabled
+    await rescheduleAttendanceRemindersIfEnabled();
   };
 
   const applyPreset = async (preset: 'traditional' | 'yearRound' | 'fourDay') => {
@@ -205,6 +208,28 @@ export default function ScheduleSettingsScreen() {
     setLocalSchedule(updatedSchedule);
     setActivePreset(preset); // Keep it selected!
     await updateSchedule(newSchedule);
+    
+    // Reschedule attendance reminders if they're enabled
+    await rescheduleAttendanceRemindersIfEnabled();
+  };
+  
+  // Helper function to reschedule attendance reminders if enabled
+  const rescheduleAttendanceRemindersIfEnabled = async () => {
+    try {
+      const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+      const { scheduleAttendanceReminder } = require('@/utils/notificationManager');
+      
+      const enabled = await AsyncStorage.getItem('attendanceRemindersEnabled');
+      const savedTime = await AsyncStorage.getItem('reminderTime');
+      
+      if (enabled === 'true' && savedTime) {
+        const time = new Date(savedTime);
+        await scheduleAttendanceReminder(time);
+        console.log('✅ Rescheduled attendance reminders for new school days');
+      }
+    } catch (error) {
+      console.error('Error rescheduling attendance reminders:', error);
+    }
   };
 
   if (!localSchedule) {
