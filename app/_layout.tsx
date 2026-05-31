@@ -1,5 +1,6 @@
 
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import TrialExpiringModal from '@/components/TrialExpiringModal';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import * as Notifications from 'expo-notifications';
 import { Stack, useRouter, useSegments } from 'expo-router';
@@ -27,6 +28,7 @@ import { supabase } from '@/lib/supabase/client';
 import * as notificationService from '@/services/notificationService';
 import { useAuthStore } from '@/store/authStore';
 import { useScheduleStore } from '@/store/scheduleStore';
+import { useSubscriptionStore } from '@/store/subscriptionStore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export const unstable_settings = {
@@ -60,18 +62,49 @@ export default function RootLayout() {
 
   const initializeTrial = async () => {
     try {
-      const trialStart = await AsyncStorage.getItem('trial_start_date');
-      
-      if (!trialStart) {
-        // First time opening app - start 30-day trial
-        const now = new Date();
-        await AsyncStorage.setItem('trial_start_date', now.toISOString());
-        console.log('✅ Trial started:', now.toISOString());
-      } else {
-        console.log('Trial already started:', trialStart);
-      }
+      await useSubscriptionStore.getState().checkSubscription();
     } catch (error) {
       console.error('Error initializing trial:', error);
+    }
+  };
+
+  /**
+   * Routes authenticated users based on onboarding and subscription/trial status.
+   */
+  const routeAuthenticatedUser = async (
+    hasCompletedOnboarding: string | null,
+    currentSegment: string | undefined
+  ) => {
+    if (hasCompletedOnboarding !== 'true') {
+      console.log('📝 User needs to complete interactive onboarding');
+      if (currentSegment !== 'onboarding') {
+        router.replace('/onboarding');
+      }
+      return;
+    }
+
+    try {
+      const subscriptionInfo = await useSubscriptionStore.getState().checkSubscription();
+      console.log('📊 Auth routing subscription:', {
+        status: subscriptionInfo.subscriptionStatus,
+        daysRemaining: subscriptionInfo.daysRemaining,
+        hasAccess: subscriptionInfo.hasAccess,
+      });
+
+      if (!subscriptionInfo.hasAccess) {
+        console.log('→ Trial expired, routing to subscribe');
+        if (currentSegment !== 'subscribe') {
+          router.replace('/subscribe');
+        }
+        return;
+      }
+    } catch (error) {
+      console.error('Subscription check failed during auth routing:', error);
+    }
+
+    console.log('✅ User has access, going to main app');
+    if (currentSegment !== '(tabs)' && currentSegment !== 'subscribe') {
+      router.replace('/(tabs)');
     }
   };
 
@@ -87,19 +120,19 @@ export default function RootLayout() {
         } catch (error) {
           console.error('Subscription check failed (non-critical):', error);
         }
-        
-        // Initialize trial (runs on every app start, but only sets date if not exists)
-        try {
-          await initializeTrial();
-        } catch (error) {
-          console.error('Trial initialization failed (non-critical):', error);
-        }
-        
-        // Check authentication first
+
+        // Check authentication before trial init (trial requires logged-in user)
         try {
           await checkUser();
         } catch (error) {
           console.error('Auth check failed (non-critical):', error);
+        }
+
+        // Initialize trial from Supabase (creates record if missing)
+        try {
+          await initializeTrial();
+        } catch (error) {
+          console.error('Trial initialization failed (non-critical):', error);
         }
         
         // Check if user is authenticated (wrap in try-catch)
@@ -309,16 +342,7 @@ export default function RootLayout() {
               // Check onboarding status even in offline mode
               const hasCompletedOnboarding = await AsyncStorage.getItem('hasCompletedOnboarding');
               const currentSegment = segments[0];
-              if (hasCompletedOnboarding === 'true') {
-                console.log('✅ User has completed onboarding, going to main app (offline)');
-                if (currentSegment !== '(tabs)') {
-                  router.replace('/(tabs)');
-                }
-              } else {
-                if (currentSegment !== 'onboarding') {
-                  router.replace('/onboarding');
-                }
-              }
+              await routeAuthenticatedUser(hasCompletedOnboarding, currentSegment);
               return;
             } else {
               throw userError;
@@ -352,25 +376,9 @@ export default function RootLayout() {
               console.error('Error checking user:', checkError);
             }
             
-            // Check if user has completed interactive onboarding
             const hasCompletedOnboarding = await AsyncStorage.getItem('hasCompletedOnboarding');
-            if (hasCompletedOnboarding === 'true') {
-              console.log('✅ User has completed onboarding, going to main app');
-              // User is logged in AND onboarding complete - go directly to main app
-              // Only navigate if not already on tabs
-              const currentSegment = segments[0];
-              if (currentSegment !== '(tabs)') {
-                router.replace('/(tabs)');
-              }
-            } else {
-              console.log('📝 User needs to complete interactive onboarding');
-              // User is logged in but hasn't completed onboarding - go to onboarding
-              // Only navigate if not already on onboarding
-              const currentSegment = segments[0];
-              if (currentSegment !== 'onboarding') {
-                router.replace('/onboarding');
-              }
-            }
+            const currentSegment = segments[0];
+            await routeAuthenticatedUser(hasCompletedOnboarding, currentSegment);
           }
         } else {
           console.log('📝 No session, checking onboarding status');
@@ -481,7 +489,8 @@ export default function RootLayout() {
           <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
             <SnackbarProvider>
               <SubscriptionProvider>
-                <Stack initialRouteName="welcome">
+                <>
+                  <Stack initialRouteName="welcome">
                   <Stack.Screen
                     name="welcome"
                     options={{ title: 'Welcome', headerShown: false }}
@@ -536,8 +545,10 @@ export default function RootLayout() {
                     name="modal"
                     options={{ presentation: 'modal', title: 'Modal' }}
                   />
-                </Stack>
-                <StatusBar style="auto" />
+                  </Stack>
+                  <TrialExpiringModal />
+                  <StatusBar style="auto" />
+                </>
               </SubscriptionProvider>
             </SnackbarProvider>
           </ThemeProvider>

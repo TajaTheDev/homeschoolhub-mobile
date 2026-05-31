@@ -2,6 +2,7 @@
  * Main Dashboard Screen
  */
 
+import TrialBanner from '@/components/TrialBanner';
 import WeeklySummaryCard from '@/components/dashboard/WeeklySummaryCard';
 import Avatar from '@/components/ui/Avatar';
 import DatePicker from '@/components/ui/DatePicker';
@@ -672,6 +673,7 @@ export default function Dashboard() {
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
           >
+        <TrialBanner />
         {/* Header Section */}
         <View style={styles.headerContainer}>
           {/* 1. Name and Date Section - At TOP */}

@@ -52,3 +52,19 @@ export interface LessonStudent {
   created_at: string;
 }
 
+export type TrialStatus = 'active' | 'expired' | 'converted';
+export type SubscriptionPlan = 'monthly' | 'annual';
+
+export interface UserTrial {
+  id: string;
+  user_id: string;
+  started_at: string;
+  expires_at: string;
+  duration_days: number;
+  status: TrialStatus;
+  converted_at: string | null;
+  subscription_plan: SubscriptionPlan | null;
+  created_at: string;
+  updated_at: string;
+}
+

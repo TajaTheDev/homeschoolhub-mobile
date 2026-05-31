@@ -1,8 +1,8 @@
 import Colors from '@/constants/Colors';
 import Typography from '@/constants/Typography';
 // import { getOfferings, purchasePackage, restorePurchases } from '@/lib/revenuecat';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { differenceInDays, format } from 'date-fns';
+import { ensureUserTrial, TRIAL_DURATION_DAYS } from '@/lib/trial';
+import { format } from 'date-fns';
 import * as Notifications from 'expo-notifications';
 import { useRouter } from 'expo-router';
 import { Check, ChevronLeft, Crown } from 'lucide-react-native';
@@ -102,8 +102,7 @@ export default function SubscriptionScreen() {
   useEffect(() => {
     // Schedule reminders if in trial
     if (trialStartDate && !isSubscribed && daysRemaining > 0) {
-      const endDate = new Date(trialStartDate.getTime() + 30 * 24 * 60 * 60 * 1000);
-      scheduleTrialReminders(endDate);
+      scheduleTrialReminders(new Date(trialStartDate.getTime() + TRIAL_DURATION_DAYS * 24 * 60 * 60 * 1000));
     }
   }, [trialStartDate, isSubscribed, daysRemaining]);
 
@@ -113,24 +112,12 @@ export default function SubscriptionScreen() {
       setIsSubscribed(false);
       setCurrentPlan(null);
 
-      // Check trial status
-      const trialStart = await AsyncStorage.getItem('trial_start_date');
-      
-      if (!trialStart) {
-        // First time opening app - start trial
-        const now = new Date();
-        await AsyncStorage.setItem('trial_start_date', now.toISOString());
-        setTrialStartDate(now);
-        setDaysRemaining(30);
-      } else {
-        const startDate = new Date(trialStart);
-        setTrialStartDate(startDate);
-        
-        const daysSinceStart = differenceInDays(new Date(), startDate);
-        const remaining = Math.max(0, 30 - daysSinceStart);
-        setDaysRemaining(remaining);
+      const trialInfo = await ensureUserTrial();
+
+      if (trialInfo) {
+        setTrialStartDate(new Date(trialInfo.trial.started_at));
+        setDaysRemaining(trialInfo.daysRemaining);
       }
-      
     } catch (error) {
       console.error('Error loading subscription status:', error);
     }
@@ -216,7 +203,7 @@ export default function SubscriptionScreen() {
                 <View style={styles.timelineItem}>
                   <Text style={styles.timelineLabel}>Ends</Text>
                   <Text style={styles.timelineDate}>
-                    {format(new Date(trialStartDate.getTime() + 30 * 24 * 60 * 60 * 1000), 'MMM d, yyyy')}
+                    {format(new Date(trialStartDate.getTime() + TRIAL_DURATION_DAYS * 24 * 60 * 60 * 1000), 'MMM d, yyyy')}
                   </Text>
                 </View>
               </View>
