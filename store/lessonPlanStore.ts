@@ -20,6 +20,12 @@ export type CurriculumWithItems = CurriculumLibrary & {
   items: CurriculumLibraryItem[];
 };
 
+export type NextLessonResult = {
+  item_id: string;
+  order_index: number;
+  title: string;
+};
+
 type SavePlanParams = {
   studentId: string;
   subject: string;
@@ -54,6 +60,10 @@ type LessonPlanStore = {
     subject: string,
     staged: StagedCurriculumSelection
   ) => Promise<{ success: boolean; error?: string }>;
+  fetchNextLesson: (
+    studentId: string,
+    subject: string
+  ) => Promise<NextLessonResult | null>;
 };
 
 async function persistLessonPlan({
@@ -295,6 +305,19 @@ export const useLessonPlanStore = create<LessonPlanStore>(() => ({
       tocImagePath: staged.tocImagePath,
       items: [],
     });
+  },
+
+  fetchNextLesson: async (studentId, subject) => {
+    const { data, error } = await supabase.rpc('next_lesson', {
+      p_student: studentId,
+      p_subject: subject,
+    });
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return data?.[0] ?? null;
   },
 }));
 

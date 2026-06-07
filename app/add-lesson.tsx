@@ -9,6 +9,12 @@ import Colors from '@/constants/Colors';
 import Typography from '@/constants/Typography';
 import { supabase } from '@/lib/supabase/client';
 import { useBreakStore } from '@/store/breakStore';
+import {
+  useLessonPlanStore,
+  type LessonPlan,
+  type LessonPlanItem,
+  type NextLessonResult,
+} from '@/store/lessonPlanStore';
 import { useLessonStore } from '@/store/lessonStore';
 import { useScheduleStore } from '@/store/scheduleStore';
 import { useStudentStore } from '@/store/studentStore';
@@ -16,7 +22,7 @@ import type { LessonPhoto } from '@/types';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { format } from 'date-fns';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { ArrowLeft, Calendar as CalendarIcon, Check } from 'lucide-react-native';
+import { ArrowLeft, Calendar as CalendarIcon, Check, X } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
 import {
   Alert,
@@ -71,6 +77,19 @@ const getPhotoUrl = (path: string) => {
   return data.publicUrl;
 };
 
+/**
+ * Returns true when a lesson plan has library/manual items usable for pre-fill.
+ * source === 'scan' is intentionally excluded for now; include in Phase 4 when
+ * scan plans have lesson_plan_items populated.
+ */
+function hasUsableCurriculumPlan(
+  plan: LessonPlan | null,
+  items: LessonPlanItem[]
+): boolean {
+  if (!plan || items.length === 0) return false;
+  return plan.source === 'library' || plan.source === 'manual';
+}
+
 export default function AddLessonScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
@@ -79,6 +98,7 @@ export default function AddLessonScreen() {
   const lessonStore = useLessonStore();
   const { getSchoolDays } = useScheduleStore();
   const { breaks, fetchBreaks, isBreakDay } = useBreakStore();
+  const { fetchPlan, fetchNextLesson } = useLessonPlanStore();
   
   // Convert day numbers to day name strings (e.g., [1,2,3,4,5] -> ['monday', 'tuesday', ...])
   const dayNumberToName: { [key: number]: string } = {
@@ -119,6 +139,14 @@ export default function AddLessonScreen() {
   const [recurrenceEndDate, setRecurrenceEndDate] = useState<Date | null>(null);
   const [showEndDatePicker, setShowEndDatePicker] = useState(false);
 
+  const [loadingCurriculum, setLoadingCurriculum] = useState(false);
+  const [curriculumPlan, setCurriculumPlan] = useState<LessonPlan | null>(null);
+  const [planItems, setPlanItems] = useState<LessonPlanItem[]>([]);
+  const [nextLesson, setNextLesson] = useState<NextLessonResult | null>(null);
+  const [showLessonPickerSheet, setShowLessonPickerSheet] = useState(false);
+
+  const hasUsablePlan = hasUsableCurriculumPlan(curriculumPlan, planItems);
+
   useEffect(() => {
     fetchStudents();
     // Fetch breaks when component mounts
@@ -148,6 +176,46 @@ export default function AddLessonScreen() {
     loadSubjects();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedStudents.length]);
+
+  useEffect(() => {
+    const loadCurriculumContext = async () => {
+      setCurriculumPlan(null);
+      setPlanItems([]);
+      setNextLesson(null);
+      setTitle('');
+
+      const primaryStudentId = selectedStudents[0];
+      if (!primaryStudentId || !subject.trim()) {
+        return;
+      }
+
+      setLoadingCurriculum(true);
+      try {
+        const { plan, items } = await fetchPlan(primaryStudentId, subject.trim());
+        setCurriculumPlan(plan);
+        setPlanItems(items);
+
+        if (hasUsableCurriculumPlan(plan, items)) {
+          try {
+            const next = await fetchNextLesson(primaryStudentId, subject.trim());
+            setNextLesson(next);
+            if (next?.title) {
+              setTitle(next.title);
+            }
+          } catch (nextError) {
+            console.error('Failed to fetch next lesson:', nextError);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load curriculum context:', error);
+      } finally {
+        setLoadingCurriculum(false);
+      }
+    };
+
+    loadCurriculumContext();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedStudents, subject]);
 
   // Load photos when lesson ID is available (for editing existing lessons)
   useEffect(() => {
@@ -718,12 +786,36 @@ export default function AddLessonScreen() {
                 ))}
               </View>
             )}
+            {subject.trim() !== '' && !loadingSubjects && studentSubjects.length > 0 ? (
+              loadingCurriculum ? (
+                <Text style={styles.curriculumHint}>Loading curriculum…</Text>
+              ) : hasUsablePlan ? (
+                <Text style={styles.curriculumHint}>
+                  Curriculum: {curriculumPlan?.name?.trim() || subject}
+                </Text>
+              ) : (
+                <Text style={styles.curriculumHint}>
+                  No curriculum set — you can still add a lesson manually.
+                </Text>
+              )
+            ) : null}
           </View>
         )}
 
         {/* Title Input */}
         <View style={styles.section}>
-          <Text style={styles.label}>Lesson Title (Optional)</Text>
+          <View style={styles.titleLabelRow}>
+            <Text style={[styles.label, styles.titleLabelText]}>Lesson Title (Optional)</Text>
+            {hasUsablePlan ? (
+              <TouchableOpacity
+                onPress={() => setShowLessonPickerSheet(true)}
+                activeOpacity={0.7}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={styles.changeLessonLink}>Change lesson</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
           <TextInput
             style={styles.input}
             placeholder="Optional - leave blank to auto-generate"
@@ -732,6 +824,20 @@ export default function AddLessonScreen() {
             onChangeText={setTitle}
             autoCapitalize="words"
           />
+          {hasUsablePlan ? (
+            <TouchableOpacity
+              style={styles.recurringPlanLink}
+              onPress={() => {
+                const primaryStudentId = selectedStudents[0];
+                router.push(
+                  `/recurring-plan?studentId=${primaryStudentId}&subject=${encodeURIComponent(subject)}` as any
+                );
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.recurringPlanLinkText}>Set up recurring plan →</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
 
         {/* Date Input */}
@@ -1121,6 +1227,63 @@ export default function AddLessonScreen() {
           </Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* Lesson plan item picker */}
+      <Modal
+        visible={showLessonPickerSheet}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowLessonPickerSheet(false)}
+      >
+        <Pressable
+          style={styles.lessonPickerOverlay}
+          onPress={() => setShowLessonPickerSheet(false)}
+        >
+          <Pressable
+            style={styles.lessonPickerSheet}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <View style={styles.lessonPickerHeader}>
+              <Text style={styles.lessonPickerTitle}>Choose lesson</Text>
+              <TouchableOpacity
+                onPress={() => setShowLessonPickerSheet(false)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <X size={24} color={Colors.ui.text} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView
+              contentContainerStyle={styles.lessonPickerContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {planItems.map((item) => {
+                const isNext = nextLesson?.item_id === item.id;
+                return (
+                  <TouchableOpacity
+                    key={item.id}
+                    style={[
+                      styles.lessonPickerItem,
+                      isNext && styles.lessonPickerItemNext,
+                    ]}
+                    onPress={() => {
+                      setTitle(item.title);
+                      setShowLessonPickerSheet(false);
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.lessonPickerItemRow}>
+                      <Text style={styles.lessonPickerItemTitle}>{item.title}</Text>
+                      {isNext ? (
+                        <Text style={styles.lessonPickerNextBadge}>Next</Text>
+                      ) : null}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -1198,6 +1361,93 @@ const styles = StyleSheet.create({
     ...Typography.caption,
     color: Colors.ui.textLight,
     marginBottom: 8,
+  },
+  curriculumHint: {
+    ...Typography.caption,
+    color: Colors.ui.textLight,
+    marginTop: 12,
+    fontStyle: 'italic',
+  },
+  titleLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  titleLabelText: {
+    marginBottom: 0,
+  },
+  changeLessonLink: {
+    ...Typography.caption,
+    color: Colors.brand[600],
+    fontWeight: '600',
+  },
+  recurringPlanLink: {
+    marginTop: 12,
+    alignSelf: 'flex-start',
+  },
+  recurringPlanLinkText: {
+    ...Typography.caption,
+    color: Colors.brand[600],
+    fontWeight: '600',
+  },
+  lessonPickerOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  lessonPickerSheet: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '70%',
+    paddingBottom: 24,
+  },
+  lessonPickerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 24,
+    paddingTop: 20,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.ui.border,
+  },
+  lessonPickerTitle: {
+    ...Typography.h3,
+    fontSize: 20,
+  },
+  lessonPickerContent: {
+    padding: 16,
+    paddingBottom: 32,
+  },
+  lessonPickerItem: {
+    backgroundColor: Colors.background.card,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.ui.border,
+    padding: 14,
+    marginBottom: 8,
+  },
+  lessonPickerItemNext: {
+    borderColor: Colors.brand[500],
+    backgroundColor: Colors.brand[50],
+  },
+  lessonPickerItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  lessonPickerItemTitle: {
+    ...Typography.body,
+    color: Colors.ui.text,
+    flex: 1,
+  },
+  lessonPickerNextBadge: {
+    ...Typography.label,
+    fontSize: 12,
+    color: Colors.brand[600],
   },
   studentCheckboxList: {
     gap: 12,
