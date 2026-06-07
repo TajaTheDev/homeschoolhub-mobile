@@ -15,6 +15,8 @@ export const LIBRARY_CATEGORIES = [
 
 export type LibraryCategoryKey = (typeof LIBRARY_CATEGORIES)[number]['key'];
 
+export type CurriculumCategoryKey = LibraryCategoryKey | 'other';
+
 /**
  * Creates a stable local id for list keys before items are saved.
  */
@@ -70,6 +72,7 @@ export function replaceWorkingItems(titles: string[]): WorkingItem[] {
  * Returns a human-readable category label for a library category key.
  */
 export function getCategoryLabel(category: string): string {
+  if (category === 'other') return 'Other';
   const match = LIBRARY_CATEGORIES.find((entry) => entry.key === category);
   return match?.label ?? category;
 }
@@ -81,10 +84,11 @@ const SUBJECT_CATEGORY_MAP: Record<string, LibraryCategoryKey> = {
 };
 
 /**
- * Maps a display subject name to a curriculum_library category, if any.
+ * Maps a display subject name to a curriculum category key.
+ * Unmapped subjects return 'other' so the curriculum step still appears.
  */
-export function getCurriculumCategoryForSubject(subject: string): LibraryCategoryKey | null {
-  return SUBJECT_CATEGORY_MAP[subject] ?? null;
+export function getCurriculumCategoryForSubject(subject: string): CurriculumCategoryKey {
+  return SUBJECT_CATEGORY_MAP[subject] ?? 'other';
 }
 
 export type StagedLibraryCurriculum = {

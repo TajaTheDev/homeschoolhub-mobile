@@ -1,9 +1,6 @@
 import CurriculumPickerStep from '@/components/students/CurriculumPickerStep';
 import Colors from '@/constants/Colors';
-import {
-  getCurriculumCategoryForSubject,
-  type StagedCurriculumSelection,
-} from '@/lib/lessonPlanUtils';
+import type { StagedCurriculumSelection } from '@/lib/lessonPlanUtils';
 import { useLessonPlanStore } from '@/store/lessonPlanStore';
 import { useStudentStore } from '@/store/studentStore';
 import { Student } from '@/types';
@@ -90,22 +87,13 @@ export default function EditSubjectsModal({
   };
 
   const openCurriculumStepIfNeeded = (subject: string) => {
-    if (getCurriculumCategoryForSubject(subject)) {
-      setCurriculumStepSubject(subject);
-    }
+    setCurriculumStepSubject(subject);
   };
 
   const toggleSubject = (subject: string) => {
     if (selectedSubjects.includes(subject)) {
-      if (getCurriculumCategoryForSubject(subject)) {
-        setCurriculumStepSubject(subject);
-        return;
-      }
-      setSelectedSubjects(selectedSubjects.filter((s) => s !== subject));
-      clearStagedForSubject(subject);
-      if (curriculumStepSubject === subject) {
-        setCurriculumStepSubject(null);
-      }
+      setCurriculumStepSubject(subject);
+      return;
     } else {
       setSelectedSubjects([...selectedSubjects, subject]);
       openCurriculumStepIfNeeded(subject);
@@ -420,9 +408,9 @@ export default function EditSubjectsModal({
                 </>
               )}
 
-              {selectedSubjects.some((s) => getCurriculumCategoryForSubject(s)) && (
+              {selectedSubjects.length > 0 && (
                 <Text style={styles.curriculumHint}>
-                  Tap Math, Reading, or Writing to choose curriculum. Long-press to remove.
+                  Tap any subject to choose curriculum. Long-press to remove.
                 </Text>
               )}
 

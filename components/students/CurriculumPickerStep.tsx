@@ -44,29 +44,40 @@ export default function CurriculumPickerStep({
   const { fetchVerifiedLibrary, fetchPlan } = useLessonPlanStore();
   const [curricula, setCurricula] = useState<CurriculumWithItems[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [existingPlan, setExistingPlan] = useState<LessonPlan | null>(null);
   const [showAddSheet, setShowAddSheet] = useState(false);
 
   const category = getCurriculumCategoryForSubject(subject);
+  const isLibraryCategory = category !== 'other';
 
   const loadData = useCallback(async () => {
-    if (!category) return;
-
     setLoading(true);
+    setLoadError(null);
     try {
-      const [libraryEntries, planResult] = await Promise.all([
-        fetchVerifiedLibrary(category),
-        fetchPlan(studentId, subject),
-      ]);
-      setCurricula(libraryEntries);
-      setExistingPlan(planResult.plan);
+      if (isLibraryCategory) {
+        const [libraryEntries, planResult] = await Promise.all([
+          fetchVerifiedLibrary(category),
+          fetchPlan(studentId, subject),
+        ]);
+        setCurricula(libraryEntries);
+        setExistingPlan(planResult.plan);
+      } else {
+        const planResult = await fetchPlan(studentId, subject);
+        setCurricula([]);
+        setExistingPlan(planResult.plan);
+      }
     } catch (error) {
       console.error('Failed to load curriculum picker:', error);
-      Alert.alert('Error', 'Could not load curriculum options.');
+      setCurricula([]);
+      setExistingPlan(null);
+      setLoadError(
+        error instanceof Error ? error.message : 'Could not load curriculum options.'
+      );
     } finally {
       setLoading(false);
     }
-  }, [category, fetchPlan, fetchVerifiedLibrary, studentId, subject]);
+  }, [category, fetchPlan, fetchVerifiedLibrary, isLibraryCategory, studentId, subject]);
 
   useEffect(() => {
     loadData();
@@ -140,80 +151,105 @@ export default function CurriculumPickerStep({
       </View>
 
       <Text style={styles.title}>Choose curriculum</Text>
-      <Text style={styles.subtitle}>
-        {subject}
-        {category ? ` · ${getCategoryLabel(category)}` : ''}
-      </Text>
+      {isLibraryCategory ? (
+        <Text style={styles.subtitle}>
+          {subject} · {getCategoryLabel(category)}
+        </Text>
+      ) : (
+        <>
+          <Text style={styles.subtitle}>{subject}</Text>
+          <Text style={styles.otherSubtitle}>
+            Scan or import your table of contents to get started.
+          </Text>
+        </>
+      )}
 
       {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator color={Colors.brand[500]} />
-          <Text style={styles.loadingText}>Loading curricula…</Text>
+          <Text style={styles.loadingText}>
+            {isLibraryCategory ? 'Loading curricula…' : 'Loading…'}
+          </Text>
         </View>
       ) : (
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-        >
-          {curricula.length === 0 ? (
-            <View style={styles.emptyCard}>
-              <BookOpen size={28} color={Colors.ui.textLight} />
-              <Text style={styles.emptyText}>
-                No verified curricula in the library yet — check back soon.
-              </Text>
-            </View>
-          ) : (
-            curricula.map((curriculum) => {
-              const selected = isCardSelected(curriculum);
-              return (
-                <TouchableOpacity
-                  key={curriculum.id}
-                  style={[styles.entryCard, selected && styles.entryCardSelected]}
-                  onPress={() => confirmAndStageLibrary(curriculum)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.entryName}>{curriculum.name}</Text>
-                  <Text style={styles.entryMeta}>
-                    {[curriculum.publisher, curriculum.edition, curriculum.level]
-                      .filter(Boolean)
-                      .join(' · ')}
+        <>
+          {isLibraryCategory ? (
+            <ScrollView
+              style={styles.listScroll}
+              contentContainerStyle={styles.listContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {loadError ? (
+                <View style={styles.emptyCard}>
+                  <BookOpen size={28} color={Colors.ui.error} />
+                  <Text style={styles.emptyTitle}>Could not load curricula</Text>
+                  <Text style={styles.emptyText}>{loadError}</Text>
+                </View>
+              ) : curricula.length === 0 ? (
+                <View style={styles.emptyCard}>
+                  <BookOpen size={28} color={Colors.ui.textLight} />
+                  <Text style={styles.emptyTitle}>No curricula found</Text>
+                  <Text style={styles.emptyText}>
+                    No verified {getCategoryLabel(category)} curricula in the library yet.
                   </Text>
-                  <Text style={styles.entryCount}>
-                    {curriculum.items.length} lesson{curriculum.items.length === 1 ? '' : 's'}
-                  </Text>
-                  {selected ? <Text style={styles.selectedBadge}>Selected</Text> : null}
-                </TouchableOpacity>
-              );
-            })
-          )}
-
-          <TouchableOpacity
-            style={styles.addCurriculumButton}
-            onPress={() => setShowAddSheet(true)}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.addCurriculumText}>Add Curriculum — not in list?</Text>
-          </TouchableOpacity>
-
-          {isScanSelected && selectedScanName ? (
-            <View style={styles.scanSelectedCard}>
-              <Text style={styles.scanSelectedTitle}>{selectedScanName}</Text>
-              <Text style={styles.scanSelectedHint}>Sequence coming soon</Text>
-            </View>
+                </View>
+              ) : (
+                curricula.map((curriculum) => {
+                  const selected = isCardSelected(curriculum);
+                  return (
+                    <TouchableOpacity
+                      key={curriculum.id}
+                      style={[styles.entryCard, selected && styles.entryCardSelected]}
+                      onPress={() => confirmAndStageLibrary(curriculum)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.entryName}>{curriculum.name}</Text>
+                      <Text style={styles.entryMeta}>
+                        {[curriculum.publisher, curriculum.edition, curriculum.level]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </Text>
+                      <Text style={styles.entryCount}>
+                        {curriculum.items.length} lesson
+                        {curriculum.items.length === 1 ? '' : 's'}
+                      </Text>
+                      {selected ? <Text style={styles.selectedBadge}>Selected</Text> : null}
+                    </TouchableOpacity>
+                  );
+                })
+              )}
+            </ScrollView>
           ) : null}
 
-          {stagedSelection?.kind === 'library' ? (
-            <View style={styles.stagedHint}>
-              <Text style={styles.stagedHintText}>
-                {stagedSelection.name} selected — saves when you tap Save Subjects
-              </Text>
-            </View>
-          ) : null}
+          <View style={styles.footer}>
+            <TouchableOpacity
+              style={styles.addCurriculumButton}
+              onPress={() => setShowAddSheet(true)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.addCurriculumText}>Add Curriculum — not in list?</Text>
+            </TouchableOpacity>
 
-          <TouchableOpacity style={styles.skipButton} onPress={onSkip} activeOpacity={0.7}>
-            <Text style={styles.skipText}>Skip for now</Text>
-          </TouchableOpacity>
-        </ScrollView>
+            {isScanSelected && selectedScanName ? (
+              <View style={styles.scanSelectedCard}>
+                <Text style={styles.scanSelectedTitle}>{selectedScanName}</Text>
+                <Text style={styles.scanSelectedHint}>Sequence coming soon</Text>
+              </View>
+            ) : null}
+
+            {stagedSelection?.kind === 'library' ? (
+              <View style={styles.stagedHint}>
+                <Text style={styles.stagedHintText}>
+                  {stagedSelection.name} selected — saves when you tap Save Subjects
+                </Text>
+              </View>
+            ) : null}
+
+            <TouchableOpacity style={styles.skipButton} onPress={onSkip} activeOpacity={0.7}>
+              <Text style={styles.skipText}>Skip for now</Text>
+            </TouchableOpacity>
+          </View>
+        </>
       )}
 
       <AddCurriculumSheet
@@ -229,7 +265,7 @@ export default function CurriculumPickerStep({
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    minHeight: 360,
   },
   headerRow: {
     marginBottom: 8,
@@ -256,6 +292,13 @@ const styles = StyleSheet.create({
     color: Colors.ui.textLight,
     marginBottom: 16,
   },
+  otherSubtitle: {
+    ...Typography.bodySmall,
+    color: Colors.ui.textLight,
+    marginTop: -12,
+    marginBottom: 16,
+    lineHeight: 20,
+  },
   loadingContainer: {
     alignItems: 'center',
     paddingVertical: 32,
@@ -265,8 +308,17 @@ const styles = StyleSheet.create({
     ...Typography.bodySmall,
     color: Colors.ui.textLight,
   },
-  scrollContent: {
-    paddingBottom: 24,
+  listScroll: {
+    maxHeight: 260,
+  },
+  listContent: {
+    paddingBottom: 8,
+  },
+  footer: {
+    marginTop: 8,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: Colors.ui.border,
   },
   emptyCard: {
     backgroundColor: Colors.background.card,
@@ -277,6 +329,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
     marginBottom: 16,
+  },
+  emptyTitle: {
+    ...Typography.label,
+    fontSize: 16,
+    color: Colors.ui.text,
+    textAlign: 'center',
   },
   emptyText: {
     ...Typography.bodySmall,
@@ -324,8 +382,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingVertical: 14,
     alignItems: 'center',
-    marginTop: 8,
-    marginBottom: 16,
+    marginBottom: 12,
   },
   addCurriculumText: {
     ...Typography.label,
