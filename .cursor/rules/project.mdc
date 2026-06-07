@@ -1,0 +1,64 @@
+---
+description: Homeschool Hub project rules — always active
+alwaysApply: true
+---
+
+# Homeschool Hub — Project Rules
+
+## Stack
+
+- Mobile app: iOS + Android (match whatever framework is already in this codebase)
+- Backend: Supabase (Postgres + Edge Functions)
+- Never introduce new infrastructure without asking first
+
+## Before writing any code on any task
+
+1. State a short plan and list every file you will change
+2. Wait for my explicit approval before writing a single line
+
+## Code rules
+
+- Make the smallest change that satisfies the task
+- Do not refactor, rename, or reformat anything outside the files the task requires
+- Match the folder structure, file naming, and import style of neighbouring files
+- Match existing UI component and styling patterns — do not introduce new libraries
+- Functional components with hooks only
+- Student relationships use **student IDs**, never names
+- Dates for calendar/events: `YYYY-MM-DD`
+- Styling: StyleSheet + tokens in `constants/Colors.ts`, `constants/Typography.ts`
+- Always use upsert with an explicit conflict target when writing to attendance,
+  lesson_completions, or notification_log
+
+## When uncertain
+
+- Ask rather than assume
+- If you're about to touch more than 3 files, stop and confirm with me first
+
+---
+
+# Codebase reference (supplement)
+
+## Important paths
+
+| Area | Location |
+|------|----------|
+| Root layout / auth routing | `app/_layout.tsx` |
+| Trial/subscription store | `store/subscriptionStore.ts` |
+| Trial service | `lib/trial.ts` |
+| Subscribe / expired trial UI | `app/subscribe.tsx` |
+| Trial banner | `components/TrialBanner.tsx` |
+| DB migration (trials) | `scripts/apply-user-trials-migration.sql` |
+| App config / build numbers | `app.json` |
+| Supabase client | `lib/supabase/` |
+| Migrations | `supabase/migrations/` |
+
+## Trial / subscription flow
+
+- `useSubscriptionStore.checkSubscription()` — Supabase for trial dates, RevenueCat for paid entitlements (`The Homeschool Hub Pro`)
+- Apply trial migration via SQL Editor or `supabase db push` (`ensure_user_trial`, `convert_user_trial` RPCs)
+
+## Builds
+
+- Version/build in `app.json` (`version`, `ios.buildNumber`, `android.versionCode`)
+- EAS: `eas.json` — `appVersionSource: local`, no auto-increment
+- RevenueCat skipped in Expo Go; use production/TestFlight builds to test IAP

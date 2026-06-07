@@ -874,6 +874,20 @@ export default function ProgressScreen() {
                     <Text style={styles.setGoalText}>+ Set Goal</Text>
                   </TouchableOpacity>
                 )}
+
+                <TouchableOpacity
+                  style={styles.sequenceLink}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    if (!selectedStudentId) return;
+                    router.push(
+                      `/lesson-sequence?studentId=${selectedStudentId}&subject=${encodeURIComponent(subjectRecord.subject)}` as any
+                    );
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.sequenceLinkText}>Lesson sequence →</Text>
+                </TouchableOpacity>
               </TouchableOpacity>
             );
           })}
@@ -1322,6 +1336,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   setGoalText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.brand[600],
+  },
+  sequenceLink: {
+    marginTop: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+  },
+  sequenceLinkText: {
     fontSize: 14,
     fontWeight: '600',
     color: Colors.brand[600],

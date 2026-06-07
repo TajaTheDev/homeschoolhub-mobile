@@ -189,9 +189,28 @@ export async function ensureUserTrial(): Promise<TrialInfo | null> {
 
   const legacyStartDate = await getLegacyTrialStartDate();
 
+  // Only pass legacy start date when creating a new trial. An existing Supabase
+  // row is authoritative — sending an old AsyncStorage date backdates expires_at.
+  const { data: existingTrial, error: existingTrialError } = await supabase
+    .from('user_trials')
+    .select('id')
+    .eq('user_id', user.id)
+    .maybeSingle();
+
+  if (existingTrialError && !isTrialSchemaMissing(existingTrialError)) {
+    console.error('Error checking existing user trial:', existingTrialError);
+  }
+
+  let startedAtForRpc: string | null = null;
+  if (!existingTrial) {
+    startedAtForRpc = legacyStartDate?.toISOString() ?? null;
+  } else if (legacyStartDate) {
+    await AsyncStorage.removeItem(LEGACY_TRIAL_STORAGE_KEY);
+  }
+
   const { data, error } = await supabase.rpc('ensure_user_trial', {
     p_duration_days: TRIAL_DURATION_DAYS,
-    p_started_at: legacyStartDate?.toISOString() ?? null,
+    p_started_at: startedAtForRpc,
   });
 
   if (error) {

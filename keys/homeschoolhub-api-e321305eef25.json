@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "homeschoolhub-api",
+  "private_key_id": "e321305eef25b00b88ea04ef94d7da52f494fac5",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEuwIBADANBgkqhkiG9w0BAQEFAASCBKUwggShAgEAAoIBAQCv4ak6fEkuRnEW\n4bIVqJVpq5SpyMS63YDcaqDBUhvng4aPrfGEc5CcYilRNxVGogVgPpfOGZb7qqvx\nJAD0L5gn1NTRxFS179GJBo8LVmpfeeuyBNjpZ3/+SqohP2h7fpmEsZZ4Tne2AGIv\nwLa6Zc8A8dV6Vxo40LpBSYFTYYCQTMi3B76g+GJsbvaw8fLnfncluYr41/rEETDf\nK8CeHa45SMFS5HuvciLWjxtAtOPu8X6MtN98xGZVO/+pFAuegTopfxAe9z043dyY\npeafUHpONku7HzckWXltILD3D1UnEIC4yy2sZm0C3OdPbfEx+LTu52wt7utrhlTZ\nXYcEsgvHAgMBAAECgf8K/g+VmC76tWxcAb8fm2m7MP4ZnnKtOyrSm9dwPbGAxrei\nQzzVCmP/YiMy8D5kK7wqR781ImRNVl1otNdaa58W3jZu5dZliJeP+Nj33G7JiNUy\nSxtDezSEsCXx7gSZs0/k+zRsUHsq5Ns+IM1K2RIW/QZanxcEdgcuDWoHzBA89HUD\nmv0v0pBKK2f5JmsfMg3MlYYf7iCUZRCm8+CE4HyGobvdGiEqFxeTOrPjxf3yt/Zj\nyj9qnrdwURtBWulrVp/5H/81CKVi8zn+4cd4PKc7yyQx1E6Fpe6be+e9P1jCReuX\n9t35wOMOdQ77ZpvHXVWLpE94CBvy8GU6PQvm7QECgYEA4dnrv1HjSJIKQAEFngP5\n+KkqR1/3QghK7mvGDjOtCTzGH8rXosBLpOosKiROamXdqnYKYabh9UN13HePs/54\nMXUQKnS6TgqgtPm/h1n9CRpOHRKqrKyHYv87PBOP40+z2fGY9izqJaPwozzFVAZR\n3zmdMRtRBoW8SVpHdWSY1xkCgYEAx1wb8qIZGA6plGcGEImxrpJaGEGcsJNr8bMd\nOt5gjoqeeZqs9KuiY0c+fzTIXf21QlqgSogAUCE9agohqzwIU7hvYFm/SHSzWH0p\n+aUReazCLtjshNiK0lc9QVEOEb1xyOkK2HWOemlqbQtPKkwVByWsiU0kpTUEiNTx\nr2CKtd8CgYBfMKAiJPtsjNDxJP0fGoHzAimlp5bpJ+GdF6OEPNeDey/uGmpEWFQJ\nkAFJScAbLA//Vn0Np265FtPINkRFEs3J2pMTsdsMJYKShGjrPUxe181wh3uUB6uQ\nWA65RW1x2xfsld1odInDj5NO2cA5p+g982SDXAYMf7VaHUjc+6dHkQKBgCMiapKC\nWuXQf7Z1ya3UdooLpPEtbw33jUiVhos/ccjtSSypQ94C+aWBgtQsWzulYPKGwkUg\nXt3AXfB4RKLG+7i1gnt6lamRV6I6vNEQdFn7RmW3OUfYWe7kDRmbzVz3BDyiRZUM\ncsXEGkuJeLQ9oF8YFqZEADdVdq0eylFcNFYFAoGBALm+ToP/WE9di1n7q3584xTb\nArCKEVacthREpefy6qzKceVbiqX28y6SUVdvz0Knq5OvjzudOOrkvm5KGy7LH50a\nr3sBDskShC25gopvH0Wqd3mZ8RIYiUqq9Kw0Q912bLSLKX1A/TnkdkbYLc6W3d7R\nRSIvK86S8MD0eohSx1dF\n-----END PRIVATE KEY-----\n",
+  "client_email": "homeschoolhub-eas@homeschoolhub-api.iam.gserviceaccount.com",
+  "client_id": "112381479650563432336",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/homeschoolhub-eas%40homeschoolhub-api.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
