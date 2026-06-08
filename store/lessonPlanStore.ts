@@ -75,11 +75,13 @@ async function persistLessonPlan({
   tocImagePath,
   items,
 }: PersistLessonPlanParams): Promise<{ success: boolean; error?: string }> {
+  const normalizedSubject = subject.trim();
+
   const { data: existingPlan, error: existingPlanError } = await supabase
     .from('lesson_plans')
     .select('id')
     .eq('student_id', studentId)
-    .eq('subject', subject)
+    .eq('subject', normalizedSubject)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -124,7 +126,7 @@ async function persistLessonPlan({
       .from('lesson_plans')
       .insert({
         student_id: studentId,
-        subject,
+        subject: normalizedSubject,
         ...planPayload,
       })
       .select('id')
@@ -198,11 +200,13 @@ export const useLessonPlanStore = create<LessonPlanStore>(() => ({
   saving: false,
 
   fetchPlan: async (studentId, subject) => {
+    const normalizedSubject = subject.trim();
+
     const { data: plan, error: planError } = await supabase
       .from('lesson_plans')
       .select('*')
       .eq('student_id', studentId)
-      .eq('subject', subject)
+      .eq('subject', normalizedSubject)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -308,9 +312,11 @@ export const useLessonPlanStore = create<LessonPlanStore>(() => ({
   },
 
   fetchNextLesson: async (studentId, subject) => {
+    const normalizedSubject = subject.trim();
+
     const { data, error } = await supabase.rpc('next_lesson', {
       p_student: studentId,
-      p_subject: subject,
+      p_subject: normalizedSubject,
     });
 
     if (error) {

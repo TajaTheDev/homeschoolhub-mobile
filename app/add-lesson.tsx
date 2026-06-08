@@ -78,15 +78,15 @@ const getPhotoUrl = (path: string) => {
 };
 
 /**
- * Returns true when a lesson plan has library/manual items usable for pre-fill.
+ * Returns true when a library/manual curriculum plan exists for the subject.
  * source === 'scan' is intentionally excluded for now; include in Phase 4 when
  * scan plans have lesson_plan_items populated.
  */
 function hasUsableCurriculumPlan(
   plan: LessonPlan | null,
-  items: LessonPlanItem[]
+  _items: LessonPlanItem[]
 ): boolean {
-  if (!plan || items.length === 0) return false;
+  if (!plan) return false;
   return plan.source === 'library' || plan.source === 'manual';
 }
 
@@ -145,7 +145,8 @@ export default function AddLessonScreen() {
   const [nextLesson, setNextLesson] = useState<NextLessonResult | null>(null);
   const [showLessonPickerSheet, setShowLessonPickerSheet] = useState(false);
 
-  const hasUsablePlan = hasUsableCurriculumPlan(curriculumPlan, planItems);
+  const hasCurriculumPlan = hasUsableCurriculumPlan(curriculumPlan, planItems);
+  const hasPlanItems = hasCurriculumPlan && planItems.length > 0;
 
   useEffect(() => {
     fetchStudents();
@@ -191,13 +192,15 @@ export default function AddLessonScreen() {
 
       setLoadingCurriculum(true);
       try {
-        const { plan, items } = await fetchPlan(primaryStudentId, subject.trim());
+        const subjectForQuery = subject.trim();
+
+        const { plan, items } = await fetchPlan(primaryStudentId, subjectForQuery);
         setCurriculumPlan(plan);
         setPlanItems(items);
 
-        if (hasUsableCurriculumPlan(plan, items)) {
+        if (hasUsableCurriculumPlan(plan, items) && items.length > 0) {
           try {
-            const next = await fetchNextLesson(primaryStudentId, subject.trim());
+            const next = await fetchNextLesson(primaryStudentId, subjectForQuery);
             setNextLesson(next);
             if (next?.title) {
               setTitle(next.title);
@@ -771,7 +774,7 @@ export default function AddLessonScreen() {
                           : Colors.ui.border,
                       },
                     ]}
-                    onPress={() => setSubject(studentSubject.subject)}
+                    onPress={() => setSubject(studentSubject.subject.trim())}
                     activeOpacity={0.7}
                   >
                     <Text
@@ -789,7 +792,7 @@ export default function AddLessonScreen() {
             {subject.trim() !== '' && !loadingSubjects && studentSubjects.length > 0 ? (
               loadingCurriculum ? (
                 <Text style={styles.curriculumHint}>Loading curriculum…</Text>
-              ) : hasUsablePlan ? (
+              ) : hasCurriculumPlan ? (
                 <Text style={styles.curriculumHint}>
                   Curriculum: {curriculumPlan?.name?.trim() || subject}
                 </Text>
@@ -806,7 +809,7 @@ export default function AddLessonScreen() {
         <View style={styles.section}>
           <View style={styles.titleLabelRow}>
             <Text style={[styles.label, styles.titleLabelText]}>Lesson Title (Optional)</Text>
-            {hasUsablePlan ? (
+            {hasPlanItems ? (
               <TouchableOpacity
                 onPress={() => setShowLessonPickerSheet(true)}
                 activeOpacity={0.7}
@@ -824,7 +827,7 @@ export default function AddLessonScreen() {
             onChangeText={setTitle}
             autoCapitalize="words"
           />
-          {hasUsablePlan ? (
+          {hasPlanItems ? (
             <TouchableOpacity
               style={styles.recurringPlanLink}
               onPress={() => {
