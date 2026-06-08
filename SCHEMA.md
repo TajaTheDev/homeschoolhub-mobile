@@ -3,7 +3,7 @@
 > **Source of truth:** `types/database.generated.ts` (Supabase `gen types` export)  
 > **Schema:** `public`  
 > **PostgREST version:** 13.0.5  
-> **Tables:** 17 · **Views:** none · **Enums:** none
+> **Tables:** 18 · **Views:** none · **Enums:** none
 
 TypeScript `string` columns are documented as `UUID`, `TEXT`, or `TIMESTAMPTZ` based on column name and usage. TypeScript `number` is documented as `INTEGER` unless noted.
 
@@ -172,6 +172,23 @@ TypeScript `string` columns are documented as `UUID`, `TEXT`, or `TIMESTAMPTZ` b
 | `graded_at` | `TIMESTAMPTZ` | yes | no | |
 | `created_at` | `TIMESTAMPTZ` | yes | no | |
 | `updated_at` | `TIMESTAMPTZ` | yes | no | |
+
+---
+
+### `reading_log`
+
+| Column | Type | Nullable | Required on insert | FK |
+|--------|------|----------|-------------------|-----|
+| `id` | `UUID` | no | no (auto) | PK |
+| `student_id` | `UUID` | no | yes | → `students(id)` |
+| `title` | `TEXT` | no | yes | |
+| `author` | `TEXT` | yes | no | |
+| `status` | `TEXT` | no | no (default) | |
+| `date_started` | `TEXT` | yes | no | |
+| `date_finished` | `TEXT` | yes | no | |
+| `rating` | `INTEGER` | yes | no | |
+| `notes` | `TEXT` | yes | no | |
+| `created_at` | `TIMESTAMPTZ` | yes | no | |
 
 ---
 
@@ -356,6 +373,7 @@ students
   ├── lessons (student_id)
   ├── lesson_students (student_id)
   ├── attendance (student_id)
+  ├── reading_log (student_id)
   └── curriculum_library (created_by)
 
 lesson_plans

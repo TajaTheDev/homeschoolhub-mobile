@@ -642,6 +642,18 @@ export default function ProgressScreen() {
         ))}
       </ScrollView>
 
+      {selectedStudentId ? (
+        <TouchableOpacity
+          style={styles.sequenceLink}
+          onPress={() =>
+            router.push(`/reading-log?studentId=${selectedStudentId}` as any)
+          }
+          activeOpacity={0.7}
+        >
+          <Text style={styles.sequenceLinkText}>Reading log →</Text>
+        </TouchableOpacity>
+      ) : null}
+
       {/* No Lessons Empty State */}
       {studentLessons.length === 0 ? (
         <EmptyState
