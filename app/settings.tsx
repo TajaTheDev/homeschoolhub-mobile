@@ -492,7 +492,7 @@ export default function SettingsScreen() {
             <SettingsItem
               icon={Share2}
               title="Export Data"
-              subtitle="Export lessons, grades, and attendance"
+              subtitle="Year-in-review PDF, reading log, grades, and attendance"
               onPress={() => router.push('/export' as any)}
             />
             <SettingsItem

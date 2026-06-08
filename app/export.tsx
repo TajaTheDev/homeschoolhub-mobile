@@ -9,7 +9,11 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { ArrowLeft, Download, Share2, FileText, Award, Calendar } from 'lucide-react-native';
+import { ArrowLeft, Share2, FileText, Award, Calendar, BookOpen, Sparkles } from 'lucide-react-native';
+import PdfExportSetupModal, { type PdfExportMode } from '@/components/export/PdfExportSetupModal';
+import { fetchReadingLogExportData, fetchYearInReviewData } from '@/lib/fetchPdfExportData';
+import { generateReadingLogPdf } from '@/utils/readingLogPdfGenerator';
+import { generateYearInReviewPdf } from '@/utils/yearInReviewPdfGenerator';
 import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns';
 import Colors from '@/constants/Colors';
 import { useStudentStore } from '@/store/studentStore';
@@ -19,7 +23,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { generateReportCard } from '@/utils/pdfReportGenerator';
 
-type ExportType = 'lessons' | 'grades' | 'attendance';
+type ExportType = 'wrapup' | 'reading_log' | 'grades' | 'attendance';
 type DateRange = 'this_month' | 'last_month' | 'this_year' | 'all_time';
 
 export default function ExportScreen() {
@@ -31,6 +35,7 @@ export default function ExportScreen() {
   const [exportingType, setExportingType] = useState<ExportType | null>(null);
   const [selectedStudent, setSelectedStudent] = useState<'all' | string>('all');
   const [dateRange, setDateRange] = useState<DateRange>('this_month');
+  const [pdfModalMode, setPdfModalMode] = useState<PdfExportMode | null>(null);
   
   // Calculate date range
   const getDateRange = () => {
@@ -64,34 +69,81 @@ export default function ExportScreen() {
     }
   };
   
-  const handleExportLessons = async () => {
-    setExportingType('lessons');
-    try {
-      const range = getDateRange();
-      
-      // Filter lessons
-      const filteredLessons = lessons.filter(lesson => {
-        const inRange = lesson.date >= range.start && lesson.date <= range.end;
-        const matchesStudent = selectedStudent === 'all' || lesson.student_id === selectedStudent;
-        return inRange && matchesStudent;
+  const sharePdf = async (pdfUri: string, dialogTitle: string) => {
+    const canShare = await Sharing.isAvailableAsync();
+    if (canShare) {
+      await Sharing.shareAsync(pdfUri, {
+        mimeType: 'application/pdf',
+        dialogTitle,
       });
-      
-      if (filteredLessons.length === 0) {
-        Alert.alert('No Data', 'No lessons found for the selected criteria');
-        setExportingType(null);
+    } else {
+      Alert.alert('Success', `PDF saved to:\n${pdfUri}`);
+    }
+  };
+
+  const handleGenerateYearInReview = async ({
+    studentId,
+    startDate,
+    endDate,
+  }: {
+    studentId: string;
+    startDate: string;
+    endDate: string;
+  }) => {
+    setExportingType('wrapup');
+    try {
+      const student = students.find((s) => s.id === studentId);
+      if (!student) {
+        Alert.alert('Error', 'Student not found');
         return;
       }
-      
-      // Generate CSV
-      const csv = await generateLessonsCSV(filteredLessons);
-      
-      // Save and share
-      await saveAndShare(csv, `lessons_${range.label.replace(' ', '_')}.csv`);
-      
-      Alert.alert('Success!', `Exported ${filteredLessons.length} lessons`);
-    } catch (error) {
-      console.error('Export error:', error);
-      Alert.alert('Error', 'Failed to export lessons');
+
+      const data = await fetchYearInReviewData(studentId, startDate, endDate);
+      const pdfUri = await generateYearInReviewPdf({
+        studentName: student.name,
+        startDate,
+        endDate,
+        data,
+      });
+
+      await sharePdf(pdfUri, `${student.name} - Year in Review`);
+      setPdfModalMode(null);
+      Alert.alert('Success!', `Year in Review generated for ${student.name}`);
+    } catch (error: unknown) {
+      console.error('Year in review export error:', error);
+      Alert.alert(
+        'Error',
+        error instanceof Error ? error.message : 'Failed to generate year in review'
+      );
+    } finally {
+      setExportingType(null);
+    }
+  };
+
+  const handleGenerateReadingLog = async ({ studentId }: { studentId: string }) => {
+    setExportingType('reading_log');
+    try {
+      const student = students.find((s) => s.id === studentId);
+      if (!student) {
+        Alert.alert('Error', 'Student not found');
+        return;
+      }
+
+      const data = await fetchReadingLogExportData(studentId);
+      const pdfUri = await generateReadingLogPdf({
+        studentName: student.name,
+        data,
+      });
+
+      await sharePdf(pdfUri, `${student.name} - Reading Log`);
+      setPdfModalMode(null);
+      Alert.alert('Success!', `Reading log exported for ${student.name}`);
+    } catch (error: unknown) {
+      console.error('Reading log export error:', error);
+      Alert.alert(
+        'Error',
+        error instanceof Error ? error.message : 'Failed to export reading log'
+      );
     } finally {
       setExportingType(null);
     }
@@ -169,17 +221,7 @@ export default function ExportScreen() {
       
       console.log('✅ PDF generated:', pdfUri);
       
-      // Share PDF
-      const canShare = await Sharing.isAvailableAsync();
-      if (canShare) {
-        await Sharing.shareAsync(pdfUri, {
-          mimeType: 'application/pdf',
-          dialogTitle: `${student.name} - Report Card`,
-        });
-      } else {
-        Alert.alert('Success', `Report card saved to:\n${pdfUri}`);
-      }
-      
+      await sharePdf(pdfUri, `${student.name} - Report Card`);
       Alert.alert('Success!', `Report card generated for ${student.name}`);
     } catch (error: any) {
       console.error('PDF generation error:', error);
@@ -223,23 +265,6 @@ export default function ExportScreen() {
   };
   
   // CSV Generation Functions
-  const generateLessonsCSV = async (lessons: any[]) => {
-    let csv = 'Date,Student,Subject,Title,Completed,Grade,Notes\n';
-    
-    lessons.forEach(lesson => {
-      const student = students.find(s => s.id === lesson.student_id);
-      const studentName = student?.name || 'Unknown';
-      const title = lesson.title || '';
-      const completed = lesson.completed ? 'Yes' : 'No';
-      const grade = lesson.grade_value || '';
-      const notes = (lesson.notes || '').replace(/,/g, ';').replace(/\n/g, ' ');
-      
-      csv += `${lesson.date},${studentName},${lesson.subject},${title},${completed},${grade},"${notes}"\n`;
-    });
-    
-    return csv;
-  };
-  
   const generateGradesCSV = async (lessons: any[]) => {
     let csv = 'Date,Student,Subject,Title,Grade Type,Grade,Max Points\n';
     
@@ -401,31 +426,31 @@ export default function ExportScreen() {
         <View style={styles.exportsSection}>
           <Text style={styles.sectionTitle}>Export Options</Text>
           
-          {/* Export Lessons */}
+          {/* Year in Review */}
           <View style={styles.exportCard}>
             <View style={styles.exportHeader}>
               <View style={styles.exportIcon}>
-                <FileText size={24} color={Colors.brand[600]} />
+                <Sparkles size={24} color={Colors.brand[600]} />
               </View>
               <View style={styles.exportInfo}>
-                <Text style={styles.exportTitle}>Export Lessons</Text>
+                <Text style={styles.exportTitle}>Year in Review</Text>
                 <Text style={styles.exportDescription}>
-                  Complete lesson history with dates, subjects, and completion status
+                  A celebratory PDF wrap-up with lessons, books, photos, and stats
                 </Text>
               </View>
             </View>
-            
+
             <TouchableOpacity
-              style={[styles.exportButton, exportingType === 'lessons' && styles.exportButtonDisabled]}
-              onPress={handleExportLessons}
-              disabled={exportingType === 'lessons'}
+              style={[styles.exportButton, exportingType === 'wrapup' && styles.exportButtonDisabled]}
+              onPress={() => setPdfModalMode('wrapup')}
+              disabled={exportingType === 'wrapup'}
             >
-              {exportingType === 'lessons' ? (
+              {exportingType === 'wrapup' ? (
                 <ActivityIndicator color="white" />
               ) : (
                 <>
                   <Share2 size={18} color="white" />
-                  <Text style={styles.exportButtonText}>Export CSV</Text>
+                  <Text style={styles.exportButtonText}>Generate PDF</Text>
                 </>
               )}
             </TouchableOpacity>
@@ -485,6 +510,39 @@ export default function ExportScreen() {
             )}
           </View>
           
+          {/* Export Reading Log */}
+          <View style={styles.exportCard}>
+            <View style={styles.exportHeader}>
+              <View style={styles.exportIcon}>
+                <BookOpen size={24} color={Colors.brand[600]} />
+              </View>
+              <View style={styles.exportInfo}>
+                <Text style={styles.exportTitle}>Export Reading Log</Text>
+                <Text style={styles.exportDescription}>
+                  Finished and currently reading books with ratings and notes
+                </Text>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              style={[
+                styles.exportButton,
+                exportingType === 'reading_log' && styles.exportButtonDisabled,
+              ]}
+              onPress={() => setPdfModalMode('reading_log')}
+              disabled={exportingType === 'reading_log'}
+            >
+              {exportingType === 'reading_log' ? (
+                <ActivityIndicator color="white" />
+              ) : (
+                <>
+                  <Share2 size={18} color="white" />
+                  <Text style={styles.exportButtonText}>Generate PDF</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+
           {/* Export Attendance */}
           <View style={styles.exportCard}>
             <View style={styles.exportHeader}>
@@ -516,6 +574,25 @@ export default function ExportScreen() {
           </View>
         </View>
       </ScrollView>
+
+      <PdfExportSetupModal
+        visible={pdfModalMode !== null}
+        mode={pdfModalMode ?? 'wrapup'}
+        students={students}
+        loading={exportingType === 'wrapup' || exportingType === 'reading_log'}
+        onClose={() => {
+          if (exportingType !== 'wrapup' && exportingType !== 'reading_log') {
+            setPdfModalMode(null);
+          }
+        }}
+        onGenerate={(params) => {
+          if (pdfModalMode === 'wrapup') {
+            handleGenerateYearInReview(params);
+          } else if (pdfModalMode === 'reading_log') {
+            handleGenerateReadingLog({ studentId: params.studentId });
+          }
+        }}
+      />
     </View>
   );
 }
