@@ -3,6 +3,7 @@
  */
 
 import TrialBanner from '@/components/TrialBanner';
+import SetupChecklistCard from '@/components/dashboard/SetupChecklistCard';
 import WeeklySummaryCard from '@/components/dashboard/WeeklySummaryCard';
 import Avatar from '@/components/ui/Avatar';
 import DatePicker from '@/components/ui/DatePicker';
@@ -674,6 +675,10 @@ export default function Dashboard() {
             showsVerticalScrollIndicator={false}
           >
         <TrialBanner />
+        <SetupChecklistCard
+          firstStudent={students[0] ?? null}
+          onOpenSubjects={handleEditSubjects}
+        />
         {/* Header Section */}
         <View style={styles.headerContainer}>
           {/* 1. Name and Date Section - At TOP */}
