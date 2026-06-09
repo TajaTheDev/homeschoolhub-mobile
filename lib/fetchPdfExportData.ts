@@ -10,6 +10,20 @@ import { format, parseISO } from 'date-fns';
 export type LessonCompletionRow = Tables<'lesson_completions'>;
 export type ReadingLogRow = Tables<'reading_log'>;
 
+type ManualLessonRow = {
+  subject: string;
+  date: string;
+  title: string;
+  grade: string | null;
+};
+
+export type MergedCompletedLesson = {
+  subject: string;
+  date: string;
+  title: string;
+  grade: string | null;
+};
+
 export type YearInReviewPhoto = {
   url: string;
   caption: string | null;
@@ -92,6 +106,112 @@ function lessonMatchKey(subject: string, date: string): string {
   return `${subject.trim()}|${date}`;
 }
 
+function formatLessonGrade(
+  gradeValue: string | null | undefined,
+  gradeType: string | null | undefined
+): string | null {
+  if (!gradeValue?.trim()) return null;
+  const value = gradeValue.trim();
+  if (gradeType === 'percentage' && !value.includes('%')) {
+    return `${value}%`;
+  }
+  return value;
+}
+
+function mergeCompletedLessons(
+  completions: LessonCompletionRow[],
+  manualLessons: ManualLessonRow[]
+): MergedCompletedLesson[] {
+  const map = new Map<string, MergedCompletedLesson>();
+
+  manualLessons.forEach((row) => {
+    map.set(lessonMatchKey(row.subject, row.date), {
+      subject: row.subject,
+      date: row.date,
+      title: row.title,
+      grade: row.grade,
+    });
+  });
+
+  completions.forEach((row) => {
+    map.set(lessonMatchKey(row.subject, row.date), {
+      subject: row.subject,
+      date: row.date,
+      title: row.title_snapshot,
+      grade: row.grade?.trim() || null,
+    });
+  });
+
+  return Array.from(map.values()).sort((a, b) => {
+    const dateCmp = a.date.localeCompare(b.date);
+    return dateCmp !== 0 ? dateCmp : a.subject.localeCompare(b.subject);
+  });
+}
+
+async function fetchCompletedManualLessons(
+  studentId: string,
+  startDate: string,
+  endDate: string
+): Promise<ManualLessonRow[]> {
+  const byLessonId = new Map<string, ManualLessonRow>();
+
+  const { data: junctionData, error: junctionError } = await supabase
+    .from('lessons')
+    .select(
+      'id, subject, title, date, grade_value, grade_type, lesson_students!inner(student_id)'
+    )
+    .eq('lesson_students.student_id', studentId)
+    .eq('completed', true)
+    .gte('date', startDate)
+    .lte('date', endDate);
+
+  if (junctionError) {
+    throw new Error(junctionError.message);
+  }
+
+  (junctionData ?? []).forEach((lesson) => {
+    byLessonId.set(lesson.id, {
+      subject: lesson.subject,
+      date: lesson.date,
+      title: lesson.title,
+      grade: formatLessonGrade(lesson.grade_value, lesson.grade_type),
+    });
+  });
+
+  const { data: directData, error: directError } = await supabase
+    .from('lessons')
+    .select('id, subject, title, date, grade_value, grade_type')
+    .eq('student_id', studentId)
+    .eq('completed', true)
+    .gte('date', startDate)
+    .lte('date', endDate);
+
+  if (directError) {
+    throw new Error(directError.message);
+  }
+
+  (directData ?? []).forEach((lesson) => {
+    if (byLessonId.has(lesson.id)) return;
+    byLessonId.set(lesson.id, {
+      subject: lesson.subject,
+      date: lesson.date,
+      title: lesson.title,
+      grade: formatLessonGrade(lesson.grade_value, lesson.grade_type),
+    });
+  });
+
+  return Array.from(byLessonId.values());
+}
+
+function toCompletionRowCompat(merged: MergedCompletedLesson): LessonCompletionRow {
+  return {
+    subject: merged.subject,
+    date: merged.date,
+    title_snapshot: merged.title,
+    grade: merged.grade,
+  } as LessonCompletionRow;
+}
+
 /**
  * Sorts distinct completion dates and returns the longest run of
  * consecutive calendar days with at least one completion.
@@ -121,15 +241,15 @@ export function calculateLongestStreak(dates: string[]): number {
 }
 
 export function calculateBusiestMonth(
-  completions: LessonCompletionRow[]
+  lessons: Array<{ date: string }>
 ): { month: string | null; count: number } {
-  if (completions.length === 0) {
+  if (lessons.length === 0) {
     return { month: null, count: 0 };
   }
 
   const counts = new Map<string, number>();
 
-  completions.forEach((row) => {
+  lessons.forEach((row) => {
     try {
       const monthKey = format(parseISO(row.date), 'yyyy-MM');
       counts.set(monthKey, (counts.get(monthKey) ?? 0) + 1);
@@ -172,10 +292,10 @@ function isLetterGrade(grade: string): boolean {
   return /^[A-F][+-]?$/i.test(grade.trim());
 }
 
-export function buildGradesSummary(completions: LessonCompletionRow[]): GradeSummaryRow[] {
+export function buildGradesSummary(lessons: MergedCompletedLesson[]): GradeSummaryRow[] {
   const bySubject = new Map<string, string[]>();
 
-  completions.forEach((row) => {
+  lessons.forEach((row) => {
     if (!row.grade?.trim()) return;
     const existing = bySubject.get(row.subject) ?? [];
     existing.push(row.grade.trim());
@@ -252,22 +372,22 @@ function groupLessonsByMonth(lessons: YearInReviewLessonRow[]): YearInReviewMont
 }
 
 function buildSubjectSections(
-  completions: LessonCompletionRow[],
+  lessons: MergedCompletedLesson[],
   curriculumBySubject: Record<string, string | null>,
   photosByKey: Record<string, YearInReviewPhoto[]>
 ): YearInReviewSubjectSection[] {
   const bySubject = new Map<string, YearInReviewLessonRow[]>();
 
-  completions.forEach((row) => {
-    const lessons = bySubject.get(row.subject) ?? [];
+  lessons.forEach((row) => {
+    const subjectLessons = bySubject.get(row.subject) ?? [];
     const key = lessonMatchKey(row.subject, row.date);
-    lessons.push({
-      title: row.title_snapshot,
+    subjectLessons.push({
+      title: row.title,
       date: row.date,
       grade: row.grade ?? null,
       photos: photosByKey[key] ?? [],
     });
-    bySubject.set(row.subject, lessons);
+    bySubject.set(row.subject, subjectLessons);
   });
 
   return Array.from(bySubject.entries())
@@ -314,7 +434,7 @@ async function fetchPhotoData(
   studentId: string,
   startDate: string,
   endDate: string,
-  completions: LessonCompletionRow[]
+  mergedLessons: MergedCompletedLesson[]
 ): Promise<PhotoFetchResult> {
   const empty: PhotoFetchResult = {
     photosByKey: {},
@@ -411,7 +531,7 @@ async function fetchPhotoData(
     });
 
     const completionKeys = new Set(
-      completions.map((row) => lessonMatchKey(row.subject, row.date))
+      mergedLessons.map((row) => lessonMatchKey(row.subject, row.date))
     );
 
     const placedUrls = new Set<string>();
@@ -447,22 +567,26 @@ export async function fetchYearInReviewData(
   startDate: string,
   endDate: string
 ): Promise<YearInReviewData> {
-  const { data: completionsRaw, error: completionsError } = await supabase
-    .from('lesson_completions')
-    .select('*')
-    .eq('student_id', studentId)
-    .gte('date', startDate)
-    .lte('date', endDate)
-    .neq('status', 'planned')
-    .order('date', { ascending: true });
+  const [completionsResult, manualLessons] = await Promise.all([
+    supabase
+      .from('lesson_completions')
+      .select('*')
+      .eq('student_id', studentId)
+      .gte('date', startDate)
+      .lte('date', endDate)
+      .neq('status', 'planned')
+      .order('date', { ascending: true }),
+    fetchCompletedManualLessons(studentId, startDate, endDate),
+  ]);
 
-  if (completionsError) {
-    throw new Error(completionsError.message);
+  if (completionsResult.error) {
+    throw new Error(completionsResult.error.message);
   }
 
-  const completions = completionsRaw ?? [];
-  const distinctDates = [...new Set(completions.map((row) => row.date))];
-  const subjects = [...new Set(completions.map((row) => row.subject))];
+  const completions = completionsResult.data ?? [];
+  const mergedLessons = mergeCompletedLessons(completions, manualLessons);
+  const distinctDates = [...new Set(mergedLessons.map((row) => row.date))];
+  const subjects = [...new Set(mergedLessons.map((row) => row.subject))];
 
   const [curriculumBySubject, finishedBooksResult, photoData] = await Promise.all([
     fetchCurriculumNames(studentId, subjects),
@@ -472,7 +596,7 @@ export async function fetchYearInReviewData(
       .eq('student_id', studentId)
       .eq('status', 'finished')
       .not('date_finished', 'is', null),
-    fetchPhotoData(studentId, startDate, endDate, completions),
+    fetchPhotoData(studentId, startDate, endDate, mergedLessons),
   ]);
 
   if (finishedBooksResult.error) {
@@ -484,10 +608,10 @@ export async function fetchYearInReviewData(
   );
 
   const longestStreak = calculateLongestStreak(distinctDates);
-  const busiest = calculateBusiestMonth(completions);
-  const gradesSummary = buildGradesSummary(completions);
+  const busiest = calculateBusiestMonth(mergedLessons);
+  const gradesSummary = buildGradesSummary(mergedLessons);
   const subjectSections = buildSubjectSections(
-    completions,
+    mergedLessons,
     curriculumBySubject,
     photoData.photosByKey
   );
@@ -495,7 +619,7 @@ export async function fetchYearInReviewData(
   const schoolDays = distinctDates.length;
 
   return {
-    completions,
+    completions: mergedLessons.map(toCompletionRowCompat),
     finishedBooks,
     photoHighlights: photoData.photoHighlights,
     gradesSummary,
@@ -508,7 +632,7 @@ export async function fetchYearInReviewData(
       photosTaken: photoData.photosTaken,
     },
     stats: {
-      lessonsCompleted: completions.length,
+      lessonsCompleted: mergedLessons.length,
       subjectsCovered: subjects.length,
       schoolDays,
       booksRead: finishedBooks.length,

@@ -7,6 +7,20 @@ import type { Tables } from '@/types/database.generated';
 
 type LessonCompletionRow = Tables<'lesson_completions'>;
 
+type ManualLessonRow = {
+  subject: string;
+  date: string;
+  title: string;
+  grade: string | null;
+};
+
+type MergedCompletedLesson = {
+  subject: string;
+  date: string;
+  title: string;
+  grade: string | null;
+};
+
 export type TranscriptSubjectRow = {
   subject: string;
   curriculumName: string | null;
@@ -100,6 +114,107 @@ async function fetchAllLessonPlanNames(
   return map;
 }
 
+function formatLessonGrade(
+  gradeValue: string | null | undefined,
+  gradeType: string | null | undefined
+): string | null {
+  if (!gradeValue?.trim()) return null;
+  const value = gradeValue.trim();
+  if (gradeType === 'percentage' && !value.includes('%')) {
+    return `${value}%`;
+  }
+  return value;
+}
+
+function mergeDedupeKey(subject: string, date: string): string {
+  return `${subject.trim()}|${date}`;
+}
+
+function mergeCompletedLessons(
+  completions: LessonCompletionRow[],
+  manualLessons: ManualLessonRow[]
+): MergedCompletedLesson[] {
+  const map = new Map<string, MergedCompletedLesson>();
+
+  manualLessons.forEach((row) => {
+    map.set(mergeDedupeKey(row.subject, row.date), {
+      subject: row.subject,
+      date: row.date,
+      title: row.title,
+      grade: row.grade,
+    });
+  });
+
+  completions.forEach((row) => {
+    map.set(mergeDedupeKey(row.subject, row.date), {
+      subject: row.subject,
+      date: row.date,
+      title: row.title_snapshot,
+      grade: row.grade?.trim() || null,
+    });
+  });
+
+  return Array.from(map.values()).sort((a, b) => {
+    const dateCmp = a.date.localeCompare(b.date);
+    return dateCmp !== 0 ? dateCmp : a.subject.localeCompare(b.subject);
+  });
+}
+
+async function fetchCompletedManualLessons(
+  studentId: string,
+  startDate: string,
+  endDate: string
+): Promise<ManualLessonRow[]> {
+  const byLessonId = new Map<string, ManualLessonRow>();
+
+  const { data: junctionData, error: junctionError } = await supabase
+    .from('lessons')
+    .select(
+      'id, subject, title, date, grade_value, grade_type, lesson_students!inner(student_id)'
+    )
+    .eq('lesson_students.student_id', studentId)
+    .eq('completed', true)
+    .gte('date', startDate)
+    .lte('date', endDate);
+
+  if (junctionError) {
+    throw new Error(junctionError.message);
+  }
+
+  (junctionData ?? []).forEach((lesson) => {
+    byLessonId.set(lesson.id, {
+      subject: lesson.subject,
+      date: lesson.date,
+      title: lesson.title,
+      grade: formatLessonGrade(lesson.grade_value, lesson.grade_type),
+    });
+  });
+
+  const { data: directData, error: directError } = await supabase
+    .from('lessons')
+    .select('id, subject, title, date, grade_value, grade_type')
+    .eq('student_id', studentId)
+    .eq('completed', true)
+    .gte('date', startDate)
+    .lte('date', endDate);
+
+  if (directError) {
+    throw new Error(directError.message);
+  }
+
+  (directData ?? []).forEach((lesson) => {
+    if (byLessonId.has(lesson.id)) return;
+    byLessonId.set(lesson.id, {
+      subject: lesson.subject,
+      date: lesson.date,
+      title: lesson.title,
+      grade: formatLessonGrade(lesson.grade_value, lesson.grade_type),
+    });
+  });
+
+  return Array.from(byLessonId.values());
+}
+
 /**
  * Fetches transcript data for a student within a school year date range.
  */
@@ -122,15 +237,18 @@ export async function fetchTranscriptData(
   }
 
   const completions = completionsRaw ?? [];
-  const completionSubjects = [...new Set(completions.map((row) => row.subject))];
+  const manualLessons = await fetchCompletedManualLessons(studentId, startDate, endDate);
+  const mergedLessons = mergeCompletedLessons(completions, manualLessons);
+
+  const mergedSubjects = [...new Set(mergedLessons.map((row) => row.subject))];
   const curriculumBySubject = await fetchAllLessonPlanNames(studentId);
   const planSubjects = Object.keys(curriculumBySubject);
 
-  // Include subjects that have assigned lesson plans even if there are zero completions in range.
-  const subjects = Array.from(new Set([...completionSubjects, ...planSubjects]));
+  // Include subjects from merged lessons, lesson_plans, and lessons-only subjects with no plan.
+  const subjects = Array.from(new Set([...mergedSubjects, ...planSubjects]));
 
-  const bySubject = new Map<string, LessonCompletionRow[]>();
-  completions.forEach((row) => {
+  const bySubject = new Map<string, MergedCompletedLesson[]>();
+  mergedLessons.forEach((row) => {
     const bucket = bySubject.get(row.subject) ?? [];
     bucket.push(row);
     bySubject.set(row.subject, bucket);
