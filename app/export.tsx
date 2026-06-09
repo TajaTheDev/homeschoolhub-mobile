@@ -9,10 +9,13 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { ArrowLeft, Share2, FileText, Award, Calendar, BookOpen, Sparkles } from 'lucide-react-native';
+import { ArrowLeft, Share2, FileText, Award, Calendar, BookOpen, Sparkles, GraduationCap } from 'lucide-react-native';
 import PdfExportSetupModal, { type PdfExportMode } from '@/components/export/PdfExportSetupModal';
+import TranscriptSetupModal, { type TranscriptGenerateParams } from '@/components/export/TranscriptSetupModal';
 import { fetchReadingLogExportData, fetchYearInReviewData } from '@/lib/fetchPdfExportData';
+import { fetchTranscriptData } from '@/lib/fetchTranscriptData';
 import { generateReadingLogPdf } from '@/utils/readingLogPdfGenerator';
+import { generateTranscriptPdf } from '@/utils/transcriptPdfGenerator';
 import { generateYearInReviewPdf } from '@/utils/yearInReviewPdfGenerator';
 import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns';
 import Colors from '@/constants/Colors';
@@ -23,7 +26,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { generateReportCard } from '@/utils/pdfReportGenerator';
 
-type ExportType = 'wrapup' | 'reading_log' | 'grades' | 'attendance';
+type ExportType = 'wrapup' | 'reading_log' | 'transcript' | 'grades' | 'attendance';
 type DateRange = 'this_month' | 'last_month' | 'this_year' | 'all_time';
 
 export default function ExportScreen() {
@@ -36,6 +39,7 @@ export default function ExportScreen() {
   const [selectedStudent, setSelectedStudent] = useState<'all' | string>('all');
   const [dateRange, setDateRange] = useState<DateRange>('this_month');
   const [pdfModalMode, setPdfModalMode] = useState<PdfExportMode | null>(null);
+  const [showTranscriptModal, setShowTranscriptModal] = useState(false);
   
   // Calculate date range
   const getDateRange = () => {
@@ -114,6 +118,43 @@ export default function ExportScreen() {
       Alert.alert(
         'Error',
         error instanceof Error ? error.message : 'Failed to generate year in review'
+      );
+    } finally {
+      setExportingType(null);
+    }
+  };
+
+  const handleGenerateTranscript = async (params: TranscriptGenerateParams) => {
+    setExportingType('transcript');
+    try {
+      const student = students.find((s) => s.id === params.studentId);
+      if (!student) {
+        Alert.alert('Error', 'Student not found');
+        return;
+      }
+
+      const data = await fetchTranscriptData(
+        params.studentId,
+        params.startDate,
+        params.endDate
+      );
+      const pdfUri = await generateTranscriptPdf({
+        studentFullName: params.studentFullName,
+        schoolName: params.schoolName,
+        gradeLevel: params.gradeLevel,
+        startDate: params.startDate,
+        endDate: params.endDate,
+        data,
+      });
+
+      await sharePdf(pdfUri, `${student.name} - Academic Transcript`);
+      setShowTranscriptModal(false);
+      Alert.alert('Success!', `Transcript generated for ${student.name}`);
+    } catch (error: unknown) {
+      console.error('Transcript export error:', error);
+      Alert.alert(
+        'Error',
+        error instanceof Error ? error.message : 'Failed to generate transcript'
       );
     } finally {
       setExportingType(null);
@@ -509,6 +550,39 @@ export default function ExportScreen() {
               </Text>
             )}
           </View>
+
+          {/* Export Transcript */}
+          <View style={styles.exportCard}>
+            <View style={styles.exportHeader}>
+              <View style={styles.exportIcon}>
+                <GraduationCap size={24} color={Colors.brand[600]} />
+              </View>
+              <View style={styles.exportInfo}>
+                <Text style={styles.exportTitle}>Export Transcript</Text>
+                <Text style={styles.exportDescription}>
+                  Formal academic transcript for college admissions and records
+                </Text>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              style={[
+                styles.exportButton,
+                exportingType === 'transcript' && styles.exportButtonDisabled,
+              ]}
+              onPress={() => setShowTranscriptModal(true)}
+              disabled={exportingType === 'transcript'}
+            >
+              {exportingType === 'transcript' ? (
+                <ActivityIndicator color="white" />
+              ) : (
+                <>
+                  <Share2 size={18} color="white" />
+                  <Text style={styles.exportButtonText}>Generate PDF</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
           
           {/* Export Reading Log */}
           <View style={styles.exportCard}>
@@ -592,6 +666,18 @@ export default function ExportScreen() {
             handleGenerateReadingLog({ studentId: params.studentId });
           }
         }}
+      />
+
+      <TranscriptSetupModal
+        visible={showTranscriptModal}
+        students={students}
+        loading={exportingType === 'transcript'}
+        onClose={() => {
+          if (exportingType !== 'transcript') {
+            setShowTranscriptModal(false);
+          }
+        }}
+        onGenerate={handleGenerateTranscript}
       />
     </View>
   );
