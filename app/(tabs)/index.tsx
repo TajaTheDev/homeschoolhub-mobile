@@ -12,6 +12,7 @@ import Skeleton from '@/components/ui/Skeleton';
 import Colors from '@/constants/Colors';
 import { getSubjectColor } from '@/constants/Subjects';
 import Typography from '@/constants/Typography';
+import { requestReviewAtWinMoment } from '@/lib/reviewPrompt';
 import { supabase } from '@/lib/supabase/client';
 import { useAuthStore } from '@/store/authStore';
 import { useLessonStore } from '@/store/lessonStore';
@@ -532,13 +533,43 @@ export default function Dashboard() {
 
   const handleLessonComplete = (lessonId: string, isCurrentlyComplete: boolean) => {
     const newStatus = !isCurrentlyComplete;
-    
-    // Show confetti if marking complete
+
     if (newStatus) {
       triggerConfetti();
+
+      const lesson = lessons.find((l) => l.id === lessonId);
+      if (lesson?.date === todayStr) {
+        const studentIds =
+          lesson.students && lesson.students.length > 0
+            ? lesson.students.map((s) => s.id)
+            : lesson.student_id
+              ? [lesson.student_id]
+              : [];
+
+        const completedFullDay = studentIds.some((studentId) => {
+          const dayLessons = lessons.filter((l) => {
+            if (l.date !== todayStr) return false;
+            const ids =
+              l.students && l.students.length > 0
+                ? l.students.map((s) => s.id)
+                : l.student_id
+                  ? [l.student_id]
+                  : [];
+            return ids.includes(studentId);
+          });
+
+          return (
+            dayLessons.length > 0 &&
+            dayLessons.every((l) => l.id === lessonId || l.completed)
+          );
+        });
+
+        if (completedFullDay) {
+          void requestReviewAtWinMoment();
+        }
+      }
     }
-    
-    // Call the optimistic toggle (updates UI instantly, database in background)
+
     lessonStore.toggleCompleteOptimistic(lessonId);
   };
 

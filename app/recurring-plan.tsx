@@ -4,6 +4,7 @@
 
 import Colors from '@/constants/Colors';
 import Typography from '@/constants/Typography';
+import { requestReviewAtWinMoment } from '@/lib/reviewPrompt';
 import { supabase } from '@/lib/supabase/client';
 import { useBreakStore } from '@/store/breakStore';
 import {
@@ -309,6 +310,7 @@ export default function RecurringPlanScreen() {
 
       await fetchLessons(undefined, undefined, true);
 
+      void requestReviewAtWinMoment();
       Alert.alert('Success', `Created ${insertedLessons.length} lessons!`, [
         { text: 'OK', onPress: () => router.back() },
       ]);

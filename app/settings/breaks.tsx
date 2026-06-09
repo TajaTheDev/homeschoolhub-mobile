@@ -1,6 +1,7 @@
 import EditBreakModal from '@/components/schedule/EditBreakModal';
 import Colors from '@/constants/Colors';
 import Typography from '@/constants/Typography';
+import { requestReviewAtWinMoment } from '@/lib/reviewPrompt';
 import { supabase } from '@/lib/supabase/client';
 import { useLessonStore } from '@/store/lessonStore';
 import { useBreakStore } from '@/store/breakStore';
@@ -117,6 +118,7 @@ export default function BreaksScreen() {
     
     console.log('✅ Break record created');
     await fetchBreaks();
+    void requestReviewAtWinMoment();
   };
 
   const checkConflicts = async (startDate: string, endDate: string) => {
@@ -243,6 +245,7 @@ export default function BreaksScreen() {
         }
         
         console.log('✅ Break created successfully');
+        void requestReviewAtWinMoment();
       }
     } catch (error: any) {
       console.error('❌ Break save error:', {
