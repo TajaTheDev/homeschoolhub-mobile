@@ -1,22 +1,15 @@
-import ManualItemList from '@/components/lesson-plan/ManualItemList';
 import Button from '@/components/ui/Button';
 import Colors from '@/constants/Colors';
 import Typography from '@/constants/Typography';
-import {
-  appendWorkingItems,
-  createWorkingItem,
-  getCurriculumCategoryForSubject,
-  parsePasteLines,
-  type StagedScanCurriculum,
-  type WorkingItem,
-} from '@/lib/lessonPlanUtils';
+import { createWorkingItem, parsePasteLines, type WorkingItem } from '@/lib/lessonPlanUtils';
 import { supabase } from '@/lib/supabase/client';
+import type { CurriculumLibraryItem, CurriculumWithItems } from '@/store/lessonPlanStore';
 import { Image } from 'expo-image';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import { Pencil, Trash2, X } from 'lucide-react-native';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -35,15 +28,13 @@ import {
 const TOC_BUCKET = 'curriculum-toc';
 const MAX_TOC_PAGES = 6;
 
-type AddCurriculumSheetProps = {
-  visible: boolean;
-  studentId: string;
-  subject: string;
-  onClose: () => void;
-  onComplete: (staged: StagedScanCurriculum) => void;
-};
-
-type SheetStep = 'capture' | 'extracting' | 'extract_failed' | 'review' | 'manual';
+type SheetMode =
+  | 'detail'
+  | 'scan_capture'
+  | 'scan_extracting'
+  | 'scan_extract_failed'
+  | 'scan_review'
+  | 'paste';
 
 type TocPagePhoto = {
   id: string;
@@ -57,9 +48,16 @@ type ExtractTocResponse = {
   error?: string;
 };
 
-function serializeStoragePaths(pages: TocPagePhoto[]): string {
-  return JSON.stringify(pages.map((page) => page.storagePath));
-}
+type CurriculumLibraryDetailSheetProps = {
+  visible: boolean;
+  curriculum: CurriculumWithItems;
+  studentId: string;
+  studentName: string;
+  subject: string;
+  onClose: () => void;
+  onSelect: (curriculum: CurriculumWithItems) => void;
+  onLibraryUpdated: (curriculum: CurriculumWithItems) => void;
+};
 
 async function uploadTocPageImage(
   localUri: string,
@@ -117,63 +115,6 @@ async function uploadTocPageImage(
   return uploadData?.path ?? storagePath;
 }
 
-async function upsertScanLessonPlan(
-  studentId: string,
-  subject: string,
-  name: string,
-  tocImagePathJson: string
-): Promise<string> {
-  const normalizedSubject = subject.trim();
-
-  const { data: existingPlan, error: existingPlanError } = await supabase
-    .from('lesson_plans')
-    .select('id')
-    .eq('student_id', studentId)
-    .eq('subject', normalizedSubject)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (existingPlanError) {
-    throw new Error(existingPlanError.message);
-  }
-
-  const planPayload = {
-    name,
-    source: 'scan',
-    toc_image_path: tocImagePathJson,
-  };
-
-  if (existingPlan?.id) {
-    const { error: updateError } = await supabase
-      .from('lesson_plans')
-      .update(planPayload)
-      .eq('id', existingPlan.id);
-
-    if (updateError) {
-      throw new Error(updateError.message);
-    }
-
-    return existingPlan.id;
-  }
-
-  const { data: newPlan, error: createError } = await supabase
-    .from('lesson_plans')
-    .insert({
-      student_id: studentId,
-      subject: normalizedSubject,
-      ...planPayload,
-    })
-    .select('id')
-    .single();
-
-  if (createError || !newPlan) {
-    throw new Error(createError?.message ?? 'Failed to create lesson plan.');
-  }
-
-  return newPlan.id;
-}
-
 async function extractLessonTitles(storagePaths: string[]): Promise<string[]> {
   const { data, error } = await supabase.functions.invoke<ExtractTocResponse>(
     'extract-toc',
@@ -192,222 +133,130 @@ async function extractLessonTitles(storagePaths: string[]): Promise<string[]> {
   return titles.filter((title) => typeof title === 'string' && title.trim().length > 0);
 }
 
-async function saveLessonPlanItems(lessonPlanId: string, titles: string[]): Promise<void> {
-  const { error: deleteError } = await supabase
-    .from('lesson_plan_items')
-    .delete()
-    .eq('lesson_plan_id', lessonPlanId);
+async function fetchLibraryItems(curriculumId: string): Promise<CurriculumLibraryItem[]> {
+  const { data, error } = await supabase
+    .from('curriculum_library_items')
+    .select('*')
+    .eq('curriculum_id', curriculumId)
+    .order('order_index', { ascending: true });
 
-  if (deleteError) {
-    throw new Error(deleteError.message);
+  if (error) {
+    throw new Error(error.message);
   }
 
-  const { error: insertError } = await supabase.from('lesson_plan_items').insert(
-    titles.map((title, index) => ({
-      lesson_plan_id: lessonPlanId,
-      title: title.trim(),
-      order_index: index,
-    }))
-  );
-
-  if (insertError) {
-    throw new Error(insertError.message);
-  }
+  return data ?? [];
 }
 
-async function replaceLibraryItems(
+async function saveTitlesToLibrary(
   curriculumId: string,
   titles: string[]
-): Promise<void> {
+): Promise<CurriculumLibraryItem[]> {
   const { error: deleteError } = await supabase
     .from('curriculum_library_items')
     .delete()
     .eq('curriculum_id', curriculumId);
 
   if (deleteError) {
-    console.error('Failed to clear community library items:', deleteError);
-    return;
+    throw new Error(deleteError.message);
   }
 
-  const { error: insertError } = await supabase.from('curriculum_library_items').insert(
-    titles.map((title, index) => ({
-      curriculum_id: curriculumId,
-      title: title.trim(),
-      order_index: index,
-    }))
-  );
+  if (titles.length > 0) {
+    const { error: insertError } = await supabase.from('curriculum_library_items').insert(
+      titles.map((title, index) => ({
+        curriculum_id: curriculumId,
+        title: title.trim(),
+        order_index: index,
+      }))
+    );
 
-  if (insertError) {
-    console.error('Failed to share lessons to community library:', insertError);
+    if (insertError) {
+      throw new Error(insertError.message);
+    }
   }
+
+  const { error: verifyError } = await supabase
+    .from('curriculum_library')
+    .update({ verified: true })
+    .eq('id', curriculumId);
+
+  if (verifyError) {
+    throw new Error(verifyError.message);
+  }
+
+  return fetchLibraryItems(curriculumId);
 }
 
-async function shareToCommunityLibrary(
-  curriculumName: string,
-  subject: string,
-  titles: string[]
-): Promise<void> {
-  try {
-    const trimmedName = curriculumName.trim();
-
-    const { data: libraryEntry, error: libraryError } = await supabase
-      .from('curriculum_library')
-      .select('id')
-      .eq('name', trimmedName)
-      .maybeSingle();
-
-    if (libraryError) {
-      console.error('Failed to look up community library entry:', libraryError);
-      return;
-    }
-
-    if (libraryEntry) {
-      await replaceLibraryItems(libraryEntry.id, titles);
-      return;
-    }
-
-    const category = getCurriculumCategoryForSubject(subject);
-
-    const { data: newEntry, error: createError } = await supabase
-      .from('curriculum_library')
-      .insert({
-        name: trimmedName,
-        category,
-        publisher: null,
-        edition: null,
-        level: null,
-        verified: true,
-      })
-      .select('id')
-      .single();
-
-    if (createError || !newEntry) {
-      console.error('Failed to create community library entry:', createError);
-      return;
-    }
-
-    await replaceLibraryItems(newEntry.id, titles);
-  } catch (error) {
-    console.error('Community library share failed:', error);
-  }
-}
-
-export default function AddCurriculumSheet({
+export default function CurriculumLibraryDetailSheet({
   visible,
+  curriculum,
   studentId,
+  studentName,
   subject,
   onClose,
-  onComplete,
-}: AddCurriculumSheetProps) {
-  const [step, setStep] = useState<SheetStep>('capture');
-  const [curriculumName, setCurriculumName] = useState('');
-  const [lessonPlanId, setLessonPlanId] = useState<string | null>(null);
+  onSelect,
+  onLibraryUpdated,
+}: CurriculumLibraryDetailSheetProps) {
+  const [mode, setMode] = useState<SheetMode>('detail');
+  const [items, setItems] = useState<CurriculumLibraryItem[]>(curriculum.items);
   const [tocPages, setTocPages] = useState<TocPagePhoto[]>([]);
   const [uploadingPage, setUploadingPage] = useState(false);
   const [reviewItems, setReviewItems] = useState<WorkingItem[]>([]);
-  const [manualItems, setManualItems] = useState<WorkingItem[]>([]);
   const [pasteText, setPasteText] = useState('');
   const [newLessonTitle, setNewLessonTitle] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const isBusy = saving || uploadingPage || step === 'extracting';
+  const isBusy = saving || uploadingPage || mode === 'scan_extracting';
 
-  const resetForm = () => {
-    setStep('capture');
-    setCurriculumName('');
-    setLessonPlanId(null);
+  useEffect(() => {
+    if (visible) {
+      setItems(curriculum.items);
+      setMode('detail');
+    }
+  }, [visible, curriculum.id, curriculum.items]);
+
+  const resetScanState = () => {
     setTocPages([]);
     setUploadingPage(false);
     setReviewItems([]);
-    setManualItems([]);
-    setPasteText('');
     setNewLessonTitle('');
     setEditingId(null);
     setEditingTitle('');
-    setSaving(false);
   };
 
   const handleClose = () => {
     if (isBusy) return;
-    resetForm();
+    resetScanState();
+    setPasteText('');
+    setMode('detail');
     onClose();
   };
 
-  const getActiveTitles = (): string[] => {
-    const items = step === 'manual' ? manualItems : reviewItems;
-    return items.map((item) => item.title.trim()).filter(Boolean);
-  };
+  const getCurriculumWithItems = (): CurriculumWithItems => ({
+    ...curriculum,
+    items,
+  });
 
-  const getTocImagePathJson = (): string => serializeStoragePaths(tocPages);
-
-  const promptCommunityShare = (titles: string[]): Promise<boolean> =>
-    new Promise((resolve) => {
-      Alert.alert(
-        'Share with the community library?',
-        'Help other families by contributing this lesson sequence.',
-        [
-          { text: 'No thanks', style: 'cancel', onPress: () => resolve(false) },
-          { text: 'Share', onPress: () => resolve(true) },
-        ]
-      );
-    });
-
-  const finishWithSuccess = (name: string, imagePathJson: string, lessonCount: number) => {
-    const staged: StagedScanCurriculum = {
-      kind: 'scan',
-      name,
-      tocImagePath: imagePathJson,
-    };
-    resetForm();
-    onComplete(staged);
-    Alert.alert(
-      'Curriculum saved!',
-      `${lessonCount} lesson${lessonCount === 1 ? '' : 's'} saved to your sequence.`
-    );
-  };
-
-  const persistPlanPaths = async (pages: TocPagePhoto[]): Promise<string> => {
-    const trimmedName = curriculumName.trim();
-    const planId = await upsertScanLessonPlan(
-      studentId,
-      subject,
-      trimmedName,
-      serializeStoragePaths(pages)
-    );
-    setLessonPlanId(planId);
-    return planId;
-  };
-
-  const handleSaveLessons = async () => {
-    const titles = getActiveTitles();
-    if (titles.length === 0) {
-      Alert.alert('No lessons', 'Add at least one lesson before saving.');
-      return;
-    }
-
+  const handleLibrarySaved = async (titles: string[]) => {
     setSaving(true);
-
     try {
-      let planId = lessonPlanId;
-      if (!planId) {
-        planId = await persistPlanPaths(tocPages);
-      }
-
-      await saveLessonPlanItems(planId, titles);
-
-      const shouldShare = await promptCommunityShare(titles);
-      if (shouldShare) {
-        await shareToCommunityLibrary(curriculumName.trim(), subject, titles);
-      }
-
-      finishWithSuccess(curriculumName.trim(), getTocImagePathJson(), titles.length);
+      const updatedItems = await saveTitlesToLibrary(curriculum.id, titles);
+      setItems(updatedItems);
+      const updated = { ...curriculum, items: updatedItems, verified: true };
+      onLibraryUpdated(updated);
+      resetScanState();
+      setPasteText('');
+      setMode('detail');
+      Alert.alert(
+        'Saved',
+        `${titles.length} lesson${titles.length === 1 ? '' : 's'} saved to library`
+      );
     } catch (error) {
-      console.error('Failed to save lesson sequence:', error);
+      console.error('Failed to save library lessons:', error);
       Alert.alert(
         'Save failed',
-        error instanceof Error ? error.message : 'Could not save your lessons. Please try again.'
+        error instanceof Error ? error.message : 'Could not save lessons to the library.'
       );
     } finally {
       setSaving(false);
@@ -436,52 +285,30 @@ export default function AddCurriculumSheet({
   };
 
   const runExtraction = async (storagePaths: string[]) => {
-    setStep('extracting');
+    setMode('scan_extracting');
 
     try {
       const titles = await extractLessonTitles(storagePaths);
 
       if (titles.length === 0) {
-        setStep('extract_failed');
+        setMode('scan_extract_failed');
         return;
       }
 
       setReviewItems(titles.map((title) => createWorkingItem(title)));
-      setStep('review');
+      setMode('scan_review');
     } catch (error) {
       console.error('TOC extraction failed:', error);
-      setStep('extract_failed');
+      setMode('scan_extract_failed');
     }
   };
 
   const handleExtractPages = async () => {
     if (tocPages.length === 0) return;
-
-    const trimmedName = curriculumName.trim();
-    if (!trimmedName) {
-      Alert.alert('Curriculum name required', 'Enter a curriculum name before extracting.');
-      return;
-    }
-
-    try {
-      await persistPlanPaths(tocPages);
-      await runExtraction(tocPages.map((page) => page.storagePath));
-    } catch (error) {
-      console.error('Failed to prepare extraction:', error);
-      Alert.alert(
-        'Error',
-        error instanceof Error ? error.message : 'Could not start extraction. Please try again.'
-      );
-    }
+    await runExtraction(tocPages.map((page) => page.storagePath));
   };
 
   const handleScanPage = async (type: 'camera' | 'library') => {
-    const trimmedName = curriculumName.trim();
-    if (!trimmedName) {
-      Alert.alert('Curriculum name required', 'Enter a curriculum name before taking a photo.');
-      return;
-    }
-
     if (tocPages.length >= MAX_TOC_PAGES) {
       Alert.alert('Page limit reached', `You can scan up to ${MAX_TOC_PAGES} TOC pages.`);
       return;
@@ -515,10 +342,7 @@ export default function AddCurriculumSheet({
         storagePath,
         previewUri: localUri,
       };
-      const nextPages = [...tocPages, newPage];
-
-      setTocPages(nextPages);
-      await persistPlanPaths(nextPages);
+      setTocPages((current) => [...current, newPage]);
     } catch (error) {
       console.error('TOC page upload failed:', error);
       Alert.alert(
@@ -530,33 +354,27 @@ export default function AddCurriculumSheet({
     }
   };
 
-  const handleRemovePage = async (index: number) => {
+  const handleRemovePage = (index: number) => {
     if (uploadingPage || saving) return;
-
-    const nextPages = tocPages.filter((_, i) => i !== index);
-    setTocPages(nextPages);
-
-    if (nextPages.length === 0) {
-      setLessonPlanId(null);
-      return;
-    }
-
-    try {
-      await persistPlanPaths(nextPages);
-    } catch (error) {
-      console.error('Failed to update plan after removing page:', error);
-    }
+    setTocPages((current) => current.filter((_, i) => i !== index));
   };
 
-  const handleImportPaste = () => {
-    const titles = parsePasteLines(pasteText);
+  const handleSaveReviewToLibrary = async () => {
+    const titles = reviewItems.map((item) => item.title.trim()).filter(Boolean);
     if (titles.length === 0) {
-      Alert.alert('Nothing to import', 'Paste one lesson title per line.');
+      Alert.alert('No lessons', 'Add at least one lesson before saving.');
       return;
     }
+    await handleLibrarySaved(titles);
+  };
 
-    setManualItems((current) => appendWorkingItems(current, titles));
-    setPasteText('');
+  const handleSavePasteToLibrary = async () => {
+    const titles = parsePasteLines(pasteText);
+    if (titles.length === 0) {
+      Alert.alert('Nothing to save', 'Paste one lesson title per line.');
+      return;
+    }
+    await handleLibrarySaved(titles);
   };
 
   const handleAddReviewLesson = () => {
@@ -592,16 +410,20 @@ export default function AddCurriculumSheet({
     setEditingTitle('');
   };
 
+  const sortedItems = [...items].sort((a, b) => a.order_index - b.order_index);
+
   const getSheetTitle = () => {
-    switch (step) {
-      case 'review':
+    switch (mode) {
+      case 'scan_capture':
+        return 'Scan TOC';
+      case 'scan_review':
         return 'Review lessons';
-      case 'manual':
-        return 'Enter lessons manually';
-      case 'extract_failed':
+      case 'scan_extract_failed':
         return 'Could not read TOC';
+      case 'paste':
+        return 'Paste lessons';
       default:
-        return 'Add your curriculum';
+        return curriculum.name;
     }
   };
 
@@ -632,31 +454,73 @@ export default function AddCurriculumSheet({
     </ScrollView>
   );
 
-  const renderCaptureStep = () => {
+  const renderDetailMode = () => (
+    <>
+      <Text style={styles.metaLine}>
+        {[curriculum.publisher, curriculum.level].filter(Boolean).join(' · ') || 'Community library'}
+      </Text>
+      <Text style={styles.countLabel}>
+        {sortedItems.length === 0
+          ? 'No lessons added yet'
+          : `${sortedItems.length} lesson${sortedItems.length === 1 ? '' : 's'}`}
+      </Text>
+
+      {sortedItems.length > 0 ? (
+        <View style={[styles.listCard, styles.lessonListCard]}>
+          <ScrollView nestedScrollEnabled showsVerticalScrollIndicator>
+            {sortedItems.map((item, index) => (
+              <View
+                key={item.id}
+                style={[styles.lessonRow, index < sortedItems.length - 1 && styles.lessonRowBorder]}
+              >
+                <Text style={styles.orderBadge}>{index + 1}</Text>
+                <Text style={styles.lessonTitle} numberOfLines={2}>
+                  {item.title}
+                </Text>
+              </View>
+            ))}
+          </ScrollView>
+        </View>
+      ) : null}
+
+      <Text style={styles.sectionHeading}>Add lessons to library</Text>
+      <Button
+        title="📷 Scan TOC"
+        onPress={() => {
+          resetScanState();
+          setMode('scan_capture');
+        }}
+        disabled={isBusy}
+        style={styles.actionButton}
+      />
+      <Button
+        title="Paste lessons"
+        variant="outline"
+        onPress={() => setMode('paste')}
+        disabled={isBusy}
+        style={styles.actionButton}
+      />
+
+      <Text style={styles.sectionHeading}>Use this curriculum</Text>
+      <Button
+        title={`Select for ${studentName} — ${subject}`}
+        onPress={() => onSelect(getCurriculumWithItems())}
+        disabled={isBusy}
+        style={styles.actionButton}
+      />
+    </>
+  );
+
+  const renderScanCaptureMode = () => {
     const pageCount = tocPages.length;
     const nextPageNumber = pageCount + 1;
     const canScanMore = pageCount < MAX_TOC_PAGES;
 
     return (
       <>
-        <Text style={styles.fieldLabel}>Curriculum name</Text>
-        <TextInput
-          style={styles.input}
-          value={curriculumName}
-          onChangeText={setCurriculumName}
-          placeholder="e.g. Saxon Math 5/4"
-          placeholderTextColor={Colors.ui.textLight}
-          editable={!isBusy}
-        />
-
         <View style={styles.instructionCard}>
-          <Text style={styles.instructionTitle}>How to photograph your TOC</Text>
-          <Text style={styles.instructionStep}>1. Open your book to the Table of Contents page</Text>
-          <Text style={styles.instructionStep}>2. Lay it flat — good lighting, no shadows</Text>
-          <Text style={styles.instructionStep}>3. Make sure all chapter or lesson titles are visible</Text>
-          <Text style={styles.instructionStep}>
-            4. Scan each TOC page (up to {MAX_TOC_PAGES}) — then tap Extract
-          </Text>
+          <Text style={styles.instructionTitle}>Scan each TOC page</Text>
+          <Text style={styles.instructionStep}>Scan up to {MAX_TOC_PAGES} pages, then tap Extract.</Text>
         </View>
 
         {renderThumbnailRow()}
@@ -671,13 +535,13 @@ export default function AddCurriculumSheet({
             <Button
               title={`📷 Scan page ${nextPageNumber}`}
               onPress={() => handleScanPage('camera')}
-              disabled={!curriculumName.trim() || isBusy || !canScanMore}
+              disabled={isBusy || !canScanMore}
             />
             <Button
               title="Choose from Library"
               onPress={() => handleScanPage('library')}
               variant="outline"
-              disabled={!curriculumName.trim() || isBusy || !canScanMore}
+              disabled={isBusy || !canScanMore}
               style={styles.secondaryButton}
             />
           </>
@@ -689,13 +553,21 @@ export default function AddCurriculumSheet({
           disabled={pageCount === 0 || isBusy}
           style={styles.extractButton}
         />
-
-        <Text style={styles.subjectHint}>For {subject}</Text>
+        <Button
+          title="Back to details"
+          variant="outline"
+          onPress={() => {
+            resetScanState();
+            setMode('detail');
+          }}
+          disabled={isBusy}
+          style={styles.actionButton}
+        />
       </>
     );
   };
 
-  const renderExtractingStep = () => (
+  const renderScanExtractingMode = () => (
     <View style={styles.centeredState}>
       <ActivityIndicator color={Colors.brand[500]} size="large" />
       <Text style={styles.stateTitle}>
@@ -705,81 +577,74 @@ export default function AddCurriculumSheet({
     </View>
   );
 
-  const renderExtractFailedStep = () => (
+  const renderScanFailedMode = () => (
     <View style={styles.centeredState}>
       <Text style={styles.stateTitle}>We couldn&apos;t read the table of contents.</Text>
-      <Text style={styles.stateHint}>Try again or enter lessons manually.</Text>
+      <Text style={styles.stateHint}>Try again or go back to details.</Text>
       <Button title="Try again" onPress={handleExtractPages} style={styles.actionButton} />
       <Button
-        title="Enter manually"
+        title="Back to details"
         variant="outline"
-        onPress={() => setStep('manual')}
-        style={styles.actionButton}
-      />
-      <Button
-        title="Back to pages"
-        variant="outline"
-        onPress={() => setStep('capture')}
+        onPress={() => {
+          resetScanState();
+          setMode('detail');
+        }}
         style={styles.actionButton}
       />
     </View>
   );
 
-  const renderReviewStep = () => (
+  const renderScanReviewMode = () => (
     <>
       <Text style={styles.countLabel}>
         {reviewItems.length} lesson{reviewItems.length === 1 ? '' : 's'} found
       </Text>
 
       <View style={styles.listCard}>
-        {reviewItems.length === 0 ? (
-          <Text style={styles.emptyListText}>No lessons yet. Add one below.</Text>
-        ) : (
-          reviewItems.map((item, index) => (
-            <View
-              key={item.id}
-              style={[styles.reviewRow, index < reviewItems.length - 1 && styles.reviewRowBorder]}
-            >
-              {editingId === item.id ? (
-                <TextInput
-                  style={styles.reviewEditInput}
-                  value={editingTitle}
-                  onChangeText={setEditingTitle}
-                  autoFocus
-                  onSubmitEditing={handleSaveEditReview}
-                  returnKeyType="done"
-                />
-              ) : (
-                <Text style={styles.reviewTitle} numberOfLines={2}>
-                  {item.title}
-                </Text>
-              )}
+        {reviewItems.map((item, index) => (
+          <View
+            key={item.id}
+            style={[styles.reviewRow, index < reviewItems.length - 1 && styles.reviewRowBorder]}
+          >
+            {editingId === item.id ? (
+              <TextInput
+                style={styles.reviewEditInput}
+                value={editingTitle}
+                onChangeText={setEditingTitle}
+                autoFocus
+                onSubmitEditing={handleSaveEditReview}
+                returnKeyType="done"
+              />
+            ) : (
+              <Text style={styles.reviewTitle} numberOfLines={2}>
+                {item.title}
+              </Text>
+            )}
 
-              <View style={styles.reviewActions}>
-                {editingId === item.id ? (
-                  <TouchableOpacity onPress={handleSaveEditReview} style={styles.iconButton}>
-                    <Text style={styles.saveEditText}>Save</Text>
+            <View style={styles.reviewActions}>
+              {editingId === item.id ? (
+                <TouchableOpacity onPress={handleSaveEditReview} style={styles.iconButton}>
+                  <Text style={styles.saveEditText}>Save</Text>
+                </TouchableOpacity>
+              ) : (
+                <>
+                  <TouchableOpacity
+                    onPress={() => handleStartEditReview(item)}
+                    style={styles.iconButton}
+                  >
+                    <Pencil size={16} color={Colors.brand[600]} />
                   </TouchableOpacity>
-                ) : (
-                  <>
-                    <TouchableOpacity
-                      onPress={() => handleStartEditReview(item)}
-                      style={styles.iconButton}
-                    >
-                      <Pencil size={16} color={Colors.brand[600]} />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => handleDeleteReviewItem(item.id)}
-                      style={styles.iconButton}
-                    >
-                      <Trash2 size={16} color={Colors.ui.error} />
-                    </TouchableOpacity>
-                  </>
-                )}
-              </View>
+                  <TouchableOpacity
+                    onPress={() => handleDeleteReviewItem(item.id)}
+                    style={styles.iconButton}
+                  >
+                    <Trash2 size={16} color={Colors.ui.error} />
+                  </TouchableOpacity>
+                </>
+              )}
             </View>
-          ))
-        )}
+          </View>
+        ))}
       </View>
 
       <View style={styles.addRow}>
@@ -804,26 +669,25 @@ export default function AddCurriculumSheet({
       </View>
 
       <Button
-        title={`Save ${reviewItems.length} lesson${reviewItems.length === 1 ? '' : 's'}`}
-        onPress={handleSaveLessons}
+        title={`Save ${reviewItems.length} lesson${reviewItems.length === 1 ? '' : 's'} to library`}
+        onPress={handleSaveReviewToLibrary}
         loading={saving}
         disabled={reviewItems.length === 0 || saving}
         style={styles.actionButton}
       />
       <Button
-        title="Enter manually instead"
+        title="Back to scan"
         variant="outline"
-        onPress={() => setStep('manual')}
+        onPress={() => setMode('scan_capture')}
         disabled={saving}
         style={styles.actionButton}
       />
     </>
   );
 
-  const renderManualStep = () => (
+  const renderPasteMode = () => (
     <>
-      <Text style={styles.sectionTitle}>Paste import</Text>
-      <Text style={styles.sectionHint}>Each line becomes one lesson, appended in order.</Text>
+      <Text style={styles.sectionHint}>Each line becomes one lesson. Saving replaces existing lessons.</Text>
       <TextInput
         style={styles.textArea}
         value={pasteText}
@@ -831,35 +695,22 @@ export default function AddCurriculumSheet({
         placeholder={'Lesson 1\nLesson 2\nLesson 3'}
         placeholderTextColor={Colors.ui.textLight}
         multiline
-        numberOfLines={5}
+        numberOfLines={8}
         textAlignVertical="top"
         editable={!saving}
       />
       <Button
-        title="Import lines"
-        onPress={handleImportPaste}
-        size="medium"
-        variant="outline"
+        title="Save to library"
+        onPress={handleSavePasteToLibrary}
+        loading={saving}
         disabled={saving}
         style={styles.actionButton}
       />
-
-      <Text style={styles.sectionTitle}>Manual</Text>
-      <Text style={styles.sectionHint}>Add, edit, and reorder lessons one at a time.</Text>
-      <ManualItemList items={manualItems} onChange={setManualItems} />
-
       <Button
-        title={`Save ${manualItems.length} lesson${manualItems.length === 1 ? '' : 's'}`}
-        onPress={handleSaveLessons}
-        loading={saving}
-        disabled={manualItems.length === 0 || saving}
-        style={styles.actionButton}
-      />
-      <Button
-        title="Back to review"
+        title="Back to details"
         variant="outline"
-        onPress={() => setStep('review')}
-        disabled={saving || reviewItems.length === 0}
+        onPress={() => setMode('detail')}
+        disabled={saving}
         style={styles.actionButton}
       />
     </>
@@ -883,7 +734,9 @@ export default function AddCurriculumSheet({
         />
         <View style={styles.sheet}>
           <View style={styles.sheetHeader}>
-            <Text style={styles.sheetTitle}>{getSheetTitle()}</Text>
+            <Text style={styles.sheetTitle} numberOfLines={2}>
+              {getSheetTitle()}
+            </Text>
             <TouchableOpacity onPress={handleClose} disabled={isBusy}>
               <X size={24} color={Colors.ui.text} />
             </TouchableOpacity>
@@ -893,11 +746,12 @@ export default function AddCurriculumSheet({
             contentContainerStyle={styles.sheetContent}
             keyboardShouldPersistTaps="handled"
           >
-            {step === 'capture' ? renderCaptureStep() : null}
-            {step === 'extracting' ? renderExtractingStep() : null}
-            {step === 'extract_failed' ? renderExtractFailedStep() : null}
-            {step === 'review' ? renderReviewStep() : null}
-            {step === 'manual' ? renderManualStep() : null}
+            {mode === 'detail' ? renderDetailMode() : null}
+            {mode === 'scan_capture' ? renderScanCaptureMode() : null}
+            {mode === 'scan_extracting' ? renderScanExtractingMode() : null}
+            {mode === 'scan_extract_failed' ? renderScanFailedMode() : null}
+            {mode === 'scan_review' ? renderScanReviewMode() : null}
+            {mode === 'paste' ? renderPasteMode() : null}
           </ScrollView>
         </View>
       </KeyboardAvoidingView>
@@ -923,36 +777,78 @@ const styles = StyleSheet.create({
   },
   sheetHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     paddingHorizontal: 24,
     paddingTop: 20,
     paddingBottom: 12,
     borderBottomWidth: 1,
     borderBottomColor: Colors.ui.border,
+    gap: 12,
   },
   sheetTitle: {
     ...Typography.h3,
     fontSize: 20,
+    flex: 1,
   },
   sheetContent: {
     padding: 24,
     paddingBottom: 40,
   },
-  fieldLabel: {
-    ...Typography.label,
+  metaLine: {
+    ...Typography.bodySmall,
+    color: Colors.ui.textLight,
     marginBottom: 8,
+  },
+  countLabel: {
+    ...Typography.label,
+    color: Colors.brand[700],
+    marginBottom: 12,
+  },
+  listCard: {
+    backgroundColor: Colors.background.card,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.ui.border,
+    overflow: 'hidden',
+    marginBottom: 16,
+  },
+  lessonListCard: {
+    maxHeight: 200,
+  },
+  lessonRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 10,
+  },
+  lessonRowBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.ui.border,
+  },
+  orderBadge: {
+    width: 24,
+    textAlign: 'center',
+    ...Typography.label,
+    color: Colors.brand[600],
+  },
+  lessonTitle: {
+    flex: 1,
+    ...Typography.body,
     color: Colors.ui.text,
   },
-  input: {
-    backgroundColor: 'white',
-    borderWidth: 2,
-    borderColor: Colors.ui.border,
-    borderRadius: 12,
-    padding: 12,
-    fontSize: 16,
+  sectionHeading: {
+    ...Typography.label,
     color: Colors.ui.text,
-    marginBottom: 16,
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  sectionHint: {
+    ...Typography.bodySmall,
+    color: Colors.ui.textLight,
+    marginBottom: 10,
+    lineHeight: 18,
   },
   instructionCard: {
     backgroundColor: Colors.brand[50],
@@ -963,13 +859,12 @@ const styles = StyleSheet.create({
   instructionTitle: {
     ...Typography.label,
     color: Colors.brand[700],
-    marginBottom: 10,
+    marginBottom: 8,
   },
   instructionStep: {
     ...Typography.bodySmall,
     color: Colors.brand[700],
-    lineHeight: 22,
-    marginBottom: 4,
+    lineHeight: 20,
   },
   thumbnailRow: {
     flexDirection: 'row',
@@ -1033,13 +928,6 @@ const styles = StyleSheet.create({
     ...Typography.body,
     color: Colors.ui.textLight,
   },
-  subjectHint: {
-    ...Typography.bodySmall,
-    color: Colors.ui.textLight,
-    textAlign: 'center',
-    marginTop: 16,
-    lineHeight: 18,
-  },
   centeredState: {
     alignItems: 'center',
     paddingVertical: 24,
@@ -1057,25 +945,6 @@ const styles = StyleSheet.create({
     color: Colors.ui.textLight,
     marginBottom: 20,
     lineHeight: 20,
-  },
-  countLabel: {
-    ...Typography.label,
-    color: Colors.brand[700],
-    marginBottom: 12,
-  },
-  listCard: {
-    backgroundColor: Colors.background.card,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Colors.ui.border,
-    overflow: 'hidden',
-    marginBottom: 12,
-  },
-  emptyListText: {
-    ...Typography.bodySmall,
-    color: Colors.ui.textLight,
-    textAlign: 'center',
-    padding: 16,
   },
   reviewRow: {
     flexDirection: 'row',
@@ -1146,18 +1015,6 @@ const styles = StyleSheet.create({
     ...Typography.label,
     color: 'white',
   },
-  sectionTitle: {
-    ...Typography.label,
-    color: Colors.ui.text,
-    marginBottom: 4,
-    marginTop: 8,
-  },
-  sectionHint: {
-    ...Typography.bodySmall,
-    color: Colors.ui.textLight,
-    marginBottom: 10,
-    lineHeight: 18,
-  },
   textArea: {
     backgroundColor: Colors.background.card,
     borderWidth: 1,
@@ -1165,7 +1022,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 12,
-    minHeight: 120,
+    minHeight: 160,
     ...Typography.body,
     color: Colors.ui.text,
     marginBottom: 12,

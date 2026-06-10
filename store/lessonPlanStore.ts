@@ -145,6 +145,10 @@ async function persistLessonPlan({
 
   if (items.length === 0) {
     if (existingItemIds.length > 0) {
+      if (source === 'scan' && existingItemIds.length > 0) {
+        return { success: true };
+      }
+
       const { error: deleteError } = await supabase
         .from('lesson_plan_items')
         .delete()

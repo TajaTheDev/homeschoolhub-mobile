@@ -1,6 +1,8 @@
 import AddCurriculumSheet from '@/components/students/AddCurriculumSheet';
+import CurriculumLibraryDetailSheet from '@/components/students/CurriculumLibraryDetailSheet';
 import Colors from '@/constants/Colors';
 import Typography from '@/constants/Typography';
+import { supabase } from '@/lib/supabase/client';
 import {
   getCategoryLabel,
   getCurriculumCategoryForSubject,
@@ -12,14 +14,15 @@ import {
   type CurriculumWithItems,
   type LessonPlan,
 } from '@/store/lessonPlanStore';
-import { BookOpen, ChevronLeft } from 'lucide-react-native';
-import React, { useCallback, useEffect, useState } from 'react';
+import { BookOpen, ChevronLeft, Search, X } from 'lucide-react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -47,6 +50,9 @@ export default function CurriculumPickerStep({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [existingPlan, setExistingPlan] = useState<LessonPlan | null>(null);
   const [showAddSheet, setShowAddSheet] = useState(false);
+  const [detailCurriculum, setDetailCurriculum] = useState<CurriculumWithItems | null>(null);
+  const [studentName, setStudentName] = useState('Student');
+  const [searchQuery, setSearchQuery] = useState('');
 
   const category = getCurriculumCategoryForSubject(subject);
   const isLibraryCategory = category !== 'other';
@@ -82,6 +88,38 @@ export default function CurriculumPickerStep({
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    setSearchQuery('');
+  }, [studentId, subject]);
+
+  const filteredCurricula = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return curricula;
+    return curricula.filter((entry) => entry.name.toLowerCase().includes(query));
+  }, [curricula, searchQuery]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadStudentName = async () => {
+      const { data, error } = await supabase
+        .from('students')
+        .select('name')
+        .eq('id', studentId)
+        .maybeSingle();
+
+      if (!cancelled && !error && data?.name) {
+        setStudentName(data.name);
+      }
+    };
+
+    loadStudentName();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [studentId]);
 
   const isCardSelected = (curriculum: CurriculumWithItems) => {
     if (stagedSelection?.kind === 'library') {
@@ -141,6 +179,19 @@ export default function CurriculumPickerStep({
     );
   };
 
+  const handleLibraryUpdated = (updated: CurriculumWithItems) => {
+    setCurricula((current) =>
+      current.map((entry) => (entry.id === updated.id ? updated : entry))
+    );
+    setDetailCurriculum(updated);
+  };
+
+  const handleSelectFromDetail = (curriculum: CurriculumWithItems) => {
+    setDetailCurriculum(null);
+    confirmAndStageLibrary(curriculum);
+    onBack();
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.headerRow}>
@@ -194,29 +245,63 @@ export default function CurriculumPickerStep({
                   </Text>
                 </View>
               ) : (
-                curricula.map((curriculum) => {
-                  const selected = isCardSelected(curriculum);
-                  return (
-                    <TouchableOpacity
-                      key={curriculum.id}
-                      style={[styles.entryCard, selected && styles.entryCardSelected]}
-                      onPress={() => confirmAndStageLibrary(curriculum)}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.entryName}>{curriculum.name}</Text>
-                      <Text style={styles.entryMeta}>
-                        {[curriculum.publisher, curriculum.edition, curriculum.level]
-                          .filter(Boolean)
-                          .join(' · ')}
+                <>
+                  <View style={styles.searchRow}>
+                    <Search size={18} color={Colors.ui.textLight} />
+                    <TextInput
+                      style={styles.searchInput}
+                      value={searchQuery}
+                      onChangeText={setSearchQuery}
+                      placeholder="Search curricula"
+                      placeholderTextColor={Colors.ui.textLight}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                    />
+                    {searchQuery.length > 0 ? (
+                      <TouchableOpacity
+                        onPress={() => setSearchQuery('')}
+                        activeOpacity={0.7}
+                        accessibilityLabel="Clear search"
+                      >
+                        <X size={18} color={Colors.ui.textLight} />
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
+
+                  {searchQuery.trim() && filteredCurricula.length === 0 ? (
+                    <View style={styles.emptyCard}>
+                      <Text style={styles.emptyText}>
+                        No results for &apos;{searchQuery.trim()}&apos;
                       </Text>
-                      <Text style={styles.entryCount}>
-                        {curriculum.items.length} lesson
-                        {curriculum.items.length === 1 ? '' : 's'}
-                      </Text>
-                      {selected ? <Text style={styles.selectedBadge}>Selected</Text> : null}
-                    </TouchableOpacity>
-                  );
-                })
+                    </View>
+                  ) : (
+                    filteredCurricula.map((curriculum) => {
+                      const selected = isCardSelected(curriculum);
+                      return (
+                        <TouchableOpacity
+                          key={curriculum.id}
+                          style={[styles.entryCard, selected && styles.entryCardSelected]}
+                          onPress={() => setDetailCurriculum(curriculum)}
+                          onLongPress={() => confirmAndStageLibrary(curriculum)}
+                          delayLongPress={400}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={styles.entryName}>{curriculum.name}</Text>
+                          <Text style={styles.entryMeta}>
+                            {[curriculum.publisher, curriculum.edition, curriculum.level]
+                              .filter(Boolean)
+                              .join(' · ')}
+                          </Text>
+                          <Text style={styles.entryCount}>
+                            {curriculum.items.length} lesson
+                            {curriculum.items.length === 1 ? '' : 's'}
+                          </Text>
+                          {selected ? <Text style={styles.selectedBadge}>Selected</Text> : null}
+                        </TouchableOpacity>
+                      );
+                    })
+                  )}
+                </>
               )}
             </ScrollView>
           ) : null}
@@ -259,6 +344,19 @@ export default function CurriculumPickerStep({
         onClose={() => setShowAddSheet(false)}
         onComplete={handleScanComplete}
       />
+
+      {detailCurriculum ? (
+        <CurriculumLibraryDetailSheet
+          visible
+          curriculum={detailCurriculum}
+          studentId={studentId}
+          studentName={studentName}
+          subject={subject}
+          onClose={() => setDetailCurriculum(null)}
+          onSelect={handleSelectFromDetail}
+          onLibraryUpdated={handleLibraryUpdated}
+        />
+      ) : null}
     </View>
   );
 }
@@ -313,6 +411,23 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingBottom: 8,
+  },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: Colors.background.card,
+    borderWidth: 1,
+    borderColor: Colors.ui.border,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    marginBottom: 16,
+  },
+  searchInput: {
+    flex: 1,
+    paddingVertical: 12,
+    ...Typography.body,
+    color: Colors.ui.text,
   },
   footer: {
     marginTop: 8,
