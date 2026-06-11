@@ -244,30 +244,30 @@ async function replaceLibraryItems(
   }
 }
 
-async function lookupLibraryByName(trimmedName: string): Promise<CurriculumWithItems | null> {
-  const { data, error } = await supabase
-    .from('curriculum_library')
-    .select('*, curriculum_library_items(*)')
-    .ilike('name', trimmedName)
-    .maybeSingle();
-
-  if (error || !data) {
-    if (error) {
-      console.error('Failed to look up curriculum library entry:', error);
-    }
-    return null;
-  }
-
-  const { curriculum_library_items: rawItems, ...libraryRow } = data as typeof data & {
-    curriculum_library_items: CurriculumWithItems['items'];
-  };
-
+function mapLibraryRowToCurriculum(
+  data: Record<string, unknown> & { curriculum_library_items?: CurriculumWithItems['items'] }
+): CurriculumWithItems {
+  const { curriculum_library_items: rawItems, ...libraryRow } = data;
   const items = [...(rawItems ?? [])].sort((a, b) => a.order_index - b.order_index);
 
   return {
-    ...libraryRow,
+    ...(libraryRow as CurriculumWithItems),
     items,
   };
+}
+
+async function searchLibraryByName(trimmedName: string): Promise<CurriculumWithItems[]> {
+  const { data, error } = await supabase
+    .from('curriculum_library')
+    .select('*, curriculum_library_items(*)')
+    .ilike('name', `%${trimmedName}%`);
+
+  if (error) {
+    console.error('Failed to look up curriculum library entries:', error);
+    return [];
+  }
+
+  return (data ?? []).map((row) => mapLibraryRowToCurriculum(row));
 }
 
 async function shareToCommunityLibrary(
@@ -340,7 +340,8 @@ export default function AddCurriculumSheet({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
   const [saving, setSaving] = useState(false);
-  const [existingMatch, setExistingMatch] = useState<CurriculumWithItems | null>(null);
+  const [exactMatch, setExactMatch] = useState<CurriculumWithItems | null>(null);
+  const [partialMatches, setPartialMatches] = useState<CurriculumWithItems[]>([]);
   const [checkingDuplicate, setCheckingDuplicate] = useState(false);
   const [personalPlanOnly, setPersonalPlanOnly] = useState(false);
 
@@ -359,7 +360,8 @@ export default function AddCurriculumSheet({
     setEditingId(null);
     setEditingTitle('');
     setSaving(false);
-    setExistingMatch(null);
+    setExactMatch(null);
+    setPartialMatches([]);
     setCheckingDuplicate(false);
     setPersonalPlanOnly(false);
   };
@@ -453,37 +455,53 @@ export default function AddCurriculumSheet({
 
   const handleNameChange = (value: string) => {
     setCurriculumName(value);
-    setExistingMatch(null);
+    setExactMatch(null);
+    setPartialMatches([]);
     setPersonalPlanOnly(false);
   };
 
   const handleNameBlur = async () => {
     const trimmedName = curriculumName.trim();
     if (!trimmedName) {
-      setExistingMatch(null);
+      setExactMatch(null);
+      setPartialMatches([]);
       return;
     }
 
     setCheckingDuplicate(true);
     try {
-      const match = await lookupLibraryByName(trimmedName);
-      setExistingMatch(match);
+      const results = await searchLibraryByName(trimmedName);
+      const lower = trimmedName.toLowerCase();
+      const exact = results.find((entry) => entry.name.toLowerCase() === lower) ?? null;
+      const partial = results
+        .filter((entry) => entry.name.toLowerCase() !== lower)
+        .slice(0, 5);
+
+      setExactMatch(exact);
+      setPartialMatches(partial);
     } finally {
       setCheckingDuplicate(false);
     }
   };
 
-  const handleUseExisting = () => {
-    if (!existingMatch) return;
-    const match = existingMatch;
+  const handleOpenExisting = (curriculum: CurriculumWithItems) => {
     resetForm();
     onClose();
-    onOpenExisting?.(match);
+    onOpenExisting?.(curriculum);
+  };
+
+  const handleUseExisting = () => {
+    if (!exactMatch) return;
+    handleOpenExisting(exactMatch);
+  };
+
+  const handleDismissPartialSuggestions = () => {
+    setPartialMatches([]);
   };
 
   const handleScanAnywayPersonal = () => {
     setPersonalPlanOnly(true);
-    setExistingMatch(null);
+    setExactMatch(null);
   };
 
   const requestPermission = async (type: 'camera' | 'library') => {
@@ -729,7 +747,7 @@ export default function AddCurriculumSheet({
           </View>
         ) : null}
 
-        {existingMatch && !personalPlanOnly ? (
+        {exactMatch && !personalPlanOnly ? (
           <View style={styles.duplicateWarning}>
             <Text style={styles.duplicateWarningText}>
               This curriculum is already in the library.
@@ -748,6 +766,40 @@ export default function AddCurriculumSheet({
             >
               <Text style={styles.duplicateSecondaryActionText}>
                 Scan anyway — add as personal plan
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
+        {!exactMatch && partialMatches.length > 0 ? (
+          <View style={styles.duplicateWarning}>
+            <Text style={styles.duplicateWarningText}>
+              Similar curricula already in library:
+            </Text>
+            {partialMatches.map((entry) => (
+              <View key={entry.id} style={styles.partialMatchRow}>
+                <View style={styles.partialMatchInfo}>
+                  <Text style={styles.partialMatchName}>{entry.name}</Text>
+                  {entry.level ? (
+                    <Text style={styles.partialMatchLevel}>{entry.level}</Text>
+                  ) : null}
+                </View>
+                <TouchableOpacity
+                  style={styles.partialMatchAction}
+                  onPress={() => handleOpenExisting(entry)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.partialMatchActionText}>Use this →</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+            <TouchableOpacity
+              style={styles.duplicateSecondaryAction}
+              onPress={handleDismissPartialSuggestions}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.duplicateSecondaryActionText}>
+                None of these — continue adding new
               </Text>
             </TouchableOpacity>
           </View>
@@ -1103,6 +1155,39 @@ const styles = StyleSheet.create({
     ...Typography.bodySmall,
     color: Colors.brand[700],
     textDecorationLine: 'underline',
+  },
+  partialMatchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingVertical: 6,
+    borderTopWidth: 1,
+    borderTopColor: Colors.brand[200],
+  },
+  partialMatchInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  partialMatchName: {
+    ...Typography.bodySmall,
+    color: Colors.brand[800],
+    fontWeight: '600',
+  },
+  partialMatchLevel: {
+    ...Typography.caption,
+    color: Colors.brand[700],
+  },
+  partialMatchAction: {
+    backgroundColor: Colors.brand[500],
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  partialMatchActionText: {
+    ...Typography.caption,
+    color: 'white',
+    fontWeight: '600',
   },
   instructionCard: {
     backgroundColor: Colors.brand[50],
