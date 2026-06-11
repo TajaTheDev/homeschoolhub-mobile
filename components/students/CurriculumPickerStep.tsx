@@ -343,6 +343,10 @@ export default function CurriculumPickerStep({
         subject={subject}
         onClose={() => setShowAddSheet(false)}
         onComplete={handleScanComplete}
+        onOpenExisting={(curriculum) => {
+          setShowAddSheet(false);
+          setDetailCurriculum(curriculum);
+        }}
       />
 
       {detailCurriculum ? (

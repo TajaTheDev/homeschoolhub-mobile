@@ -359,13 +359,29 @@ export default function CurriculumLibraryDetailSheet({
     setTocPages((current) => current.filter((_, i) => i !== index));
   };
 
+  const confirmReplaceIfNeeded = (titles: string[]) => {
+    if (items.length === 0) {
+      void handleLibrarySaved(titles);
+      return;
+    }
+
+    Alert.alert(
+      'Replace lessons?',
+      `This will replace ${items.length} existing lessons for ${curriculum.name}. Continue?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Replace', onPress: () => void handleLibrarySaved(titles) },
+      ]
+    );
+  };
+
   const handleSaveReviewToLibrary = async () => {
     const titles = reviewItems.map((item) => item.title.trim()).filter(Boolean);
     if (titles.length === 0) {
       Alert.alert('No lessons', 'Add at least one lesson before saving.');
       return;
     }
-    await handleLibrarySaved(titles);
+    confirmReplaceIfNeeded(titles);
   };
 
   const handleSavePasteToLibrary = async () => {
@@ -374,7 +390,7 @@ export default function CurriculumLibraryDetailSheet({
       Alert.alert('Nothing to save', 'Paste one lesson title per line.');
       return;
     }
-    await handleLibrarySaved(titles);
+    confirmReplaceIfNeeded(titles);
   };
 
   const handleAddReviewLesson = () => {

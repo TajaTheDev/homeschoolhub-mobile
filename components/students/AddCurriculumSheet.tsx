@@ -11,6 +11,7 @@ import {
   type WorkingItem,
 } from '@/lib/lessonPlanUtils';
 import { supabase } from '@/lib/supabase/client';
+import type { CurriculumWithItems } from '@/store/lessonPlanStore';
 import { Image } from 'expo-image';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImageManipulator from 'expo-image-manipulator';
@@ -41,6 +42,7 @@ type AddCurriculumSheetProps = {
   subject: string;
   onClose: () => void;
   onComplete: (staged: StagedScanCurriculum) => void;
+  onOpenExisting?: (curriculum: CurriculumWithItems) => void;
 };
 
 type SheetStep = 'capture' | 'extracting' | 'extract_failed' | 'review' | 'manual';
@@ -242,6 +244,32 @@ async function replaceLibraryItems(
   }
 }
 
+async function lookupLibraryByName(trimmedName: string): Promise<CurriculumWithItems | null> {
+  const { data, error } = await supabase
+    .from('curriculum_library')
+    .select('*, curriculum_library_items(*)')
+    .ilike('name', trimmedName)
+    .maybeSingle();
+
+  if (error || !data) {
+    if (error) {
+      console.error('Failed to look up curriculum library entry:', error);
+    }
+    return null;
+  }
+
+  const { curriculum_library_items: rawItems, ...libraryRow } = data as typeof data & {
+    curriculum_library_items: CurriculumWithItems['items'];
+  };
+
+  const items = [...(rawItems ?? [])].sort((a, b) => a.order_index - b.order_index);
+
+  return {
+    ...libraryRow,
+    items,
+  };
+}
+
 async function shareToCommunityLibrary(
   curriculumName: string,
   subject: string,
@@ -298,6 +326,7 @@ export default function AddCurriculumSheet({
   subject,
   onClose,
   onComplete,
+  onOpenExisting,
 }: AddCurriculumSheetProps) {
   const [step, setStep] = useState<SheetStep>('capture');
   const [curriculumName, setCurriculumName] = useState('');
@@ -311,6 +340,9 @@ export default function AddCurriculumSheet({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
   const [saving, setSaving] = useState(false);
+  const [existingMatch, setExistingMatch] = useState<CurriculumWithItems | null>(null);
+  const [checkingDuplicate, setCheckingDuplicate] = useState(false);
+  const [personalPlanOnly, setPersonalPlanOnly] = useState(false);
 
   const isBusy = saving || uploadingPage || step === 'extracting';
 
@@ -327,6 +359,9 @@ export default function AddCurriculumSheet({
     setEditingId(null);
     setEditingTitle('');
     setSaving(false);
+    setExistingMatch(null);
+    setCheckingDuplicate(false);
+    setPersonalPlanOnly(false);
   };
 
   const handleClose = () => {
@@ -397,9 +432,11 @@ export default function AddCurriculumSheet({
 
       await saveLessonPlanItems(planId, titles);
 
-      const shouldShare = await promptCommunityShare(titles);
-      if (shouldShare) {
-        await shareToCommunityLibrary(curriculumName.trim(), subject, titles);
+      if (!personalPlanOnly) {
+        const shouldShare = await promptCommunityShare(titles);
+        if (shouldShare) {
+          await shareToCommunityLibrary(curriculumName.trim(), subject, titles);
+        }
       }
 
       finishWithSuccess(curriculumName.trim(), getTocImagePathJson(), titles.length);
@@ -412,6 +449,41 @@ export default function AddCurriculumSheet({
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleNameChange = (value: string) => {
+    setCurriculumName(value);
+    setExistingMatch(null);
+    setPersonalPlanOnly(false);
+  };
+
+  const handleNameBlur = async () => {
+    const trimmedName = curriculumName.trim();
+    if (!trimmedName) {
+      setExistingMatch(null);
+      return;
+    }
+
+    setCheckingDuplicate(true);
+    try {
+      const match = await lookupLibraryByName(trimmedName);
+      setExistingMatch(match);
+    } finally {
+      setCheckingDuplicate(false);
+    }
+  };
+
+  const handleUseExisting = () => {
+    if (!existingMatch) return;
+    const match = existingMatch;
+    resetForm();
+    onClose();
+    onOpenExisting?.(match);
+  };
+
+  const handleScanAnywayPersonal = () => {
+    setPersonalPlanOnly(true);
+    setExistingMatch(null);
   };
 
   const requestPermission = async (type: 'camera' | 'library') => {
@@ -643,11 +715,43 @@ export default function AddCurriculumSheet({
         <TextInput
           style={styles.input}
           value={curriculumName}
-          onChangeText={setCurriculumName}
+          onChangeText={handleNameChange}
+          onBlur={handleNameBlur}
           placeholder="e.g. Saxon Math 5/4"
           placeholderTextColor={Colors.ui.textLight}
           editable={!isBusy}
         />
+
+        {checkingDuplicate ? (
+          <View style={styles.duplicateCheckingRow}>
+            <ActivityIndicator size="small" color={Colors.brand[500]} />
+            <Text style={styles.duplicateCheckingText}>Checking library…</Text>
+          </View>
+        ) : null}
+
+        {existingMatch && !personalPlanOnly ? (
+          <View style={styles.duplicateWarning}>
+            <Text style={styles.duplicateWarningText}>
+              This curriculum is already in the library.
+            </Text>
+            <TouchableOpacity
+              style={styles.duplicatePrimaryAction}
+              onPress={handleUseExisting}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.duplicatePrimaryActionText}>Use existing →</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.duplicateSecondaryAction}
+              onPress={handleScanAnywayPersonal}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.duplicateSecondaryActionText}>
+                Scan anyway — add as personal plan
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
 
         <View style={styles.instructionCard}>
           <Text style={styles.instructionTitle}>How to photograph your TOC</Text>
@@ -953,6 +1057,52 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: Colors.ui.text,
     marginBottom: 16,
+  },
+  duplicateCheckingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: -8,
+    marginBottom: 16,
+  },
+  duplicateCheckingText: {
+    ...Typography.bodySmall,
+    color: Colors.ui.textLight,
+  },
+  duplicateWarning: {
+    backgroundColor: Colors.brand[50],
+    borderWidth: 1,
+    borderColor: Colors.brand[200],
+    borderRadius: 12,
+    padding: 14,
+    marginTop: -8,
+    marginBottom: 16,
+    gap: 10,
+  },
+  duplicateWarningText: {
+    ...Typography.bodySmall,
+    color: Colors.brand[800],
+    lineHeight: 20,
+  },
+  duplicatePrimaryAction: {
+    alignSelf: 'flex-start',
+    backgroundColor: Colors.brand[500],
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  duplicatePrimaryActionText: {
+    ...Typography.label,
+    color: 'white',
+  },
+  duplicateSecondaryAction: {
+    alignSelf: 'flex-start',
+    paddingVertical: 4,
+  },
+  duplicateSecondaryActionText: {
+    ...Typography.bodySmall,
+    color: Colors.brand[700],
+    textDecorationLine: 'underline',
   },
   instructionCard: {
     backgroundColor: Colors.brand[50],
