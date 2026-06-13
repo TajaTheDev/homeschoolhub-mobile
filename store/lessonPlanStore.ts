@@ -339,7 +339,8 @@ async function attachLibraryItems(
     .from('curriculum_library_items')
     .select('*')
     .in('curriculum_id', curriculumIds)
-    .order('order_index', { ascending: true });
+    .order('order_index', { ascending: true })
+    .limit(99999);
 
   if (itemsError) {
     throw new Error(itemsError.message);

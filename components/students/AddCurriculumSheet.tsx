@@ -34,7 +34,7 @@ import {
 } from 'react-native';
 
 const TOC_BUCKET = 'curriculum-toc';
-const MAX_TOC_PAGES = 10;
+const MAX_TOC_PAGES = 20;
 
 type AddCurriculumSheetProps = {
   visible: boolean;

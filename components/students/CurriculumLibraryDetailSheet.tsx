@@ -26,7 +26,7 @@ import {
 } from 'react-native';
 
 const TOC_BUCKET = 'curriculum-toc';
-const MAX_TOC_PAGES = 10;
+const MAX_TOC_PAGES = 20;
 
 type SheetMode =
   | 'detail'
@@ -197,7 +197,8 @@ export default function CurriculumLibraryDetailSheet({
   onLibraryUpdated,
 }: CurriculumLibraryDetailSheetProps) {
   const [mode, setMode] = useState<SheetMode>('detail');
-  const [items, setItems] = useState<CurriculumLibraryItem[]>(curriculum.items);
+  const [items, setItems] = useState<CurriculumLibraryItem[]>([]);
+  const [loadingItems, setLoadingItems] = useState(false);
   const [tocPages, setTocPages] = useState<TocPagePhoto[]>([]);
   const [uploadingPage, setUploadingPage] = useState(false);
   const [reviewItems, setReviewItems] = useState<WorkingItem[]>([]);
@@ -210,11 +211,36 @@ export default function CurriculumLibraryDetailSheet({
   const isBusy = saving || uploadingPage || mode === 'scan_extracting';
 
   useEffect(() => {
-    if (visible) {
-      setItems(curriculum.items);
-      setMode('detail');
-    }
-  }, [visible, curriculum.id, curriculum.items]);
+    if (!visible) return;
+
+    setMode('detail');
+    let cancelled = false;
+
+    const loadItems = async () => {
+      setLoadingItems(true);
+      try {
+        const fetched = await fetchLibraryItems(curriculum.id);
+        if (!cancelled) {
+          setItems(fetched);
+        }
+      } catch (error) {
+        console.error('Failed to load library items:', error);
+        if (!cancelled) {
+          setItems([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingItems(false);
+        }
+      }
+    };
+
+    void loadItems();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, curriculum.id]);
 
   const resetScanState = () => {
     setTocPages([]);
@@ -476,12 +502,19 @@ export default function CurriculumLibraryDetailSheet({
         {[curriculum.publisher, curriculum.level].filter(Boolean).join(' · ') || 'Community library'}
       </Text>
       <Text style={styles.countLabel}>
-        {sortedItems.length === 0
-          ? 'No lessons added yet'
-          : `${sortedItems.length} lesson${sortedItems.length === 1 ? '' : 's'}`}
+        {loadingItems
+          ? 'Loading lessons…'
+          : sortedItems.length === 0
+            ? 'No lessons added yet'
+            : `${sortedItems.length} lesson${sortedItems.length === 1 ? '' : 's'}`}
       </Text>
 
-      {sortedItems.length > 0 ? (
+      {loadingItems ? (
+        <View style={styles.loadingItemsRow}>
+          <ActivityIndicator color={Colors.brand[500]} />
+          <Text style={styles.loadingItemsText}>Loading lessons…</Text>
+        </View>
+      ) : sortedItems.length > 0 ? (
         <View style={[styles.listCard, styles.lessonListCard]}>
           <ScrollView nestedScrollEnabled showsVerticalScrollIndicator>
             {sortedItems.map((item, index) => (
@@ -820,6 +853,18 @@ const styles = StyleSheet.create({
     ...Typography.label,
     color: Colors.brand[700],
     marginBottom: 12,
+  },
+  loadingItemsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingVertical: 24,
+    marginBottom: 16,
+  },
+  loadingItemsText: {
+    ...Typography.bodySmall,
+    color: Colors.ui.textLight,
   },
   listCard: {
     backgroundColor: Colors.background.card,

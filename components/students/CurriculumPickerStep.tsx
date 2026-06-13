@@ -36,6 +36,22 @@ type CurriculumPickerStepProps = {
   onBack: () => void;
 };
 
+async function fetchFullCurriculumItems(
+  curriculumId: string
+): Promise<CurriculumWithItems['items']> {
+  const { data, error } = await supabase
+    .from('curriculum_library_items')
+    .select('*')
+    .eq('curriculum_id', curriculumId)
+    .order('order_index', { ascending: true });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data ?? [];
+}
+
 export default function CurriculumPickerStep({
   studentId,
   subject,
@@ -192,6 +208,16 @@ export default function CurriculumPickerStep({
     onBack();
   };
 
+  const openDetailCurriculum = async (curriculum: CurriculumWithItems) => {
+    try {
+      const items = await fetchFullCurriculumItems(curriculum.id);
+      setDetailCurriculum({ ...curriculum, items });
+    } catch (error) {
+      console.error('Failed to load curriculum items:', error);
+      Alert.alert('Could not load lessons', 'Please try again.');
+    }
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.headerRow}>
@@ -281,7 +307,7 @@ export default function CurriculumPickerStep({
                         <TouchableOpacity
                           key={curriculum.id}
                           style={[styles.entryCard, selected && styles.entryCardSelected]}
-                          onPress={() => setDetailCurriculum(curriculum)}
+                          onPress={() => void openDetailCurriculum(curriculum)}
                           onLongPress={() => confirmAndStageLibrary(curriculum)}
                           delayLongPress={400}
                           activeOpacity={0.7}
@@ -345,7 +371,7 @@ export default function CurriculumPickerStep({
         onComplete={handleScanComplete}
         onOpenExisting={(curriculum) => {
           setShowAddSheet(false);
-          setDetailCurriculum(curriculum);
+          void openDetailCurriculum(curriculum);
         }}
       />
 
