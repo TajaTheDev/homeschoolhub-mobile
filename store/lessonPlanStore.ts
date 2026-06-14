@@ -18,6 +18,7 @@ export type CurriculumLibraryItem = Tables<'curriculum_library_items'>;
 
 export type CurriculumWithItems = CurriculumLibrary & {
   items: CurriculumLibraryItem[];
+  itemCount?: number;
 };
 
 export type NextLessonResult = {
@@ -353,8 +354,18 @@ async function attachLibraryItems(
     itemsByCurriculum.set(item.curriculum_id, existing);
   }
 
+  const { data: counts } = await supabase.rpc('get_curriculum_item_counts', {
+    curriculum_ids: curriculumIds,
+  });
+
+  const countMap: Record<string, number> = {};
+  for (const row of counts ?? []) {
+    countMap[row.curriculum_id] = row.item_count;
+  }
+
   return curricula.map((curriculum) => ({
     ...curriculum,
     items: itemsByCurriculum.get(curriculum.id) ?? [],
+    itemCount: countMap[curriculum.id] ?? 0,
   }));
 }

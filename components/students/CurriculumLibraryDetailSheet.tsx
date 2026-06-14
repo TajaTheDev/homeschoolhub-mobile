@@ -218,14 +218,19 @@ export default function CurriculumLibraryDetailSheet({
 
     const loadItems = async () => {
       setLoadingItems(true);
+      console.log('fetchLibraryItems called, curriculum.id:', curriculum.id);
       try {
         const fetched = await fetchLibraryItems(curriculum.id);
+        console.log('fetchLibraryItems returned', fetched.length, 'items');
         if (!cancelled) {
+          console.log('setItems called with', fetched.length, 'items');
           setItems(fetched);
         }
       } catch (error) {
+        console.log('fetchLibraryItems error:', error);
         console.error('Failed to load library items:', error);
         if (!cancelled) {
+          console.log('setItems called with', 0, 'items');
           setItems([]);
         }
       } finally {

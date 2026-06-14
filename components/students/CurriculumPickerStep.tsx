@@ -319,8 +319,8 @@ export default function CurriculumPickerStep({
                               .join(' · ')}
                           </Text>
                           <Text style={styles.entryCount}>
-                            {curriculum.items.length} lesson
-                            {curriculum.items.length === 1 ? '' : 's'}
+                            {curriculum.itemCount ?? curriculum.items.length} lesson
+                            {(curriculum.itemCount ?? curriculum.items.length) === 1 ? '' : 's'}
                           </Text>
                           {selected ? <Text style={styles.selectedBadge}>Selected</Text> : null}
                         </TouchableOpacity>
