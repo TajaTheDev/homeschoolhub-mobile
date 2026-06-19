@@ -10,6 +10,10 @@ import Colors from '@/constants/Colors';
 import { useSnackbar } from '@/contexts/SnackbarContext';
 import { getSubjectColor } from '@/constants/Subjects';
 import Typography from '@/constants/Typography';
+import {
+  fetchAllMergedCompletedLessons,
+  fetchCurriculumItemCountsBySubject,
+} from '@/lib/fetchPdfExportData';
 import * as notificationService from '@/services/notificationService';
 import { useLessonStore } from '@/store/lessonStore';
 import { useScheduleStore } from '@/store/scheduleStore';
@@ -331,6 +335,12 @@ export default function ProgressScreen() {
   const [detailModalTitle, setDetailModalTitle] = useState('');
   const [detailModalLessons, setDetailModalLessons] = useState<Lesson[]>([]);
   const [showSubjectsModal, setShowSubjectsModal] = useState(false);
+  const [curriculumCountsBySubject, setCurriculumCountsBySubject] = useState<
+    Record<string, number>
+  >({});
+  const [mergedCompletedBySubject, setMergedCompletedBySubject] = useState<
+    Record<string, number>
+  >({});
   const contentFadeAnim = useRef(new Animated.Value(0)).current;
   // Track previous goal completion status to detect when goals are newly reached
   const previousGoalStatus = useRef<Record<string, number>>({});
@@ -367,6 +377,47 @@ export default function ProgressScreen() {
       setSelectedStudentId(students[0].id);
     }
   }, [students.length, selectedStudentId]);
+
+  useEffect(() => {
+    if (!selectedStudentId) {
+      setCurriculumCountsBySubject({});
+      setMergedCompletedBySubject({});
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadSubjectProgress = async () => {
+      try {
+        const [mergedLessons, curriculumCounts] = await Promise.all([
+          fetchAllMergedCompletedLessons(selectedStudentId),
+          fetchCurriculumItemCountsBySubject(selectedStudentId),
+        ]);
+
+        if (cancelled) return;
+
+        const completedBySubject: Record<string, number> = {};
+        mergedLessons.forEach((row) => {
+          completedBySubject[row.subject] = (completedBySubject[row.subject] ?? 0) + 1;
+        });
+
+        setMergedCompletedBySubject(completedBySubject);
+        setCurriculumCountsBySubject(curriculumCounts);
+      } catch (error) {
+        console.error('Failed to load subject progress data:', error);
+        if (!cancelled) {
+          setMergedCompletedBySubject({});
+          setCurriculumCountsBySubject({});
+        }
+      }
+    };
+
+    void loadSubjectProgress();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedStudentId]);
 
   // Calculate stats using useMemo
   const studentLessons = useMemo(() => {
@@ -739,11 +790,13 @@ export default function ProgressScreen() {
               (l) => l.subject === subjectRecord.subject
             );
 
-            // Count total and completed
-            const totalCount = subjectLessons.length;
-            const completedCount = subjectLessons.filter((l) => l.completed).length;
-            const completionPercentage =
-              totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+            const curriculumCount =
+              curriculumCountsBySubject[subjectRecord.subject] ?? null;
+            const completedCount = mergedCompletedBySubject[subjectRecord.subject] ?? 0;
+            const curriculumCompletionPercentage =
+              curriculumCount && curriculumCount > 0
+                ? Math.round((completedCount / curriculumCount) * 100)
+                : 0;
 
             // Count lessons completed this week (past 7 days)
             const weekAgo = new Date();
@@ -810,8 +863,10 @@ export default function ProgressScreen() {
                 {/* Lesson Stats */}
                 <View style={styles.statsRow}>
                   <View style={styles.stat}>
-                    <Text style={styles.subjectStatValue}>{totalCount}</Text>
-                    <Text style={styles.subjectStatLabel}>Total</Text>
+                    <Text style={styles.subjectStatValue}>
+                      {curriculumCount ?? '—'}
+                    </Text>
+                    <Text style={styles.subjectStatLabel}>Curriculum</Text>
                   </View>
 
                   <View style={styles.stat}>
@@ -827,16 +882,19 @@ export default function ProgressScreen() {
                   </View>
                 </View>
 
-                {/* Completion Progress Bar */}
-                <View style={styles.progressSection}>
-                  <Text style={styles.progressLabel}>Completion</Text>
-                  <ProgressBar percentage={completionPercentage} color={subjectColor} />
-                  {totalCount > completedCount && (
+                {curriculumCount != null && curriculumCount > 0 ? (
+                  <View style={styles.progressSection}>
+                    <Text style={styles.progressLabel}>Completion</Text>
+                    <ProgressBar
+                      percentage={curriculumCompletionPercentage}
+                      color={subjectColor}
+                    />
                     <Text style={styles.incompleteText}>
-                      {totalCount - completedCount} lesson{totalCount - completedCount !== 1 ? 's' : ''} remaining
+                      {completedCount} of {curriculumCount} complete ·{' '}
+                      {curriculumCompletionPercentage}%
                     </Text>
-                  )}
-                </View>
+                  </View>
+                ) : null}
 
                 {/* Goal Section (if goal is set) */}
                 {goal && goal > 0 ? (

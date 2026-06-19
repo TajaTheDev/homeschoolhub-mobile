@@ -203,6 +203,126 @@ async function fetchCompletedManualLessons(
   return Array.from(byLessonId.values());
 }
 
+async function fetchAllCompletedManualLessons(studentId: string): Promise<ManualLessonRow[]> {
+  const byLessonId = new Map<string, ManualLessonRow>();
+
+  const { data: junctionData, error: junctionError } = await supabase
+    .from('lessons')
+    .select(
+      'id, subject, title, date, grade_value, grade_type, lesson_students!inner(student_id)'
+    )
+    .eq('lesson_students.student_id', studentId)
+    .eq('completed', true);
+
+  if (junctionError) {
+    throw new Error(junctionError.message);
+  }
+
+  (junctionData ?? []).forEach((lesson) => {
+    byLessonId.set(lesson.id, {
+      subject: lesson.subject,
+      date: lesson.date,
+      title: lesson.title,
+      grade: formatLessonGrade(lesson.grade_value, lesson.grade_type),
+    });
+  });
+
+  const { data: directData, error: directError } = await supabase
+    .from('lessons')
+    .select('id, subject, title, date, grade_value, grade_type')
+    .eq('student_id', studentId)
+    .eq('completed', true);
+
+  if (directError) {
+    throw new Error(directError.message);
+  }
+
+  (directData ?? []).forEach((lesson) => {
+    if (byLessonId.has(lesson.id)) return;
+    byLessonId.set(lesson.id, {
+      subject: lesson.subject,
+      date: lesson.date,
+      title: lesson.title,
+      grade: formatLessonGrade(lesson.grade_value, lesson.grade_type),
+    });
+  });
+
+  return Array.from(byLessonId.values());
+}
+
+/**
+ * Fetches all-time merged completed lessons for a student.
+ * Matches export logic: lesson_completions (non-planned) + manual lessons, deduped by subject|date.
+ */
+export async function fetchAllMergedCompletedLessons(
+  studentId: string
+): Promise<MergedCompletedLesson[]> {
+  const { data: completionsRaw, error } = await supabase
+    .from('lesson_completions')
+    .select('*')
+    .eq('student_id', studentId)
+    .neq('status', 'planned')
+    .order('date', { ascending: true });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const manualLessons = await fetchAllCompletedManualLessons(studentId);
+  return mergeCompletedLessons(completionsRaw ?? [], manualLessons);
+}
+
+/**
+ * Returns lesson_plan_items count per subject when a plan exists with at least one item.
+ * Subjects without a curriculum sequence are omitted from the result.
+ */
+export async function fetchCurriculumItemCountsBySubject(
+  studentId: string
+): Promise<Record<string, number>> {
+  const { data: plans, error: plansError } = await supabase
+    .from('lesson_plans')
+    .select('id, subject')
+    .eq('student_id', studentId);
+
+  if (plansError) {
+    throw new Error(plansError.message);
+  }
+
+  if (!plans?.length) {
+    return {};
+  }
+
+  const { data: items, error: itemsError } = await supabase
+    .from('lesson_plan_items')
+    .select('lesson_plan_id')
+    .in(
+      'lesson_plan_id',
+      plans.map((plan) => plan.id)
+    );
+
+  if (itemsError) {
+    throw new Error(itemsError.message);
+  }
+
+  const countsByPlanId = new Map<string, number>();
+  (items ?? []).forEach((item) => {
+    countsByPlanId.set(
+      item.lesson_plan_id,
+      (countsByPlanId.get(item.lesson_plan_id) ?? 0) + 1
+    );
+  });
+
+  const countsBySubject: Record<string, number> = {};
+  plans.forEach((plan) => {
+    const count = countsByPlanId.get(plan.id) ?? 0;
+    if (count > 0) {
+      countsBySubject[plan.subject] = (countsBySubject[plan.subject] ?? 0) + count;
+    }
+  });
+
+  return countsBySubject;
+}
+
 function toCompletionRowCompat(merged: MergedCompletedLesson): LessonCompletionRow {
   return {
     subject: merged.subject,
