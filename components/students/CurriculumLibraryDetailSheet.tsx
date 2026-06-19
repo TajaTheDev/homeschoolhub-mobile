@@ -1,4 +1,5 @@
 import Button from '@/components/ui/Button';
+import ManualItemList from '@/components/lesson-plan/ManualItemList';
 import Colors from '@/constants/Colors';
 import Typography from '@/constants/Typography';
 import { createWorkingItem, parsePasteLines, type WorkingItem } from '@/lib/lessonPlanUtils';
@@ -34,7 +35,8 @@ type SheetMode =
   | 'scan_extracting'
   | 'scan_extract_failed'
   | 'scan_review'
-  | 'paste';
+  | 'paste'
+  | 'edit';
 
 type TocPagePhoto = {
   id: string;
@@ -206,6 +208,7 @@ export default function CurriculumLibraryDetailSheet({
   const [newLessonTitle, setNewLessonTitle] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
+  const [editItems, setEditItems] = useState<WorkingItem[]>([]);
   const [saving, setSaving] = useState(false);
 
   const isBusy = saving || uploadingPage || mode === 'scan_extracting';
@@ -214,6 +217,7 @@ export default function CurriculumLibraryDetailSheet({
     if (!visible) return;
 
     setMode('detail');
+    setEditItems([]);
     let cancelled = false;
 
     const loadItems = async () => {
@@ -260,6 +264,7 @@ export default function CurriculumLibraryDetailSheet({
     if (isBusy) return;
     resetScanState();
     setPasteText('');
+    setEditItems([]);
     setMode('detail');
     onClose();
   };
@@ -278,6 +283,7 @@ export default function CurriculumLibraryDetailSheet({
       onLibraryUpdated(updated);
       resetScanState();
       setPasteText('');
+      setEditItems([]);
       setMode('detail');
       Alert.alert(
         'Saved',
@@ -424,6 +430,26 @@ export default function CurriculumLibraryDetailSheet({
     confirmReplaceIfNeeded(titles);
   };
 
+  const handleOpenEdit = () => {
+    setEditItems(sortedItems.map((item) => createWorkingItem(item.title)));
+    setMode('edit');
+  };
+
+  const handleDiscardEdit = () => {
+    if (saving) return;
+    setEditItems([]);
+    setMode('detail');
+  };
+
+  const handleSaveEditToLibrary = async () => {
+    const titles = editItems.map((item) => item.title.trim()).filter(Boolean);
+    if (titles.length === 0) {
+      Alert.alert('No lessons', 'Add at least one lesson before saving.');
+      return;
+    }
+    await handleLibrarySaved(titles);
+  };
+
   const handleAddReviewLesson = () => {
     const trimmed = newLessonTitle.trim();
     if (!trimmed) return;
@@ -469,6 +495,8 @@ export default function CurriculumLibraryDetailSheet({
         return 'Could not read TOC';
       case 'paste':
         return 'Paste lessons';
+      case 'edit':
+        return 'Edit lessons';
       default:
         return curriculum.name;
     }
@@ -537,7 +565,7 @@ export default function CurriculumLibraryDetailSheet({
         </View>
       ) : null}
 
-      <Text style={styles.sectionHeading}>Add lessons to library</Text>
+      <Text style={styles.sectionHeading}>Manage lessons</Text>
       <Button
         title="📷 Scan TOC"
         onPress={() => {
@@ -554,6 +582,16 @@ export default function CurriculumLibraryDetailSheet({
         disabled={isBusy}
         style={styles.actionButton}
       />
+      {!loadingItems && sortedItems.length > 0 ? (
+        <TouchableOpacity
+          style={styles.editLessonsButton}
+          onPress={handleOpenEdit}
+          disabled={isBusy}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.editLessonsButtonText}>Edit lessons</Text>
+        </TouchableOpacity>
+      ) : null}
 
       <Text style={styles.sectionHeading}>Use this curriculum</Text>
       <Button
@@ -562,6 +600,38 @@ export default function CurriculumLibraryDetailSheet({
         disabled={isBusy}
         style={styles.actionButton}
       />
+    </>
+  );
+
+  const renderEditMode = () => (
+    <>
+      <Text style={styles.sectionHint}>
+        Reorder, rename, or remove lessons, then save.
+      </Text>
+      <ScrollView
+        style={styles.editListScroll}
+        contentContainerStyle={styles.editListContent}
+        nestedScrollEnabled
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator
+      >
+        <ManualItemList items={editItems} onChange={setEditItems} />
+      </ScrollView>
+      <View style={styles.editFooter}>
+        <Button
+          title={`Save ${editItems.length} lesson${editItems.length === 1 ? '' : 's'} to library`}
+          onPress={handleSaveEditToLibrary}
+          loading={saving}
+          disabled={editItems.length === 0 || saving}
+        />
+        <Button
+          title="Back to details"
+          variant="outline"
+          onPress={handleDiscardEdit}
+          disabled={saving}
+          style={styles.actionButton}
+        />
+      </View>
     </>
   );
 
@@ -796,17 +866,21 @@ export default function CurriculumLibraryDetailSheet({
             </TouchableOpacity>
           </View>
 
-          <ScrollView
-            contentContainerStyle={styles.sheetContent}
-            keyboardShouldPersistTaps="handled"
-          >
-            {mode === 'detail' ? renderDetailMode() : null}
-            {mode === 'scan_capture' ? renderScanCaptureMode() : null}
-            {mode === 'scan_extracting' ? renderScanExtractingMode() : null}
-            {mode === 'scan_extract_failed' ? renderScanFailedMode() : null}
-            {mode === 'scan_review' ? renderScanReviewMode() : null}
-            {mode === 'paste' ? renderPasteMode() : null}
-          </ScrollView>
+          {mode === 'edit' ? (
+            <View style={styles.editModeContainer}>{renderEditMode()}</View>
+          ) : (
+            <ScrollView
+              contentContainerStyle={styles.sheetContent}
+              keyboardShouldPersistTaps="handled"
+            >
+              {mode === 'detail' ? renderDetailMode() : null}
+              {mode === 'scan_capture' ? renderScanCaptureMode() : null}
+              {mode === 'scan_extracting' ? renderScanExtractingMode() : null}
+              {mode === 'scan_extract_failed' ? renderScanFailedMode() : null}
+              {mode === 'scan_review' ? renderScanReviewMode() : null}
+              {mode === 'paste' ? renderPasteMode() : null}
+            </ScrollView>
+          )}
         </View>
       </KeyboardAvoidingView>
     </Modal>
@@ -1095,5 +1169,36 @@ const styles = StyleSheet.create({
   },
   actionButton: {
     marginTop: 12,
+  },
+  editLessonsButton: {
+    alignItems: 'center',
+    paddingVertical: 10,
+    marginTop: 4,
+  },
+  editLessonsButtonText: {
+    ...Typography.bodySmall,
+    color: Colors.brand[600],
+    fontWeight: '600',
+  },
+  editModeContainer: {
+    flexGrow: 1,
+    paddingHorizontal: 24,
+    paddingTop: 24,
+    paddingBottom: 8,
+    minHeight: 280,
+  },
+  editListScroll: {
+    maxHeight: 360,
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  editListContent: {
+    paddingBottom: 8,
+  },
+  editFooter: {
+    paddingTop: 12,
+    paddingBottom: 16,
+    borderTopWidth: 1,
+    borderTopColor: Colors.ui.border,
   },
 });

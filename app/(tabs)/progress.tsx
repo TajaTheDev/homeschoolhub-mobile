@@ -944,20 +944,6 @@ export default function ProgressScreen() {
                     <Text style={styles.setGoalText}>+ Set Goal</Text>
                   </TouchableOpacity>
                 )}
-
-                <TouchableOpacity
-                  style={styles.sequenceLink}
-                  onPress={(e) => {
-                    e.stopPropagation();
-                    if (!selectedStudentId) return;
-                    router.push(
-                      `/lesson-sequence?studentId=${selectedStudentId}&subject=${encodeURIComponent(subjectRecord.subject)}` as any
-                    );
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.sequenceLinkText}>Lesson sequence →</Text>
-                </TouchableOpacity>
               </TouchableOpacity>
             );
           })}
