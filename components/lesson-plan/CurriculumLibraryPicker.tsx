@@ -126,7 +126,8 @@ export default function CurriculumLibraryPicker({
                       .join(' · ') || getCategoryLabel(entry.category)}
                   </Text>
                   <Text style={styles.entryCount}>
-                    {entry.items.length} lesson{entry.items.length === 1 ? '' : 's'}
+                    {entry.itemCount ?? entry.items.length} lesson
+                    {(entry.itemCount ?? entry.items.length) === 1 ? '' : 's'}
                   </Text>
                 </TouchableOpacity>
               ))}

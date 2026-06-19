@@ -5,6 +5,7 @@ import Typography from '@/constants/Typography';
 import { createWorkingItem, parsePasteLines, type WorkingItem } from '@/lib/lessonPlanUtils';
 import { supabase } from '@/lib/supabase/client';
 import type { CurriculumLibraryItem, CurriculumWithItems } from '@/store/lessonPlanStore';
+import { fetchLibraryItemsForCurriculum } from '@/store/lessonPlanStore';
 import { Image } from 'expo-image';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImageManipulator from 'expo-image-manipulator';
@@ -135,20 +136,6 @@ async function extractLessonTitles(storagePaths: string[]): Promise<string[]> {
   return titles.filter((title) => typeof title === 'string' && title.trim().length > 0);
 }
 
-async function fetchLibraryItems(curriculumId: string): Promise<CurriculumLibraryItem[]> {
-  const { data, error } = await supabase
-    .from('curriculum_library_items')
-    .select('*')
-    .eq('curriculum_id', curriculumId)
-    .order('order_index', { ascending: true });
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  return data ?? [];
-}
-
 async function saveTitlesToLibrary(
   curriculumId: string,
   titles: string[]
@@ -185,7 +172,7 @@ async function saveTitlesToLibrary(
     throw new Error(verifyError.message);
   }
 
-  return fetchLibraryItems(curriculumId);
+  return fetchLibraryItemsForCurriculum(curriculumId);
 }
 
 export default function CurriculumLibraryDetailSheet({
@@ -218,23 +205,25 @@ export default function CurriculumLibraryDetailSheet({
 
     setMode('detail');
     setEditItems([]);
+
+    if (curriculum.items.length > 0) {
+      setItems(curriculum.items);
+      setLoadingItems(false);
+      return;
+    }
+
     let cancelled = false;
 
     const loadItems = async () => {
       setLoadingItems(true);
-      console.log('fetchLibraryItems called, curriculum.id:', curriculum.id);
       try {
-        const fetched = await fetchLibraryItems(curriculum.id);
-        console.log('fetchLibraryItems returned', fetched.length, 'items');
+        const fetched = await fetchLibraryItemsForCurriculum(curriculum.id);
         if (!cancelled) {
-          console.log('setItems called with', fetched.length, 'items');
           setItems(fetched);
         }
       } catch (error) {
-        console.log('fetchLibraryItems error:', error);
         console.error('Failed to load library items:', error);
         if (!cancelled) {
-          console.log('setItems called with', 0, 'items');
           setItems([]);
         }
       } finally {
@@ -249,7 +238,7 @@ export default function CurriculumLibraryDetailSheet({
     return () => {
       cancelled = true;
     };
-  }, [visible, curriculum.id]);
+  }, [visible, curriculum.id, curriculum.items]);
 
   const resetScanState = () => {
     setTocPages([]);

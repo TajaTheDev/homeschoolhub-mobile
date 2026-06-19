@@ -2,13 +2,13 @@ import AddCurriculumSheet from '@/components/students/AddCurriculumSheet';
 import CurriculumLibraryDetailSheet from '@/components/students/CurriculumLibraryDetailSheet';
 import Colors from '@/constants/Colors';
 import Typography from '@/constants/Typography';
-import { supabase } from '@/lib/supabase/client';
 import {
   getCategoryLabel,
   getCurriculumCategoryForSubject,
   stageLibraryCurriculum,
   type StagedCurriculumSelection,
 } from '@/lib/lessonPlanUtils';
+import { supabase } from '@/lib/supabase/client';
 import {
   useLessonPlanStore,
   type CurriculumWithItems,
@@ -36,22 +36,6 @@ type CurriculumPickerStepProps = {
   onBack: () => void;
 };
 
-async function fetchFullCurriculumItems(
-  curriculumId: string
-): Promise<CurriculumWithItems['items']> {
-  const { data, error } = await supabase
-    .from('curriculum_library_items')
-    .select('*')
-    .eq('curriculum_id', curriculumId)
-    .order('order_index', { ascending: true });
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  return data ?? [];
-}
-
 export default function CurriculumPickerStep({
   studentId,
   subject,
@@ -60,7 +44,7 @@ export default function CurriculumPickerStep({
   onSkip,
   onBack,
 }: CurriculumPickerStepProps) {
-  const { fetchVerifiedLibrary, fetchPlan } = useLessonPlanStore();
+  const { fetchVerifiedLibrary, fetchPlan, fetchLibraryItems } = useLessonPlanStore();
   const [curricula, setCurricula] = useState<CurriculumWithItems[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -104,6 +88,28 @@ export default function CurriculumPickerStep({
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  const ensureCurriculumItems = useCallback(
+    async (curriculum: CurriculumWithItems): Promise<CurriculumWithItems> => {
+      if (curriculum.items.length > 0) {
+        return curriculum;
+      }
+
+      const items = await fetchLibraryItems(curriculum.id);
+      const withItems: CurriculumWithItems = {
+        ...curriculum,
+        items,
+        itemCount: curriculum.itemCount ?? items.length,
+      };
+
+      setCurricula((current) =>
+        current.map((entry) => (entry.id === curriculum.id ? withItems : entry))
+      );
+
+      return withItems;
+    },
+    [fetchLibraryItems]
+  );
 
   useEffect(() => {
     setSearchQuery('');
@@ -208,10 +214,20 @@ export default function CurriculumPickerStep({
     onBack();
   };
 
+  const handleLongPressStage = async (curriculum: CurriculumWithItems) => {
+    try {
+      const withItems = await ensureCurriculumItems(curriculum);
+      confirmAndStageLibrary(withItems);
+    } catch (error) {
+      console.error('Failed to load curriculum items for staging:', error);
+      Alert.alert('Could not load lessons', 'Please try again.');
+    }
+  };
+
   const openDetailCurriculum = async (curriculum: CurriculumWithItems) => {
     try {
-      const items = await fetchFullCurriculumItems(curriculum.id);
-      setDetailCurriculum({ ...curriculum, items });
+      const withItems = await ensureCurriculumItems(curriculum);
+      setDetailCurriculum(withItems);
     } catch (error) {
       console.error('Failed to load curriculum items:', error);
       Alert.alert('Could not load lessons', 'Please try again.');
@@ -308,7 +324,7 @@ export default function CurriculumPickerStep({
                           key={curriculum.id}
                           style={[styles.entryCard, selected && styles.entryCardSelected]}
                           onPress={() => void openDetailCurriculum(curriculum)}
-                          onLongPress={() => confirmAndStageLibrary(curriculum)}
+                          onLongPress={() => void handleLongPressStage(curriculum)}
                           delayLongPress={400}
                           activeOpacity={0.7}
                         >

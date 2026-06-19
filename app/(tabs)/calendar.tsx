@@ -145,12 +145,10 @@ export default function CalendarScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Refresh lessons when calendar screen comes into focus
-  // This ensures calendar shows newly created lessons immediately
+  // Refresh lessons when calendar screen comes into focus (respects 2-minute cache)
   useFocusEffect(
     useCallback(() => {
-      console.log('📅 Calendar screen focused - refreshing lessons');
-      fetchLessons(undefined, undefined, true); // Force fresh fetch
+      fetchLessons();
     }, [fetchLessons])
   );
 

@@ -55,6 +55,7 @@ type LessonPlanStore = {
   ) => Promise<{ plan: LessonPlan | null; items: LessonPlanItem[] }>;
   fetchLibrary: () => Promise<CurriculumWithItems[]>;
   fetchVerifiedLibrary: (category: LibraryCategoryKey) => Promise<CurriculumWithItems[]>;
+  fetchLibraryItems: (curriculumId: string) => Promise<CurriculumLibraryItem[]>;
   savePlan: (params: SavePlanParams) => Promise<{ success: boolean; error?: string }>;
   persistStagedCurriculum: (
     studentId: string,
@@ -200,6 +201,59 @@ async function persistLessonPlan({
   return { success: true };
 }
 
+const LIBRARY_LIST_SELECT =
+  'id, name, publisher, edition, level, category, verified, created_at, created_by';
+
+/**
+ * Fetches ordered lesson titles for a single library curriculum.
+ */
+export async function fetchLibraryItemsForCurriculum(
+  curriculumId: string
+): Promise<CurriculumLibraryItem[]> {
+  const { data, error } = await supabase
+    .from('curriculum_library_items')
+    .select('*')
+    .eq('curriculum_id', curriculumId)
+    .order('order_index', { ascending: true });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data ?? [];
+}
+
+async function attachLibraryItemCounts(
+  curricula: CurriculumLibrary[]
+): Promise<CurriculumWithItems[]> {
+  const curriculumIds = curricula.map((entry) => entry.id);
+  if (curriculumIds.length === 0) {
+    return [];
+  }
+
+  const { data: counts, error: countsError } = await supabase.rpc(
+    'get_curriculum_item_counts',
+    {
+      curriculum_ids: curriculumIds,
+    }
+  );
+
+  if (countsError) {
+    throw new Error(countsError.message);
+  }
+
+  const countMap: Record<string, number> = {};
+  for (const row of counts ?? []) {
+    countMap[row.curriculum_id] = row.item_count;
+  }
+
+  return curricula.map((curriculum) => ({
+    ...curriculum,
+    items: [],
+    itemCount: countMap[curriculum.id] ?? 0,
+  }));
+}
+
 export const useLessonPlanStore = create<LessonPlanStore>(() => ({
   loading: false,
   saving: false,
@@ -240,7 +294,7 @@ export const useLessonPlanStore = create<LessonPlanStore>(() => ({
   fetchLibrary: async () => {
     const { data: curricula, error: curriculaError } = await supabase
       .from('curriculum_library')
-      .select('*')
+      .select(LIBRARY_LIST_SELECT)
       .order('name', { ascending: true });
 
     if (curriculaError) {
@@ -251,13 +305,13 @@ export const useLessonPlanStore = create<LessonPlanStore>(() => ({
       return [];
     }
 
-    return attachLibraryItems(curricula);
+    return attachLibraryItemCounts(curricula as CurriculumLibrary[]);
   },
 
   fetchVerifiedLibrary: async (category) => {
     const { data: curricula, error: curriculaError } = await supabase
       .from('curriculum_library')
-      .select('*')
+      .select(LIBRARY_LIST_SELECT)
       .eq('category', category)
       .eq('verified', true)
       .order('name', { ascending: true });
@@ -270,8 +324,10 @@ export const useLessonPlanStore = create<LessonPlanStore>(() => ({
       return [];
     }
 
-    return attachLibraryItems(curricula);
+    return attachLibraryItemCounts(curricula as CurriculumLibrary[]);
   },
+
+  fetchLibraryItems: async (curriculumId) => fetchLibraryItemsForCurriculum(curriculumId),
 
   savePlan: async ({ studentId, subject, items, source, edition, name }) => {
     if (items.length === 0) {
@@ -331,41 +387,3 @@ export const useLessonPlanStore = create<LessonPlanStore>(() => ({
     return data?.[0] ?? null;
   },
 }));
-
-async function attachLibraryItems(
-  curricula: CurriculumLibrary[]
-): Promise<CurriculumWithItems[]> {
-  const curriculumIds = curricula.map((entry) => entry.id);
-  const { data: items, error: itemsError } = await supabase
-    .from('curriculum_library_items')
-    .select('*')
-    .in('curriculum_id', curriculumIds)
-    .order('order_index', { ascending: true })
-    .limit(99999);
-
-  if (itemsError) {
-    throw new Error(itemsError.message);
-  }
-
-  const itemsByCurriculum = new Map<string, CurriculumLibraryItem[]>();
-  for (const item of items ?? []) {
-    const existing = itemsByCurriculum.get(item.curriculum_id) ?? [];
-    existing.push(item);
-    itemsByCurriculum.set(item.curriculum_id, existing);
-  }
-
-  const { data: counts } = await supabase.rpc('get_curriculum_item_counts', {
-    curriculum_ids: curriculumIds,
-  });
-
-  const countMap: Record<string, number> = {};
-  for (const row of counts ?? []) {
-    countMap[row.curriculum_id] = row.item_count;
-  }
-
-  return curricula.map((curriculum) => ({
-    ...curriculum,
-    items: itemsByCurriculum.get(curriculum.id) ?? [],
-    itemCount: countMap[curriculum.id] ?? 0,
-  }));
-}

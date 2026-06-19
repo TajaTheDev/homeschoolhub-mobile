@@ -18,7 +18,7 @@ import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-f
 import { BookOpen, Calendar, CheckCircle2, Trash2 } from 'lucide-react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Modal, Platform } from 'react-native';
-import React, { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import React, { lazy, Suspense, useCallback, useMemo, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import {
@@ -64,31 +64,9 @@ export default function AllLessonsScreen() {
   const { lessons, fetchLessons, loading, deleteLessons, toggleCompleteOptimistic } = useLessonStore();
   const { students } = useStudentStore();
 
-  // Debug logging at component level (only log when lessons change significantly)
-  useEffect(() => {
-    console.log('📊 ALL LESSONS TAB - Total lessons:', lessons.length);
-    // Only log sample lessons if there are few lessons
-    if (lessons.length > 0 && lessons.length < 10) {
-      console.log('  Sample lessons:', lessons.slice(0, 3).map(l => ({
-        id: l.id,
-        title: l.title,
-        subject: l.subject,
-        date: l.date
-      })));
-    }
-  }, [lessons.length]);
-
-  useEffect(() => {
-    // Only log on initial mount
-    fetchLessons(); // Fetch ALL lessons (no filters)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Only fetch once on mount
-
-  // Refresh lessons when tab comes into focus
   useFocusEffect(
     useCallback(() => {
-      // Reduced logging - only log if needed for debugging
-      fetchLessons(); // Fetch ALL lessons (no filters)
+      fetchLessons();
     }, [fetchLessons])
   );
 
@@ -106,47 +84,8 @@ export default function AllLessonsScreen() {
     return Array.from(subjectSet).sort();
   }, [lessons]);
 
-  // Log subject count (not full array)
-  useEffect(() => {
-    console.log('📚 Total unique subjects:', allSubjects.length);
-  }, [allSubjects.length]);
-
-  // Debug: Compare subjects from lessons vs student profiles
-  useEffect(() => {
-    // Get subjects from lessons
-    const lessonSubjects = new Set<string>();
-    lessons.forEach(l => {
-      if (l.subject) lessonSubjects.add(l.subject);
-    });
-    
-    // Get subjects from student profiles
-    const studentSubjects = new Set<string>();
-    students.forEach(s => {
-      if (s.subjects) {
-        s.subjects.forEach(sub => studentSubjects.add(sub));
-      }
-    });
-    
-    // Only log subject comparison if there are few subjects
-    const lessonSubjectsArray = Array.from(lessonSubjects).sort();
-    const studentSubjectsArray = Array.from(studentSubjects).sort();
-    if (lessonSubjectsArray.length < 20 && studentSubjectsArray.length < 20) {
-      console.log('📊 SUBJECT COMPARISON:', {
-        lessonSubjectsCount: lessonSubjectsArray.length,
-        studentSubjectsCount: studentSubjectsArray.length,
-        lessonsCount: lessons.length,
-        studentsCount: students.length
-      });
-    }
-  }, [lessons, students]);
-
   // Filter and sort lessons
   const today = format(new Date(), 'yyyy-MM-dd');
-
-  // Log total lessons (reduced frequency)
-  useEffect(() => {
-    console.log('📚 All Lessons - Total:', lessons.length, 'Active tab:', activeTab);
-  }, [lessons.length, activeTab]);
 
   // Split into upcoming and past
   const upcomingLessons = useMemo(() => {
@@ -257,35 +196,6 @@ export default function AllLessonsScreen() {
 
   const filteredLessons = activeTab === 'upcoming' ? upcomingLessons : pastLessons;
 
-  // Debug logging for filtered results (only log when filters change)
-  useEffect(() => {
-    console.log('📊 FILTERED RESULTS:', {
-      count: filteredLessons.length,
-      upcoming: upcomingLessons.length,
-      past: pastLessons.length,
-      activeTab,
-      filters: {
-        student: filterStudent === 'all' ? 'all' : 'filtered',
-        subject: filterSubject === 'all' ? 'all' : 'filtered',
-        dateRange: filterDateRange === 'all' ? 'all' : filterDateRange
-      }
-    });
-    // Only log sample lessons if there are few filtered results
-    if (filteredLessons.length > 0 && filteredLessons.length < 10) {
-      console.log('  Sample filtered lessons:', filteredLessons.slice(0, 3).map(l => ({
-        id: l.id,
-        title: l.title,
-        subject: l.subject,
-        date: l.date
-      })));
-    }
-  }, [filteredLessons.length, upcomingLessons.length, pastLessons.length, activeTab, filterStudent, filterSubject, filterDateRange]);
-
-  // Log final filtered count
-  useEffect(() => {
-    console.log(`📚 All Lessons - Showing ${filteredLessons.length} lessons (${activeTab} tab)`);
-  }, [filteredLessons.length, activeTab]);
-
   const handleEditLesson = (lesson: Lesson) => {
     setSelectedLesson(lesson);
     setShowLessonModal(true);
@@ -319,30 +229,19 @@ export default function AllLessonsScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              console.log('🗑️ Deleting lessons:', selectedLessonIds.length);
-              
-              // Delete using store method (updates store automatically)
               const result = await deleteLessons(selectedLessonIds);
-              
+
               if (!result.success) {
-                console.error('❌ Delete failed:', result.error);
+                console.error('Delete failed:', result.error);
                 Alert.alert('Error', result.error || 'Failed to delete lessons');
                 return;
               }
-              
-              console.log('✅ Deleted from database');
-              
-              // CRITICAL: Clear selection FIRST
+
               setSelectedLessonIds([]);
               setSelectionMode(false);
-              
-              // CRITICAL: Force fresh fetch from database
-              console.log('🔄 Force refreshing lessons from database...');
+
               await fetchLessons();
-              
-              console.log('✅ Store refreshed, current count:', lessons.length);
-              
-              // Success
+
               showSnackbar(`Successfully deleted ${count} lesson${count > 1 ? 's' : ''}!`, 'success');
             } catch (error) {
               console.error('❌ Delete error:', error);
@@ -398,26 +297,16 @@ export default function AllLessonsScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              console.log('🗑️ Deleting filtered lessons:', lessonIds.length);
-              
-              // Delete using store method (updates store automatically)
               const result = await deleteLessons(lessonIds);
-              
+
               if (!result.success) {
-                console.error('❌ Delete failed:', result.error);
+                console.error('Delete failed:', result.error);
                 Alert.alert('Error', result.error || 'Failed to delete lessons');
                 return;
               }
-              
-              console.log('✅ Deleted from database');
-              
-              // CRITICAL: Force fresh fetch from database
-              console.log('🔄 Force refreshing lessons from database...');
+
               await fetchLessons();
-              
-              console.log('✅ Store refreshed, current count:', lessons.length);
-              
-              // Success
+
               showSnackbar(`Successfully deleted all ${count} filtered lesson${count > 1 ? 's' : ''}!`, 'success');
               // Reset filters
               setFilterStudent('all');

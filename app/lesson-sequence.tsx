@@ -41,7 +41,7 @@ export default function LessonSequenceScreen() {
   const subject = params.subject ? decodeURIComponent(params.subject) : '';
 
   const { students } = useStudentStore();
-  const { fetchPlan, fetchLibrary, savePlan, saving } = useLessonPlanStore();
+  const { fetchPlan, fetchLibrary, fetchLibraryItems, savePlan, saving } = useLessonPlanStore();
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -120,8 +120,24 @@ export default function LessonSequenceScreen() {
     setWorkingItems((current) => appendWorkingItems(current, titles));
   };
 
-  const applyLibrarySelection = (curriculum: CurriculumWithItems) => {
-    const titles = curriculum.items
+  const resolveCurriculumItems = async (
+    curriculum: CurriculumWithItems
+  ): Promise<CurriculumWithItems> => {
+    if (curriculum.items.length > 0) {
+      return curriculum;
+    }
+
+    const items = await fetchLibraryItems(curriculum.id);
+    return {
+      ...curriculum,
+      items,
+      itemCount: curriculum.itemCount ?? items.length,
+    };
+  };
+
+  const applyLibrarySelection = async (curriculum: CurriculumWithItems) => {
+    const resolved = await resolveCurriculumItems(curriculum);
+    const titles = resolved.items
       .slice()
       .sort((a, b) => a.order_index - b.order_index)
       .map((item) => item.title);
@@ -132,11 +148,18 @@ export default function LessonSequenceScreen() {
     }
 
     setWorkingItems(replaceWorkingItems(titles));
-    setPlanSource(curriculum.name);
-    setPlanEdition(curriculum.edition ?? null);
+    setPlanSource(resolved.name);
+    setPlanEdition(resolved.edition ?? null);
   };
 
   const handleLibrarySelect = (curriculum: CurriculumWithItems) => {
+    const runSelection = () => {
+      void applyLibrarySelection(curriculum).catch((error) => {
+        console.error('Failed to load curriculum items:', error);
+        Alert.alert('Could not load lessons', 'Please try again.');
+      });
+    };
+
     if (workingItems.length > 0) {
       Alert.alert(
         'Replace current sequence?',
@@ -146,14 +169,14 @@ export default function LessonSequenceScreen() {
           {
             text: 'Replace',
             style: 'destructive',
-            onPress: () => applyLibrarySelection(curriculum),
+            onPress: runSelection,
           },
         ]
       );
       return;
     }
 
-    applyLibrarySelection(curriculum);
+    runSelection();
   };
 
   const handleSave = async () => {
