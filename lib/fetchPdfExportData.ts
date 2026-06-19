@@ -24,6 +24,27 @@ export type MergedCompletedLesson = {
   grade: string | null;
 };
 
+export type MergedCompletionOptions = {
+  /** When true, excludes archived completions and pre-year manual lessons. Default true. */
+  activeOnly?: boolean;
+};
+
+async function fetchStudentSchoolYearStartDate(
+  studentId: string
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('students')
+    .select('school_year_start_date')
+    .eq('id', studentId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data?.school_year_start_date ?? null;
+}
+
 export type YearInReviewPhoto = {
   url: string;
   caption: string | null;
@@ -203,16 +224,25 @@ async function fetchCompletedManualLessons(
   return Array.from(byLessonId.values());
 }
 
-async function fetchAllCompletedManualLessons(studentId: string): Promise<ManualLessonRow[]> {
+async function fetchAllCompletedManualLessons(
+  studentId: string,
+  schoolYearStartDate?: string | null
+): Promise<ManualLessonRow[]> {
   const byLessonId = new Map<string, ManualLessonRow>();
 
-  const { data: junctionData, error: junctionError } = await supabase
+  let junctionQuery = supabase
     .from('lessons')
     .select(
       'id, subject, title, date, grade_value, grade_type, lesson_students!inner(student_id)'
     )
     .eq('lesson_students.student_id', studentId)
     .eq('completed', true);
+
+  if (schoolYearStartDate) {
+    junctionQuery = junctionQuery.gte('date', schoolYearStartDate);
+  }
+
+  const { data: junctionData, error: junctionError } = await junctionQuery;
 
   if (junctionError) {
     throw new Error(junctionError.message);
@@ -227,11 +257,19 @@ async function fetchAllCompletedManualLessons(studentId: string): Promise<Manual
     });
   });
 
-  const { data: directData, error: directError } = await supabase
-    .from('lessons')
-    .select('id, subject, title, date, grade_value, grade_type')
-    .eq('student_id', studentId)
-    .eq('completed', true);
+  const { data: directData, error: directError } = await (() => {
+    let query = supabase
+      .from('lessons')
+      .select('id, subject, title, date, grade_value, grade_type')
+      .eq('student_id', studentId)
+      .eq('completed', true);
+
+    if (schoolYearStartDate) {
+      query = query.gte('date', schoolYearStartDate);
+    }
+
+    return query;
+  })();
 
   if (directError) {
     throw new Error(directError.message);
@@ -251,24 +289,41 @@ async function fetchAllCompletedManualLessons(studentId: string): Promise<Manual
 }
 
 /**
- * Fetches all-time merged completed lessons for a student.
- * Matches export logic: lesson_completions (non-planned) + manual lessons, deduped by subject|date.
+ * Fetches merged completed lessons for a student.
+ * With activeOnly (default true), excludes archived completions and manual lessons before school_year_start_date.
  */
 export async function fetchAllMergedCompletedLessons(
-  studentId: string
+  studentId: string,
+  options: MergedCompletionOptions = {}
 ): Promise<MergedCompletedLesson[]> {
-  const { data: completionsRaw, error } = await supabase
+  const activeOnly = options.activeOnly !== false;
+
+  let completionsQuery = supabase
     .from('lesson_completions')
     .select('*')
     .eq('student_id', studentId)
     .neq('status', 'planned')
     .order('date', { ascending: true });
 
+  if (activeOnly) {
+    completionsQuery = completionsQuery.is('school_year_archive_id', null);
+  }
+
+  const { data: completionsRaw, error } = await completionsQuery;
+
   if (error) {
     throw new Error(error.message);
   }
 
-  const manualLessons = await fetchAllCompletedManualLessons(studentId);
+  const schoolYearStartDate = activeOnly
+    ? await fetchStudentSchoolYearStartDate(studentId)
+    : null;
+
+  const manualLessons = await fetchAllCompletedManualLessons(
+    studentId,
+    activeOnly ? schoolYearStartDate : null
+  );
+
   return mergeCompletedLessons(completionsRaw ?? [], manualLessons);
 }
 

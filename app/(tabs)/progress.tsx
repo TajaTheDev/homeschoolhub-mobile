@@ -14,6 +14,7 @@ import {
   fetchAllMergedCompletedLessons,
   fetchCurriculumItemCountsBySubject,
 } from '@/lib/fetchPdfExportData';
+import { archiveSchoolYear, buildArchiveSummary } from '@/lib/schoolYearArchive';
 import * as notificationService from '@/services/notificationService';
 import { useLessonStore } from '@/store/lessonStore';
 import { useScheduleStore } from '@/store/scheduleStore';
@@ -47,6 +48,7 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 // Lazy load modals - only load when needed
 const EditGoalModal = lazy(() => import('@/components/lessons/EditGoalModal'));
 const LessonsDetailModal = lazy(() => import('@/components/progress/LessonsDetailModal'));
+const EndSchoolYearModal = lazy(() => import('@/components/progress/EndSchoolYearModal'));
 const EditSubjectsModal = lazy(() => import('@/components/students/EditSubjectsModal'));
 
 // Helper functions
@@ -341,6 +343,9 @@ export default function ProgressScreen() {
   const [mergedCompletedBySubject, setMergedCompletedBySubject] = useState<
     Record<string, number>
   >({});
+  const [showEndSchoolYearModal, setShowEndSchoolYearModal] = useState(false);
+  const [archivingSchoolYear, setArchivingSchoolYear] = useState(false);
+  const [progressDataVersion, setProgressDataVersion] = useState(0);
   const contentFadeAnim = useRef(new Animated.Value(0)).current;
   // Track previous goal completion status to detect when goals are newly reached
   const previousGoalStatus = useRef<Record<string, number>>({});
@@ -417,13 +422,23 @@ export default function ProgressScreen() {
     return () => {
       cancelled = true;
     };
-  }, [selectedStudentId]);
+  }, [selectedStudentId, progressDataVersion]);
+
+  const selectedStudent = useMemo(() => {
+    if (!selectedStudentId) return undefined;
+    return students.find((student) => student.id === selectedStudentId);
+  }, [students, selectedStudentId]);
 
   // Calculate stats using useMemo
   const studentLessons = useMemo(() => {
     if (!selectedStudentId) return [];
-    return getLessonsForStudent(lessons, selectedStudentId);
-  }, [lessons, selectedStudentId]);
+    let list = getLessonsForStudent(lessons, selectedStudentId);
+    const schoolYearStart = selectedStudent?.school_year_start_date ?? null;
+    if (schoolYearStart) {
+      list = list.filter((lesson) => lesson.date >= schoolYearStart);
+    }
+    return list;
+  }, [lessons, selectedStudentId, selectedStudent]);
 
   const completedLessons = useMemo(() => {
     return getCompletedLessons(studentLessons);
@@ -462,7 +477,48 @@ export default function ProgressScreen() {
     return getInsight(studentLessons, studentSubjects, lessonsBySubject, selectedStudentId, getSchoolDays, isBreakDay);
   }, [studentLessons, studentSubjects, lessonsBySubject, selectedStudentId, getSchoolDays, isBreakDay]);
 
-  const selectedStudent = students.find((s) => s.id === selectedStudentId);
+  const handleEndSchoolYearConfirm = async (values: {
+    schoolYearLabel: string;
+    startDate: string;
+    endDate: string;
+  }) => {
+    if (!selectedStudentId) return;
+
+    setArchivingSchoolYear(true);
+    try {
+      const summary = await buildArchiveSummary(
+        selectedStudentId,
+        studentSubjects.map((record) => ({
+          subject: record.subject,
+          goal: record.goal ?? null,
+        }))
+      );
+
+      await archiveSchoolYear({
+        studentId: selectedStudentId,
+        schoolYearLabel: values.schoolYearLabel,
+        startDate: values.startDate,
+        endDate: values.endDate,
+        summary,
+      });
+
+      await fetchStudents();
+      setProgressDataVersion((version) => version + 1);
+      setShowEndSchoolYearModal(false);
+      showSnackbar(
+        `${values.schoolYearLabel} archived. Progress reset for the new school year.`,
+        'success'
+      );
+    } catch (error) {
+      console.error('Failed to archive school year:', error);
+      Alert.alert(
+        'Could not end school year',
+        error instanceof Error ? error.message : 'Please try again.'
+      );
+    } finally {
+      setArchivingSchoolYear(false);
+    }
+  };
 
   const handleSetGoal = (subject: string) => {
     setGoalSubject(subject);
@@ -949,6 +1005,16 @@ export default function ProgressScreen() {
           })}
           </>
         )}
+
+        {selectedStudentId && studentSubjects.length > 0 ? (
+          <TouchableOpacity
+            style={styles.endSchoolYearButton}
+            onPress={() => setShowEndSchoolYearModal(true)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.endSchoolYearButtonText}>End school year</Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
 
           {/* Recent Activity Section */}
@@ -1124,6 +1190,20 @@ export default function ProgressScreen() {
           student={selectedStudent || null}
           onClose={handleCloseSubjectsModal}
           onSave={handleSaveSubjects}
+        />
+      </Suspense>
+
+      <Suspense fallback={<View />}>
+        <EndSchoolYearModal
+          visible={showEndSchoolYearModal}
+          studentName={selectedStudent?.name || 'Student'}
+          loading={archivingSchoolYear}
+          onClose={() => {
+            if (!archivingSchoolYear) {
+              setShowEndSchoolYearModal(false);
+            }
+          }}
+          onConfirm={handleEndSchoolYearConfirm}
         />
       </Suspense>
     </SafeAreaView>
@@ -1412,6 +1492,19 @@ const styles = StyleSheet.create({
     color: Colors.ui.textLight,
     fontStyle: 'italic',
     marginBottom: 12,
+  },
+  endSchoolYearButton: {
+    marginTop: 4,
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.brand[300],
+    alignItems: 'center',
+    backgroundColor: Colors.brand[50],
+  },
+  endSchoolYearButtonText: {
+    ...Typography.label,
+    color: Colors.brand[700],
   },
   activityCard: {
     backgroundColor: '#FFFFFF',

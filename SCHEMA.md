@@ -83,6 +83,23 @@ TypeScript `string` columns are documented as `UUID`, `TEXT`, or `TIMESTAMPTZ` b
 | `status` | `TEXT` | no | no (default) | |
 | `grade` | `TEXT` | yes | no | |
 | `completed_at` | `TIMESTAMPTZ` | yes | no | |
+| `school_year_archive_id` | `UUID` | yes | no | → `school_year_archives(id)` |
+
+`NULL` `school_year_archive_id` = current school year (counts toward progress). Archived rows remain for exports.
+
+---
+
+### `school_year_archives`
+
+| Column | Type | Nullable | Required on insert | FK |
+|--------|------|----------|-------------------|-----|
+| `id` | `UUID` | no | no (auto) | PK |
+| `student_id` | `UUID` | no | yes | → `students(id)` |
+| `school_year_label` | `TEXT` | no | yes | |
+| `start_date` | `TEXT` | yes | no | `YYYY-MM-DD` |
+| `end_date` | `TEXT` | yes | no | `YYYY-MM-DD` |
+| `summary` | `JSONB` | yes | no | Per-subject snapshot |
+| `archived_at` | `TIMESTAMPTZ` | yes | no | |
 
 ---
 
@@ -249,6 +266,7 @@ TypeScript `string` columns are documented as `UUID`, `TEXT`, or `TIMESTAMPTZ` b
 | `avatar_type` | `TEXT` | yes | no | |
 | `avatar_value` | `TEXT` | yes | no | |
 | `active` | `BOOLEAN` | yes | no | |
+| `school_year_start_date` | `TEXT` | yes | no | `YYYY-MM-DD`; manual lessons before this date are excluded from current-year progress |
 | `created_at` | `TIMESTAMPTZ` | yes | no | |
 | `updated_at` | `TIMESTAMPTZ` | yes | no | |
 
@@ -307,7 +325,23 @@ next_lesson(p_student UUID, p_subject TEXT)
 | `p_student` | `UUID` | yes |
 | `p_subject` | `TEXT` | yes |
 
-**Returns:** set of rows with the next lesson plan item for the given student and subject (`item_id`, `order_index`, `title`).
+**Returns:** first lesson plan item not completed in the **current** school year (ignores `lesson_completions` where `school_year_archive_id IS NOT NULL`).
+
+---
+
+### `archive_school_year`
+
+```sql
+archive_school_year(
+  p_student_id UUID,
+  p_school_year_label TEXT,
+  p_start_date TEXT,
+  p_end_date TEXT,
+  p_summary JSONB DEFAULT '{}'::jsonb
+) RETURNS SETOF school_year_archives
+```
+
+Atomically inserts an archive row, tags all active `lesson_completions` for the student with `school_year_archive_id`, and sets `students.school_year_start_date` to the day after `p_end_date`.
 
 ---
 
@@ -367,6 +401,7 @@ delete_user_account(user_id UUID) RETURNS void
 
 ```
 students
+  ├── school_year_archives (student_id)
   ├── lesson_plans (student_id)
   ├── lesson_completions (student_id)
   ├── student_subjects (student_id)
