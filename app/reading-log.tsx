@@ -10,6 +10,7 @@ import {
   useReadingLogStore,
   type ReadingLogEntry,
   type ReadingLogStatus,
+  type ReaderType,
 } from '@/store/readingLogStore';
 import { useStudentStore } from '@/store/studentStore';
 import { format, parseISO } from 'date-fns';
@@ -33,6 +34,13 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 const getTodayDate = () => format(new Date(), 'yyyy-MM-dd');
+
+const parseOptionalInt = (value: string): number | null => {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parsed = Number.parseInt(trimmed, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+};
 
 const formatDisplayDate = (dateString: string | null) => {
   if (!dateString) return '';
@@ -64,6 +72,9 @@ export default function ReadingLogScreen() {
   const [dateFinished, setDateFinished] = useState(getTodayDate());
   const [rating, setRating] = useState<number | null>(null);
   const [notes, setNotes] = useState('');
+  const [readerType, setReaderType] = useState<ReaderType | null>(null);
+  const [pagesRead, setPagesRead] = useState('');
+  const [minutesRead, setMinutesRead] = useState('');
   const [saving, setSaving] = useState(false);
 
   const student = useMemo(
@@ -111,6 +122,9 @@ export default function ReadingLogScreen() {
     setDateFinished(getTodayDate());
     setRating(null);
     setNotes('');
+    setReaderType(null);
+    setPagesRead('');
+    setMinutesRead('');
     setEditingBook(null);
     setSheetMode('add');
   };
@@ -130,6 +144,9 @@ export default function ReadingLogScreen() {
     setDateFinished(book.date_finished ?? getTodayDate());
     setRating(book.rating ?? null);
     setNotes(book.notes ?? '');
+    setReaderType(book.reader_type ?? null);
+    setPagesRead(book.pages_read != null ? String(book.pages_read) : '');
+    setMinutesRead(book.minutes_read != null ? String(book.minutes_read) : '');
     setSheetVisible(true);
   };
 
@@ -147,6 +164,9 @@ export default function ReadingLogScreen() {
     setSaving(true);
 
     try {
+      const pages = parseOptionalInt(pagesRead);
+      const minutes = parseOptionalInt(minutesRead);
+
       if (sheetMode === 'add') {
         const result = await addBook(studentId, {
           title: title.trim(),
@@ -154,6 +174,9 @@ export default function ReadingLogScreen() {
           status,
           date_started: getTodayDate(),
           date_finished: status === 'finished' ? dateFinished : null,
+          pages_read: pages,
+          minutes_read: minutes,
+          reader_type: readerType,
         });
 
         if (!result.success) {
@@ -170,6 +193,9 @@ export default function ReadingLogScreen() {
           date_finished: status === 'finished' ? dateFinished : null,
           rating,
           notes: notes.trim() || null,
+          pages_read: pages,
+          minutes_read: minutes,
+          reader_type: readerType,
         });
 
         if (!result.success) {
@@ -264,25 +290,52 @@ export default function ReadingLogScreen() {
     </View>
   );
 
-  const renderBookCard = (book: ReadingLogEntry) => (
-    <TouchableOpacity
-      key={book.id}
-      style={styles.bookCard}
-      onPress={() => openEditSheet(book)}
-      activeOpacity={0.7}
-    >
-      <Text style={styles.bookTitle}>{book.title}</Text>
-      {book.author ? <Text style={styles.bookAuthor}>{book.author}</Text> : null}
-      {book.status === 'finished' ? (
-        <View style={styles.bookMeta}>
-          {book.rating ? renderStars(book.rating) : null}
-          {book.date_finished ? (
-            <Text style={styles.bookDate}>Finished {formatDisplayDate(book.date_finished)}</Text>
+  const renderBookCard = (book: ReadingLogEntry) => {
+    const readerBadgeLabel =
+      book.reader_type === 'read_aloud'
+        ? 'Read aloud'
+        : book.reader_type === 'independent'
+          ? 'Independent'
+          : null;
+
+    const trackingParts: string[] = [];
+    if (book.pages_read != null) {
+      trackingParts.push(`${book.pages_read} page${book.pages_read === 1 ? '' : 's'}`);
+    }
+    if (book.minutes_read != null) {
+      trackingParts.push(`${book.minutes_read} min`);
+    }
+
+    return (
+      <TouchableOpacity
+        key={book.id}
+        style={styles.bookCard}
+        onPress={() => openEditSheet(book)}
+        activeOpacity={0.7}
+      >
+        <View style={styles.bookCardHeader}>
+          <Text style={styles.bookTitle}>{book.title}</Text>
+          {readerBadgeLabel ? (
+            <View style={styles.readerBadge}>
+              <Text style={styles.readerBadgeText}>{readerBadgeLabel}</Text>
+            </View>
           ) : null}
         </View>
-      ) : null}
-    </TouchableOpacity>
-  );
+        {book.author ? <Text style={styles.bookAuthor}>{book.author}</Text> : null}
+        {trackingParts.length > 0 ? (
+          <Text style={styles.bookTracking}>{trackingParts.join(' · ')}</Text>
+        ) : null}
+        {book.status === 'finished' ? (
+          <View style={styles.bookMeta}>
+            {book.rating ? renderStars(book.rating) : null}
+            {book.date_finished ? (
+              <Text style={styles.bookDate}>Finished {formatDisplayDate(book.date_finished)}</Text>
+            ) : null}
+          </View>
+        ) : null}
+      </TouchableOpacity>
+    );
+  };
 
   const renderSection = (
     sectionTitle: string,
@@ -391,6 +444,74 @@ export default function ReadingLogScreen() {
                 onChangeText={setAuthor}
                 placeholder="Optional"
                 placeholderTextColor={Colors.ui.textLight}
+                editable={!saving}
+              />
+
+              <Text style={styles.fieldLabel}>Reader type</Text>
+              <View style={styles.statusToggle}>
+                <TouchableOpacity
+                  style={[
+                    styles.statusButton,
+                    readerType === 'independent' && styles.statusButtonActive,
+                  ]}
+                  onPress={() =>
+                    setReaderType((current) =>
+                      current === 'independent' ? null : 'independent'
+                    )
+                  }
+                  disabled={saving}
+                  activeOpacity={0.7}
+                >
+                  <Text
+                    style={[
+                      styles.statusButtonText,
+                      readerType === 'independent' && styles.statusButtonTextActive,
+                    ]}
+                  >
+                    Read independently
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.statusButton,
+                    readerType === 'read_aloud' && styles.statusButtonActive,
+                  ]}
+                  onPress={() =>
+                    setReaderType((current) => (current === 'read_aloud' ? null : 'read_aloud'))
+                  }
+                  disabled={saving}
+                  activeOpacity={0.7}
+                >
+                  <Text
+                    style={[
+                      styles.statusButtonText,
+                      readerType === 'read_aloud' && styles.statusButtonTextActive,
+                    ]}
+                  >
+                    Read aloud
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <Text style={styles.fieldLabel}>Pages</Text>
+              <TextInput
+                style={styles.input}
+                value={pagesRead}
+                onChangeText={setPagesRead}
+                placeholder="Optional"
+                placeholderTextColor={Colors.ui.textLight}
+                keyboardType="number-pad"
+                editable={!saving}
+              />
+
+              <Text style={styles.fieldLabel}>Minutes read</Text>
+              <TextInput
+                style={styles.input}
+                value={minutesRead}
+                onChangeText={setMinutesRead}
+                placeholder="Optional"
+                placeholderTextColor={Colors.ui.textLight}
+                keyboardType="number-pad"
                 editable={!saving}
               />
 
@@ -602,15 +723,40 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.ui.border,
   },
+  bookCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
   bookTitle: {
     ...Typography.label,
     fontSize: 16,
     color: Colors.ui.text,
+    flex: 1,
+  },
+  readerBadge: {
+    backgroundColor: Colors.brand[50],
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: Colors.brand[200],
+  },
+  readerBadgeText: {
+    ...Typography.caption,
+    color: Colors.brand[700],
+    fontWeight: '600',
   },
   bookAuthor: {
     ...Typography.bodySmall,
     color: Colors.ui.textLight,
     marginTop: 4,
+  },
+  bookTracking: {
+    ...Typography.caption,
+    color: Colors.ui.textLight,
+    marginTop: 6,
   },
   bookMeta: {
     marginTop: 10,

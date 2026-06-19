@@ -6,8 +6,14 @@ import { supabase } from '@/lib/supabase/client';
 import type { Tables, TablesInsert, TablesUpdate } from '@/types/database.generated';
 import { create } from 'zustand';
 
-export type ReadingLogEntry = Tables<'reading_log'>;
 export type ReadingLogStatus = 'reading' | 'finished';
+export type ReaderType = 'independent' | 'read_aloud';
+
+export type ReadingLogEntry = Tables<'reading_log'> & {
+  pages_read?: number | null;
+  minutes_read?: number | null;
+  reader_type?: ReaderType | null;
+};
 
 export type ReadingLogFields = {
   title: string;
@@ -17,6 +23,9 @@ export type ReadingLogFields = {
   date_finished?: string | null;
   rating?: number | null;
   notes?: string | null;
+  pages_read?: number | null;
+  minutes_read?: number | null;
+  reader_type?: ReaderType | null;
 };
 
 type ReadingLogStore = {
@@ -74,6 +83,9 @@ export const useReadingLogStore = create<ReadingLogStore>((set, get) => ({
         date_finished: fields.date_finished ?? null,
         rating: fields.rating ?? null,
         notes: fields.notes?.trim() || null,
+        pages_read: fields.pages_read ?? null,
+        minutes_read: fields.minutes_read ?? null,
+        reader_type: fields.reader_type ?? null,
       };
 
       const { data, error } = await supabase
@@ -125,6 +137,15 @@ export const useReadingLogStore = create<ReadingLogStore>((set, get) => ({
       }
       if (fields.notes !== undefined) {
         payload.notes = fields.notes?.trim() || null;
+      }
+      if (fields.pages_read !== undefined) {
+        payload.pages_read = fields.pages_read;
+      }
+      if (fields.minutes_read !== undefined) {
+        payload.minutes_read = fields.minutes_read;
+      }
+      if (fields.reader_type !== undefined) {
+        payload.reader_type = fields.reader_type;
       }
 
       const { data, error } = await supabase

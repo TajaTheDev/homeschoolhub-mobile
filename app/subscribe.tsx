@@ -10,7 +10,7 @@ import {
   View,
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
-import { RevenueCatUI, PAYWALL_RESULT } from 'react-native-purchases-ui';
+import RevenueCatUI, { PAYWALL_RESULT } from 'react-native-purchases-ui';
 import ConfettiCannon from 'react-native-confetti-cannon';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
@@ -120,7 +120,12 @@ export default function SubscribeScreen() {
   const presentPaywall = async () => {
     try {
       if (!RevenueCatUI || typeof RevenueCatUI.presentPaywall !== 'function') {
-        console.error('❌ RevenueCatUI not available');
+        console.error('RevenueCatUI not available');
+        Alert.alert(
+          'Unavailable',
+          'Subscriptions are temporarily unavailable. Please try again later.'
+        );
+        return;
       }
 
       const result = await RevenueCatUI.presentPaywall();

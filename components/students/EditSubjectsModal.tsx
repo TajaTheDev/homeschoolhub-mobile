@@ -1,11 +1,12 @@
 import CurriculumPickerStep from '@/components/students/CurriculumPickerStep';
 import Colors from '@/constants/Colors';
+import { PRESET_SUBJECTS } from '@/constants/Subjects';
 import type { StagedCurriculumSelection } from '@/lib/lessonPlanUtils';
 import { useLessonPlanStore } from '@/store/lessonPlanStore';
 import { useStudentStore } from '@/store/studentStore';
 import { Student } from '@/types';
 import { useSnackbar } from '@/contexts/SnackbarContext';
-import { Plus, X } from 'lucide-react-native';
+import { Pencil, Plus, X } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
 import {
   Alert,
@@ -26,15 +27,6 @@ interface EditSubjectsModalProps {
   onClose: () => void;
   onSave: () => void;
 }
-
-const SUBJECTS = [
-  { name: 'Math', emoji: '🔢', color: '#EF4444' },
-  { name: 'Reading', emoji: '📖', color: '#3B82F6' },
-  { name: 'Science', emoji: '🔬', color: '#10B981' },
-  { name: 'History', emoji: '🏛️', color: '#F59E0B' },
-  { name: 'Writing', emoji: '✍️', color: '#8B5CF6' },
-  { name: 'Art', emoji: '🎨', color: '#EC4899' },
-];
 
 export default function EditSubjectsModal({
   visible,
@@ -297,7 +289,7 @@ export default function EditSubjectsModal({
             >
               <Text style={styles.sectionTitle}>Common Subjects</Text>
               <View style={styles.grid}>
-                {SUBJECTS.map((subject) => {
+                {PRESET_SUBJECTS.map((subject) => {
                   const isSelected = selectedSubjects.includes(subject.name);
                   const stagedLabel = getStagedLabel(subject.name);
                   return (
@@ -378,39 +370,56 @@ export default function EditSubjectsModal({
                 </TouchableOpacity>
               </View>
 
-              {selectedSubjects.filter((s) => !SUBJECTS.find((sub) => sub.name === s))
+              {selectedSubjects.filter((s) => !PRESET_SUBJECTS.find((sub) => sub.name === s))
                 .length > 0 && (
                 <>
                   <Text style={styles.sectionTitle}>Your Custom Subjects</Text>
                   <View style={styles.chipContainer}>
                     {selectedSubjects
-                      .filter((s) => !SUBJECTS.find((sub) => sub.name === s))
-                      .map((subject) => (
-                        <View key={subject} style={styles.chip}>
-                          <TouchableOpacity
-                            onPress={() => handleEditSubject(subject)}
-                            style={styles.chipContent}
-                            activeOpacity={0.7}
-                          >
-                            <Text style={styles.chipText}>{subject}</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            onPress={() => handleRemoveSubject(subject)}
-                            style={styles.chipRemoveButton}
-                            activeOpacity={0.7}
-                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                          >
-                            <X size={14} color="#fff" />
-                          </TouchableOpacity>
-                        </View>
-                      ))}
+                      .filter((s) => !PRESET_SUBJECTS.find((sub) => sub.name === s))
+                      .map((subject) => {
+                        const stagedLabel = getStagedLabel(subject);
+                        return (
+                          <View key={subject} style={styles.chip}>
+                            <TouchableOpacity
+                              onPress={() => toggleSubject(subject)}
+                              style={styles.chipContent}
+                              activeOpacity={0.7}
+                            >
+                              <Text style={styles.chipText}>{subject}</Text>
+                              {stagedLabel ? (
+                                <Text style={styles.chipStagedHint} numberOfLines={1}>
+                                  {stagedLabel}
+                                </Text>
+                              ) : null}
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              onPress={() => handleEditSubject(subject)}
+                              style={styles.chipEditButton}
+                              activeOpacity={0.7}
+                              accessibilityLabel={`Rename ${subject}`}
+                              hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                            >
+                              <Pencil size={12} color="#5B4BA8" />
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              onPress={() => handleRemoveSubject(subject)}
+                              style={styles.chipRemoveButton}
+                              activeOpacity={0.7}
+                              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                            >
+                              <X size={14} color="#fff" />
+                            </TouchableOpacity>
+                          </View>
+                        );
+                      })}
                   </View>
                 </>
               )}
 
               {selectedSubjects.length > 0 && (
                 <Text style={styles.curriculumHint}>
-                  Tap any subject to choose curriculum. Long-press to remove.
+                  Tap a subject to choose curriculum. Tap the pencil to rename a custom subject.
                 </Text>
               )}
 
@@ -569,11 +578,26 @@ const styles = StyleSheet.create({
   chipContent: {
     marginRight: 4,
     paddingRight: 4,
+    maxWidth: 140,
   },
   chipText: {
     fontSize: 14,
     color: '#5B4BA8',
     fontWeight: '500',
+  },
+  chipStagedHint: {
+    fontSize: 10,
+    color: '#7C6BB8',
+    marginTop: 2,
+    maxWidth: 120,
+  },
+  chipEditButton: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 2,
   },
   chipRemoveButton: {
     width: 20,

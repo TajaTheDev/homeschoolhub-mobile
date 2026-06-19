@@ -1,6 +1,6 @@
 import React from 'react';
 import { Alert } from 'react-native';
-import { RevenueCatUI, CUSTOMER_CENTER_RESULT } from 'react-native-purchases-ui';
+import RevenueCatUI, { CUSTOMER_CENTER_RESULT } from 'react-native-purchases-ui';
 import Constants from 'expo-constants';
 
 /**
@@ -29,6 +29,15 @@ export const presentCustomerCenter = async () => {
   }
 
   try {
+    if (!RevenueCatUI || typeof RevenueCatUI.presentCustomerCenter !== 'function') {
+      console.error('RevenueCatUI not available');
+      Alert.alert(
+        'Unavailable',
+        'Subscriptions are temporarily unavailable. Please try again later.'
+      );
+      return;
+    }
+
     console.log('📋 Presenting Customer Center...');
     
     const result = await RevenueCatUI.presentCustomerCenter();
