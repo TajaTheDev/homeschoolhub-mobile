@@ -52,13 +52,18 @@ export default function Index() {
       setStatusMessage('Checking subscription...');
       const subscriptionInfo = await checkSubscription();
 
-      console.log('📊 Subscription check:', {
+      const redirectToSubscribe =
+        !subscriptionInfo.hasAccess ||
+        subscriptionInfo.subscriptionStatus === 'expired';
+
+      console.log('[GATE DEBUG]', {
+        source: 'index',
         status: subscriptionInfo.subscriptionStatus,
-        daysRemaining: subscriptionInfo.daysRemaining,
         hasAccess: subscriptionInfo.hasAccess,
+        redirectToSubscribe,
       });
 
-      if (subscriptionInfo.hasAccess) {
+      if (!redirectToSubscribe) {
         console.log('→ Going to main app');
         router.replace('/(tabs)');
         return;

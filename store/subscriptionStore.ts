@@ -13,7 +13,7 @@ import {
 import { supabase } from '@/lib/supabase/client';
 import type { SubscriptionPlan } from '@/types/database';
 
-const PRO_ENTITLEMENT_ID = 'The Homeschool Hub Pro';
+const PRO_ENTITLEMENT_ID = 'pro';
 
 export type SubscriptionStatus = 'trial' | 'active' | 'expired' | 'cancelled';
 
@@ -81,19 +81,17 @@ function setSubscriptionInfo(
 }
 
 /**
- * Builds a dev fallback when Supabase trial tables/RPCs are not available yet.
+ * Returns expired subscription info when trial status cannot be resolved.
  */
-function buildDevFallbackTrialInfo(userId: string): SubscriptionInfo {
-  const startedAt = new Date().toISOString();
-  const expiresAt = new Date();
-  expiresAt.setDate(expiresAt.getDate() + 30);
-
-  return buildTrialSubscriptionInfo(
+function buildExpiredSubscriptionInfo(userId: string): SubscriptionInfo {
+  return {
     userId,
-    startedAt,
-    expiresAt.toISOString(),
-    'active'
-  );
+    trialStartDate: null,
+    trialEndDate: null,
+    subscriptionStatus: 'expired',
+    daysRemaining: 0,
+    hasAccess: false,
+  };
 }
 
 /**
@@ -201,8 +199,8 @@ export const useSubscriptionStore = create<SubscriptionStore>((set, get) => ({
       const trialInfo = await ensureUserTrial();
 
       if (!trialInfo) {
-        console.warn('⚠️ Trial status unavailable — using fallback access');
-        const info = buildDevFallbackTrialInfo(user.id);
+        console.warn('⚠️ Trial status unavailable — denying access');
+        const info = buildExpiredSubscriptionInfo(user.id);
         setSubscriptionInfo(set, info);
         return info;
       }

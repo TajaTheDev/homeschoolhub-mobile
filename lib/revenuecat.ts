@@ -4,8 +4,10 @@ import Purchases, {
   CustomerInfo,
   PurchasesPackage,
 } from 'react-native-purchases';
+import RevenueCatUI, { PAYWALL_RESULT } from 'react-native-purchases-ui';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
+import { supabase } from '@/lib/supabase/client';
 
 // API Keys - Production keys
 const REVENUECAT_API_KEYS = {
@@ -14,7 +16,174 @@ const REVENUECAT_API_KEYS = {
 };
 
 // Entitlement identifier
-const PRO_ENTITLEMENT_ID = 'The Homeschool Hub Pro';
+const PRO_ENTITLEMENT_ID = 'pro';
+
+let revenueCatConfigured = false;
+let pendingSupabaseUserId: string | null = null;
+let authSyncRegistered = false;
+
+/**
+ * Returns true once Purchases.configure() has completed successfully.
+ */
+export function isRevenueCatConfigured(): boolean {
+  return revenueCatConfigured;
+}
+
+/**
+ * Persists the RevenueCat app user ID on the Supabase user_subscriptions row.
+ */
+async function persistRevenueCatCustomerId(
+  supabaseUserId: string,
+  appUserId: string
+): Promise<void> {
+  if (!supabase) {
+    return;
+  }
+
+  const { error } = await supabase
+    .from('user_subscriptions')
+    .upsert(
+      {
+        user_id: supabaseUserId,
+        revenuecat_customer_id: appUserId,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'user_id' }
+    );
+
+  if (error) {
+    console.error('❌ Failed to save revenuecat_customer_id:', error.message);
+    return;
+  }
+
+  console.log('✅ Saved revenuecat_customer_id to user_subscriptions:', appUserId);
+}
+
+/**
+ * Links the RevenueCat customer to the Supabase auth user via Purchases.logIn().
+ * No-ops until Purchases.configure() has finished; queues the user id if needed.
+ */
+export async function identifyRevenueCatUser(supabaseUserId: string): Promise<void> {
+  if (isDevelopmentMode()) {
+    return;
+  }
+
+  if (!revenueCatConfigured) {
+    pendingSupabaseUserId = supabaseUserId;
+    return;
+  }
+
+  try {
+    await Purchases.logIn(supabaseUserId);
+    const appUserId = await Purchases.getAppUserID();
+    console.log('✅ RevenueCat logIn:', supabaseUserId, '→ appUserId:', appUserId);
+    await persistRevenueCatCustomerId(supabaseUserId, appUserId);
+    pendingSupabaseUserId = null;
+  } catch (error) {
+    console.error('❌ RevenueCat logIn failed:', error);
+  }
+}
+
+/**
+ * Resets RevenueCat to an anonymous customer on sign-out.
+ */
+export async function logoutRevenueCatUser(): Promise<void> {
+  pendingSupabaseUserId = null;
+
+  if (isDevelopmentMode() || !revenueCatConfigured) {
+    return;
+  }
+
+  try {
+    await Purchases.logOut();
+    console.log('✅ RevenueCat logOut complete');
+  } catch (error) {
+    console.error('❌ RevenueCat logOut failed:', error);
+  }
+}
+
+/**
+ * Ensures the current Supabase user is identified in RevenueCat before purchases.
+ * @returns true when a user is signed in and identification succeeded or was queued.
+ */
+export async function ensureRevenueCatUserIdentified(): Promise<boolean> {
+  if (isDevelopmentMode()) {
+    return false;
+  }
+
+  if (!supabase) {
+    return false;
+  }
+
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  if (!session?.user) {
+    console.warn('⚠️ Cannot identify RevenueCat user — no Supabase session');
+    return false;
+  }
+
+  await identifyRevenueCatUser(session.user.id);
+
+  if (!revenueCatConfigured) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Registers a single Supabase auth listener for RevenueCat logIn/logOut sync.
+ */
+function setupSupabaseRevenueCatAuthSync(): void {
+  if (authSyncRegistered || !supabase || isDevelopmentMode()) {
+    return;
+  }
+
+  authSyncRegistered = true;
+
+  supabase.auth.onAuthStateChange(async (event, session) => {
+    if (!revenueCatConfigured) {
+      if (session?.user) {
+        pendingSupabaseUserId = session.user.id;
+      }
+      return;
+    }
+
+    if (
+      (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') &&
+      session?.user
+    ) {
+      await identifyRevenueCatUser(session.user.id);
+      return;
+    }
+
+    if (event === 'SIGNED_OUT') {
+      await logoutRevenueCatUser();
+    }
+  });
+
+  console.log('✅ RevenueCat auth sync listener registered');
+}
+
+/**
+ * Presents the RevenueCat paywall after ensuring the user is identified.
+ */
+export async function presentPaywall(): Promise<PAYWALL_RESULT> {
+  const identified = await ensureRevenueCatUserIdentified();
+  if (!identified) {
+    throw new Error('Must be signed in before subscribing');
+  }
+
+  if (!RevenueCatUI || typeof RevenueCatUI.presentPaywall !== 'function') {
+    throw new Error('RevenueCat paywall is unavailable');
+  }
+
+  return RevenueCatUI.presentPaywall();
+}
+
+export { PAYWALL_RESULT };
 
 /**
  * Check if we're in Expo Go
@@ -35,6 +204,10 @@ const isDevelopmentMode = (): boolean => {
  * Skips initialization in Expo Go/development mode
  */
 export const initializeRevenueCat = async (): Promise<boolean> => {
+  if (revenueCatConfigured) {
+    return true;
+  }
+
   // Skip RevenueCat in Expo Go or development mode
   if (isDevelopmentMode()) {
     console.log('⏭️ Skipping RevenueCat initialization in Expo Go/development mode');
@@ -55,6 +228,21 @@ export const initializeRevenueCat = async (): Promise<boolean> => {
 
     await Purchases.configure({ apiKey });
 
+    revenueCatConfigured = true;
+    setupSupabaseRevenueCatAuthSync();
+
+    if (supabase) {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (session?.user) {
+        await identifyRevenueCatUser(session.user.id);
+      } else if (pendingSupabaseUserId) {
+        await identifyRevenueCatUser(pendingSupabaseUserId);
+      }
+    }
+
     console.log('✅ RevenueCat initialized successfully');
     console.log('   Platform:', Platform.OS);
     console.log('   API Key:', apiKey.substring(0, 20) + '...');
@@ -67,7 +255,7 @@ export const initializeRevenueCat = async (): Promise<boolean> => {
 };
 
 /**
- * Check if user has "The Homeschool Hub Pro" entitlement
+ * Check if user has the "pro" entitlement
  * @returns Promise<boolean> - true if user has Pro access
  * In development/Expo Go, returns true to allow full access
  */
@@ -150,6 +338,14 @@ export const purchasePackage = async (
     return {
       success: false,
       error: 'Purchases not available in development mode',
+    };
+  }
+
+  const identified = await ensureRevenueCatUserIdentified();
+  if (!identified) {
+    return {
+      success: false,
+      error: 'Must be signed in before purchasing',
     };
   }
 
@@ -270,6 +466,15 @@ export const restorePurchases = async (): Promise<{
     return {
       success: true,
       hasProAccess: false, // No purchases in dev mode
+    };
+  }
+
+  const identified = await ensureRevenueCatUserIdentified();
+  if (!identified) {
+    return {
+      success: false,
+      hasProAccess: false,
+      error: 'Must be signed in before restoring purchases',
     };
   }
 

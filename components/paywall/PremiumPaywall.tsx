@@ -9,9 +9,8 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { X, Sparkles } from 'lucide-react-native';
-import RevenueCatUI, { PAYWALL_RESULT } from 'react-native-purchases-ui';
 import Colors from '@/constants/Colors';
-import { checkProStatus } from '@/lib/revenuecat';
+import { checkProStatus, PAYWALL_RESULT, presentPaywall as presentRevenueCatPaywall } from '@/lib/revenuecat';
 
 interface PremiumPaywallProps {
   visible: boolean;
@@ -29,20 +28,10 @@ export default function PremiumPaywall({
   const [showingPaywall, setShowingPaywall] = useState(false);
 
   const handleShowPaywall = async () => {
-    if (!RevenueCatUI || typeof RevenueCatUI.presentPaywall !== 'function') {
-      console.error('RevenueCatUI not available');
-      Alert.alert(
-        'Unavailable',
-        'Subscriptions are temporarily unavailable. Please try again later.'
-      );
-      return;
-    }
-
     try {
       setShowingPaywall(true);
-      
-      // Present RevenueCat's native paywall
-      const result = await RevenueCatUI.presentPaywall();
+
+      const result = await presentRevenueCatPaywall();
       
       console.log('Paywall result:', result);
       

@@ -41,7 +41,6 @@ export default function RootLayout() {
   const router = useRouter();
   const segments = useSegments();
   const [appReady, setAppReady] = useState(false);
-  const [subscriptionStatus, setSubscriptionStatus] = useState<'active' | 'trial' | 'expired' | null>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   
   // Track auth initialization to prevent infinite loops
@@ -53,12 +52,6 @@ export default function RootLayout() {
     Quicksand_600SemiBold,
     Quicksand_700Bold,
   });
-
-  const checkSubscriptionStatus = async () => {
-    // For beta testing, allow all users access
-    // Everyone is in trial mode during beta
-    setSubscriptionStatus('trial');
-  };
 
   const initializeTrial = async () => {
     try {
@@ -85,14 +78,19 @@ export default function RootLayout() {
 
     try {
       const subscriptionInfo = await useSubscriptionStore.getState().checkSubscription();
-      console.log('📊 Auth routing subscription:', {
+      const redirectToSubscribe =
+        !subscriptionInfo.hasAccess ||
+        subscriptionInfo.subscriptionStatus === 'expired';
+
+      console.log('[GATE DEBUG]', {
+        source: 'routeAuthenticatedUser',
         status: subscriptionInfo.subscriptionStatus,
-        daysRemaining: subscriptionInfo.daysRemaining,
         hasAccess: subscriptionInfo.hasAccess,
+        redirectToSubscribe,
+        currentSegment,
       });
 
-      if (!subscriptionInfo.hasAccess) {
-        console.log('→ Trial expired, routing to subscribe');
+      if (redirectToSubscribe) {
         if (currentSegment !== 'subscribe') {
           router.replace('/subscribe');
         }
@@ -100,6 +98,17 @@ export default function RootLayout() {
       }
     } catch (error) {
       console.error('Subscription check failed during auth routing:', error);
+      console.log('[GATE DEBUG]', {
+        source: 'routeAuthenticatedUser',
+        status: 'error',
+        hasAccess: false,
+        redirectToSubscribe: true,
+        currentSegment,
+      });
+      if (currentSegment !== 'subscribe') {
+        router.replace('/subscribe');
+      }
+      return;
     }
 
     console.log('✅ User has access, going to main app');
@@ -111,16 +120,7 @@ export default function RootLayout() {
   useEffect(() => {
     const initializeApp = async () => {
       try {
-        // RevenueCat disabled for beta testing
-        // await initializeRevenueCat();
-        
-        // Check subscription status (disabled for beta - everyone gets trial access)
-        try {
-          await checkSubscriptionStatus();
-        } catch (error) {
-          console.error('Subscription check failed (non-critical):', error);
-        }
-
+        // RevenueCat is initialized in a separate useEffect below
         // Check authentication before trial init (trial requires logged-in user)
         try {
           await checkUser();

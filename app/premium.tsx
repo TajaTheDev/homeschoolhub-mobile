@@ -249,8 +249,7 @@ export default function PremiumScreen() {
         console.log('   - Latest Expiration:', result.customerInfo.latestExpirationDate || 'N/A');
         
         // Check if premium entitlement is now active
-        // Note: Using 'The Homeschool Hub Pro' as that's the entitlement ID in lib/revenuecat.ts
-        const entitlementId = 'The Homeschool Hub Pro';
+        const entitlementId = 'pro';
         const premiumEntitlement = result.customerInfo.entitlements.active[entitlementId];
         const hasPremium = premiumEntitlement !== undefined;
         

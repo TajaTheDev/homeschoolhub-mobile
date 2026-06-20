@@ -1,12 +1,13 @@
+import { presentCustomerCenter } from '@/components/subscription/CustomerCenter';
 import Colors from '@/constants/Colors';
 import Typography from '@/constants/Typography';
-// import { getOfferings, purchasePackage, restorePurchases } from '@/lib/revenuecat';
-import { ensureUserTrial, TRIAL_DURATION_DAYS } from '@/lib/trial';
+import { useSubscription } from '@/contexts/SubscriptionContext';
+import { presentPaywall as presentRevenueCatPaywall, PAYWALL_RESULT, restorePurchases } from '@/lib/revenuecat';
 import { format } from 'date-fns';
 import * as Notifications from 'expo-notifications';
 import { useRouter } from 'expo-router';
 import { Check, ChevronLeft, Crown } from 'lucide-react-native';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
   ScrollView,
@@ -15,39 +16,44 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-// import type { PurchasesPackage } from 'react-native-purchases';
-// import Purchases from 'react-native-purchases';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSubscriptionStore } from '@/store/subscriptionStore';
 
 export default function SubscriptionScreen() {
   const router = useRouter();
-  const [trialStartDate, setTrialStartDate] = useState<Date | null>(null);
-  const [daysRemaining, setDaysRemaining] = useState(30);
-  const [isSubscribed, setIsSubscribed] = useState(false);
-  const [currentPlan, setCurrentPlan] = useState<'monthly' | 'annual' | null>(null);
-  // const [monthlyPackage, setMonthlyPackage] = useState<PurchasesPackage | null>(null);
-  // const [annualPackage, setAnnualPackage] = useState<PurchasesPackage | null>(null);
+  const { refreshSubscriptionStatus } = useSubscription();
+  const { subscriptionInfo, checkSubscription } = useSubscriptionStore();
   const [loading, setLoading] = useState(false);
+  const [statusLoading, setStatusLoading] = useState(true);
 
-  const scheduleTrialReminders = async (trialEndDate: Date) => {
+  const isSubscribed = subscriptionInfo?.subscriptionStatus === 'active';
+  const daysRemaining = subscriptionInfo?.daysRemaining ?? 0;
+  const trialStartDate = subscriptionInfo?.trialStartDate
+    ? new Date(subscriptionInfo.trialStartDate)
+    : null;
+  const trialEndDate = subscriptionInfo?.trialEndDate
+    ? new Date(subscriptionInfo.trialEndDate)
+    : null;
+
+  const scheduleTrialReminders = async (endDate: Date) => {
     try {
-      // Clear existing reminders
       const existing = await Notifications.getAllScheduledNotificationsAsync();
-      const trialReminders = existing.filter(n => n.identifier.startsWith('trial-reminder'));
+      const trialReminders = existing.filter((n) =>
+        n.identifier.startsWith('trial-reminder')
+      );
       for (const reminder of trialReminders) {
         await Notifications.cancelScheduledNotificationAsync(reminder.identifier);
       }
 
       const now = new Date();
-      
-      // 7 days before end
-      const sevenDaysBefore = new Date(trialEndDate.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+      const sevenDaysBefore = new Date(endDate.getTime() - 7 * 24 * 60 * 60 * 1000);
       if (sevenDaysBefore > now) {
         await Notifications.scheduleNotificationAsync({
           identifier: 'trial-reminder-7',
           content: {
-            title: "7 Days Left in Your Trial",
-            body: "Keep tracking your homeschool journey - subscribe to continue!",
+            title: '7 Days Left in Your Trial',
+            body: 'Keep tracking your homeschool journey - subscribe to continue!',
             sound: true,
           },
           trigger: {
@@ -57,13 +63,12 @@ export default function SubscriptionScreen() {
         });
       }
 
-      // 3 days before end
-      const threeDaysBefore = new Date(trialEndDate.getTime() - 3 * 24 * 60 * 60 * 1000);
+      const threeDaysBefore = new Date(endDate.getTime() - 3 * 24 * 60 * 60 * 1000);
       if (threeDaysBefore > now) {
         await Notifications.scheduleNotificationAsync({
           identifier: 'trial-reminder-3',
           content: {
-            title: "3 Days Left in Your Trial",
+            title: '3 Days Left in Your Trial',
             body: "Don't lose access! Subscribe today for just $4.99/month",
             sound: true,
           },
@@ -74,14 +79,13 @@ export default function SubscriptionScreen() {
         });
       }
 
-      // 1 day before end
-      const oneDayBefore = new Date(trialEndDate.getTime() - 1 * 24 * 60 * 60 * 1000);
+      const oneDayBefore = new Date(endDate.getTime() - 1 * 24 * 60 * 60 * 1000);
       if (oneDayBefore > now) {
         await Notifications.scheduleNotificationAsync({
           identifier: 'trial-reminder-1',
           content: {
-            title: "Last Day of Your Trial!",
-            body: "Subscribe now to keep all your homeschool data and memories",
+            title: 'Last Day of Your Trial!',
+            body: 'Subscribe now to keep all your homeschool data and memories',
             sound: true,
           },
           trigger: {
@@ -95,56 +99,98 @@ export default function SubscriptionScreen() {
     }
   };
 
-  useEffect(() => {
-    loadSubscriptionStatus();
-  }, []);
-
-  useEffect(() => {
-    // Schedule reminders if in trial
-    if (trialStartDate && !isSubscribed && daysRemaining > 0) {
-      scheduleTrialReminders(new Date(trialStartDate.getTime() + TRIAL_DURATION_DAYS * 24 * 60 * 60 * 1000));
-    }
-  }, [trialStartDate, isSubscribed, daysRemaining]);
-
-  const loadSubscriptionStatus = async () => {
+  const loadSubscriptionStatus = useCallback(async () => {
     try {
-      // RevenueCat disabled for beta - everyone gets trial access
-      setIsSubscribed(false);
-      setCurrentPlan(null);
-
-      const trialInfo = await ensureUserTrial();
-
-      if (trialInfo) {
-        setTrialStartDate(new Date(trialInfo.trial.started_at));
-        setDaysRemaining(trialInfo.daysRemaining);
-      }
+      setStatusLoading(true);
+      await checkSubscription();
     } catch (error) {
       console.error('Error loading subscription status:', error);
+    } finally {
+      setStatusLoading(false);
+    }
+  }, [checkSubscription]);
+
+  useEffect(() => {
+    loadSubscriptionStatus();
+  }, [loadSubscriptionStatus]);
+
+  useEffect(() => {
+    if (trialEndDate && !isSubscribed && daysRemaining > 0) {
+      scheduleTrialReminders(trialEndDate);
+    }
+  }, [trialEndDate, isSubscribed, daysRemaining]);
+
+  const handleSubscribeSuccess = async () => {
+    await refreshSubscriptionStatus();
+    await checkSubscription();
+  };
+
+  const presentPaywall = async () => {
+    try {
+      setLoading(true);
+
+      const result = await presentRevenueCatPaywall();
+
+      if (
+        result === PAYWALL_RESULT.PURCHASED ||
+        result === PAYWALL_RESULT.RESTORED
+      ) {
+        await handleSubscribeSuccess();
+      }
+    } catch (error: unknown) {
+      console.error('Paywall error:', error);
+      const err = error as { message?: string; readableErrorMessage?: string };
+      Alert.alert(
+        'Cannot Show Paywall',
+        err?.message ||
+          err?.readableErrorMessage ||
+          'Unable to show subscription options. Please try again.',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleSubscribe = async (packageType: 'monthly' | 'annual') => {
-    Alert.alert(
-      'Beta Version',
-      'Subscriptions will be enabled when the app launches publicly. For now, enjoy full access!'
-    );
-  };
-
-  const handleSwitchPlan = async (newPlan: 'monthly' | 'annual') => {
-    Alert.alert(
-      'Beta Version',
-      'Subscriptions will be enabled when the app launches publicly. For now, enjoy full access!'
-    );
+  const handleManageSubscription = async () => {
+    try {
+      await presentCustomerCenter();
+    } catch (error) {
+      console.error('Error opening customer center:', error);
+      Alert.alert('Error', 'Could not open subscription management');
+    }
   };
 
   const handleRestore = async () => {
-    Alert.alert(
-      'Beta Version',
-      'Subscriptions will be enabled when the app launches publicly. For now, enjoy full access!'
-    );
+    try {
+      setLoading(true);
+      const result = await restorePurchases();
+
+      if (result.success && result.hasProAccess) {
+        await handleSubscribeSuccess();
+        Alert.alert('Success', 'Your purchases have been restored.');
+      } else if (result.success) {
+        Alert.alert(
+          'No Purchases Found',
+          'No active subscription was found for this account.'
+        );
+      } else {
+        Alert.alert(
+          'Error',
+          result.error || 'Could not restore purchases. Please try again.'
+        );
+      }
+    } catch (error) {
+      console.error('Restore error:', error);
+      Alert.alert('Error', 'Could not restore purchases. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const trialEnded = daysRemaining === 0;
+  const trialEnded =
+    subscriptionInfo?.subscriptionStatus === 'expired' ||
+    (subscriptionInfo?.subscriptionStatus === 'trial' && daysRemaining === 0);
   const trialEndingSoon = daysRemaining > 0 && daysRemaining <= 7;
 
   return (
@@ -162,36 +208,32 @@ export default function SubscriptionScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Beta Banner */}
-        <View style={styles.betaBanner}>
-          <Text style={styles.betaBannerText}>
-            💳 Subscriptions coming soon! During beta, enjoy full access for free.
-          </Text>
-        </View>
-
-        {/* Trial Status Card */}
-        {!isSubscribed && (
-          <View style={[
-            styles.trialCard,
-            trialEnded && styles.trialCardExpired,
-            trialEndingSoon && styles.trialCardWarning
-          ]}>
+        {!isSubscribed && !statusLoading && (
+          <View
+            style={[
+              styles.trialCard,
+              trialEnded && styles.trialCardExpired,
+              trialEndingSoon && styles.trialCardWarning,
+            ]}
+          >
             <View style={styles.trialHeader}>
-              <Crown size={32} color={trialEnded ? Colors.ui.textLight : Colors.accent[500]} />
+              <Crown
+                size={32}
+                color={trialEnded ? Colors.ui.textLight : Colors.accent[500]}
+              />
               <View style={styles.trialInfo}>
                 <Text style={styles.trialTitle}>
                   {trialEnded ? 'Trial Expired' : 'Free Trial Active'}
                 </Text>
                 <Text style={styles.trialDays}>
-                  {trialEnded 
+                  {trialEnded
                     ? 'Subscribe to continue using HomeschoolHub'
-                    : `${daysRemaining} day${daysRemaining === 1 ? '' : 's'} remaining`
-                  }
+                    : `${daysRemaining} day${daysRemaining === 1 ? '' : 's'} remaining`}
                 </Text>
-        </View>
+              </View>
             </View>
 
-            {trialStartDate && !trialEnded && (
+            {trialStartDate && trialEndDate && !trialEnded && (
               <View style={styles.trialTimeline}>
                 <View style={styles.timelineItem}>
                   <Text style={styles.timelineLabel}>Started</Text>
@@ -203,7 +245,7 @@ export default function SubscriptionScreen() {
                 <View style={styles.timelineItem}>
                   <Text style={styles.timelineLabel}>Ends</Text>
                   <Text style={styles.timelineDate}>
-                    {format(new Date(trialStartDate.getTime() + TRIAL_DURATION_DAYS * 24 * 60 * 60 * 1000), 'MMM d, yyyy')}
+                    {format(trialEndDate, 'MMM d, yyyy')}
                   </Text>
                 </View>
               </View>
@@ -211,83 +253,59 @@ export default function SubscriptionScreen() {
           </View>
         )}
 
-        {/* Subscribed Status */}
         {isSubscribed && (
           <View style={styles.subscribedCard}>
             <Crown size={48} color={Colors.accent[500]} />
             <Text style={styles.subscribedTitle}>Premium Active</Text>
             <Text style={styles.subscribedDescription}>
-              Thank you for supporting HomeschoolHub! 💜
+              Thank you for supporting HomeschoolHub!
             </Text>
+            <TouchableOpacity
+              style={styles.manageButton}
+              onPress={handleManageSubscription}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.manageButtonText}>Manage Subscription</Text>
+            </TouchableOpacity>
           </View>
         )}
 
-        {/* Pricing Plans */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Choose Your Plan</Text>
 
-          {/* Monthly Plan */}
           <TouchableOpacity
-            style={[
-              styles.planCard,
-              currentPlan === 'monthly' && styles.planCardActive
-            ]}
-            onPress={() => {
-              if (isSubscribed && currentPlan !== 'monthly') {
-                handleSwitchPlan('monthly');
-              } else if (!isSubscribed) {
-                handleSubscribe('monthly');
-              }
-            }}
-            disabled={loading || (isSubscribed && currentPlan === 'monthly')}
+            style={styles.planCard}
+            onPress={isSubscribed ? handleManageSubscription : presentPaywall}
+            disabled={loading || statusLoading}
+            activeOpacity={0.9}
           >
             <View style={styles.planHeader}>
               <View>
                 <Text style={styles.planName}>Monthly</Text>
                 <Text style={styles.planPrice}>$4.99/month</Text>
               </View>
-              {currentPlan === 'monthly' && (
-                <View style={styles.currentBadge}>
-                  <Text style={styles.currentBadgeText}>CURRENT</Text>
-                </View>
-              )}
-              {!currentPlan && (
+              {!isSubscribed && (
                 <View style={styles.planBadge}>
                   <Text style={styles.planBadgeText}>Flexible</Text>
                 </View>
               )}
             </View>
             <Text style={styles.planDescription}>
-              {currentPlan === 'monthly' 
-                ? 'Your current subscription' 
-                : isSubscribed
-                ? 'Switch to monthly billing'
-                : 'Perfect for trying out premium features'
-              }
+              {isSubscribed
+                ? 'View or change your subscription'
+                : 'Perfect for trying out premium features'}
             </Text>
           </TouchableOpacity>
 
-          {/* Annual Plan - BEST VALUE */}
           <TouchableOpacity
-            style={[
-              styles.planCard,
-              styles.planCardBest,
-              currentPlan === 'annual' && styles.planCardActive
-            ]}
-            onPress={() => {
-              if (isSubscribed && currentPlan !== 'annual') {
-                handleSwitchPlan('annual');
-              } else if (!isSubscribed) {
-                handleSubscribe('annual');
-              }
-            }}
-            disabled={loading || (isSubscribed && currentPlan === 'annual')}
+            style={[styles.planCard, styles.planCardBest]}
+            onPress={isSubscribed ? handleManageSubscription : presentPaywall}
+            disabled={loading || statusLoading}
+            activeOpacity={0.9}
           >
-            {currentPlan !== 'annual' && (
-              <View style={styles.bestValueBadge}>
-                <Text style={styles.bestValueText}>BEST VALUE</Text>
-              </View>
-            )}
+            <View style={styles.bestValueBadge}>
+              <Text style={styles.bestValueText}>BEST VALUE</Text>
+            </View>
             <View style={styles.planHeader}>
               <View>
                 <Text style={styles.planName}>Annual</Text>
@@ -296,27 +314,31 @@ export default function SubscriptionScreen() {
                   <Text style={styles.planSavings}>Save $10!</Text>
                 </View>
               </View>
-              {currentPlan === 'annual' && (
-                <View style={styles.currentBadge}>
-                  <Text style={styles.currentBadgeText}>CURRENT</Text>
-                </View>
-              )}
             </View>
             <Text style={styles.planDescription}>
-              {currentPlan === 'annual'
-                ? 'Your current subscription'
-                : isSubscribed
-                ? 'Switch to annual and save!'
-                : 'Just $4.16/month - lock in this price!'
-              }
-          </Text>
+              {isSubscribed
+                ? 'View or change your subscription'
+                : 'Just $4.16/month - lock in this price!'}
+            </Text>
           </TouchableOpacity>
+
+          {!isSubscribed && (
+            <TouchableOpacity
+              style={styles.subscribeButton}
+              onPress={presentPaywall}
+              disabled={loading || statusLoading}
+              activeOpacity={0.88}
+            >
+              <Text style={styles.subscribeButtonText}>
+                {trialEnded ? 'Subscribe Now' : 'View Plans & Subscribe'}
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
 
-        {/* What's Included */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>What You Get</Text>
-          
+
           <View style={styles.featuresList}>
             <View style={styles.featureItem}>
               <Check size={20} color={Colors.accent[500]} />
@@ -347,17 +369,16 @@ export default function SubscriptionScreen() {
               <Text style={styles.featureText}>All future updates included</Text>
             </View>
           </View>
-          </View>
+        </View>
 
-        {/* Restore Purchases */}
         <TouchableOpacity
           style={styles.restoreButton}
           onPress={handleRestore}
+          disabled={loading || statusLoading}
         >
           <Text style={styles.restoreButtonText}>Restore Purchases</Text>
         </TouchableOpacity>
 
-        {/* Fine Print */}
         <View style={styles.finePrint}>
           <Text style={styles.finePrintText}>
             • 30-day free trial, no credit card required
@@ -480,6 +501,19 @@ const styles = StyleSheet.create({
     ...Typography.body,
     color: Colors.ui.textLight,
     textAlign: 'center',
+    marginBottom: 16,
+  },
+  manageButton: {
+    backgroundColor: Colors.brand[500],
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    width: '100%',
+    alignItems: 'center',
+  },
+  manageButtonText: {
+    ...Typography.button,
+    color: 'white',
   },
   section: {
     marginBottom: 24,
@@ -500,11 +534,6 @@ const styles = StyleSheet.create({
     borderColor: Colors.brand[400],
     backgroundColor: Colors.brand[50],
     position: 'relative',
-  },
-  planCardActive: {
-    borderColor: Colors.accent[400],
-    borderWidth: 3,
-    backgroundColor: Colors.accent[50],
   },
   bestValueBadge: {
     position: 'absolute',
@@ -561,20 +590,21 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: Colors.ui.textLight,
   },
-  currentBadge: {
-    backgroundColor: Colors.accent[500],
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  currentBadgeText: {
-    ...Typography.label,
-    fontSize: 11,
-    color: 'white',
-  },
   planDescription: {
     ...Typography.bodySmall,
     color: Colors.ui.textLight,
+  },
+  subscribeButton: {
+    backgroundColor: Colors.brand[500],
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  subscribeButtonText: {
+    ...Typography.button,
+    color: 'white',
+    fontSize: 16,
   },
   featuresList: {
     gap: 12,
@@ -609,19 +639,5 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: Colors.ui.textLight,
     lineHeight: 16,
-  },
-  betaBanner: {
-    backgroundColor: Colors.brand[100],
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 24,
-    borderWidth: 1,
-    borderColor: Colors.brand[300],
-  },
-  betaBannerText: {
-    ...Typography.body,
-    color: Colors.brand[700],
-    textAlign: 'center',
-    fontSize: 14,
   },
 });

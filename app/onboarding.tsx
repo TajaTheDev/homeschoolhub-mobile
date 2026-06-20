@@ -17,6 +17,7 @@ import { supabase } from '@/lib/supabase/client';
 import { useStudentStore } from '@/store/studentStore';
 import { useLessonStore } from '@/store/lessonStore';
 import { useScheduleStore } from '@/store/scheduleStore';
+import { useSubscriptionStore } from '@/store/subscriptionStore';
 import StudentModal from '@/components/students/StudentModal';
 import * as ImagePicker from 'expo-image-picker';
 
@@ -165,18 +166,34 @@ export default function OnboardingScreen() {
         return;
       }
       
-      console.log('✅ Onboarding completion verified, navigating to main app');
-      
-      // TEMPORARY: Bypass subscription screen during App Store review
-      // TODO: Re-enable after approval (Jan 15, 2026)
-      const REVIEW_MODE = true;
-      
-      if (REVIEW_MODE) {
-        console.log('⚠️ REVIEW MODE: Bypassing subscription screen');
-        // Navigate directly to main app - user is logged in and onboarding is complete
-        // Use replace to prevent back navigation to onboarding
-        router.replace('/(tabs)');
-      } else {
+      console.log('✅ Onboarding completion verified, navigating based on subscription');
+
+      try {
+        const subscriptionInfo = await useSubscriptionStore.getState().checkSubscription();
+        const redirectToSubscribe =
+          !subscriptionInfo.hasAccess ||
+          subscriptionInfo.subscriptionStatus === 'expired';
+
+        console.log('[GATE DEBUG]', {
+          source: 'onboarding',
+          status: subscriptionInfo.subscriptionStatus,
+          hasAccess: subscriptionInfo.hasAccess,
+          redirectToSubscribe,
+        });
+
+        if (redirectToSubscribe) {
+          router.replace('/subscribe');
+        } else {
+          router.replace('/(tabs)');
+        }
+      } catch (error) {
+        console.error('Subscription check failed after onboarding:', error);
+        console.log('[GATE DEBUG]', {
+          source: 'onboarding',
+          status: 'error',
+          hasAccess: false,
+          redirectToSubscribe: true,
+        });
         router.replace('/subscribe');
       }
     } catch (error) {

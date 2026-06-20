@@ -10,7 +10,6 @@ import {
   View,
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
-import RevenueCatUI, { PAYWALL_RESULT } from 'react-native-purchases-ui';
 import ConfettiCannon from 'react-native-confetti-cannon';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
@@ -27,7 +26,7 @@ import {
 import { presentCustomerCenter } from '@/components/subscription/CustomerCenter';
 import Colors from '@/constants/Colors';
 import Typography from '@/constants/Typography';
-import { checkProStatus } from '@/lib/revenuecat';
+import { checkProStatus, PAYWALL_RESULT, presentPaywall as presentRevenueCatPaywall } from '@/lib/revenuecat';
 import { useSubscription } from '@/contexts/SubscriptionContext';
 import { useSubscriptionStore } from '@/store/subscriptionStore';
 
@@ -119,16 +118,7 @@ export default function SubscribeScreen() {
 
   const presentPaywall = async () => {
     try {
-      if (!RevenueCatUI || typeof RevenueCatUI.presentPaywall !== 'function') {
-        console.error('RevenueCatUI not available');
-        Alert.alert(
-          'Unavailable',
-          'Subscriptions are temporarily unavailable. Please try again later.'
-        );
-        return;
-      }
-
-      const result = await RevenueCatUI.presentPaywall();
+      const result = await presentRevenueCatPaywall();
 
       if (
         result === PAYWALL_RESULT.PURCHASED ||
