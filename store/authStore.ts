@@ -4,15 +4,21 @@
  */
 
 import { supabase } from '@/lib/supabase/client';
-import type { User } from '@supabase/supabase-js';
+import type { Session, User } from '@supabase/supabase-js';
 import { create } from 'zustand';
+
+interface SignInResult {
+  success: boolean;
+  error?: string;
+  session?: Session | null;
+}
 
 interface AuthState {
   user: User | null;
   loading: boolean;
   initialized: boolean;
   signUp: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
-  signIn: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  signIn: (email: string, password: string) => Promise<SignInResult>;
   signOut: () => Promise<void>;
   checkUser: () => Promise<void>;
 }
@@ -75,8 +81,8 @@ export const useAuthStore = create<AuthState>((set) => ({
       }
 
       if (data.user) {
-        set({ user: data.user, loading: false });
-        return { success: true };
+        set({ user: data.session?.user ?? data.user, loading: false });
+        return { success: true, session: data.session ?? null };
       }
 
       set({ loading: false });

@@ -40,7 +40,10 @@ export default function RootLayout() {
   const { checkUser } = useAuthStore();
   const router = useRouter();
   const segments = useSegments();
+  const segmentsRef = useRef(segments);
+  segmentsRef.current = segments;
   const [appReady, setAppReady] = useState(false);
+  const [authRoutingReady, setAuthRoutingReady] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   
   // Track auth initialization to prevent infinite loops
@@ -54,10 +57,42 @@ export default function RootLayout() {
   });
 
   const initializeTrial = async () => {
+    if (!supabase) {
+      return;
+    }
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        return;
+      }
       await useSubscriptionStore.getState().checkSubscription();
     } catch (error) {
       console.error('Error initializing trial:', error);
+    }
+  };
+
+  const logCarouselRedirect = async (
+    source: string,
+    destination: '/(auth)/onboarding' | '/onboarding/welcome'
+  ) => {
+    const hasSeenOnboarding = await AsyncStorage.getItem('hasSeenOnboarding');
+    const hasCompletedOnboarding = await AsyncStorage.getItem('hasCompletedOnboarding');
+    let hasSession = false;
+    if (supabase) {
+      const { data: { session } } = await supabase.auth.getSession();
+      hasSession = !!session;
+    }
+    console.log('[REDIRECT]', { source, destination, hasSession, hasSeenOnboarding, hasCompletedOnboarding });
+  };
+
+  /** Routes unauthenticated users from initializeAuth sync paths. */
+  const routeInitializeAuthNoSession = async () => {
+    const hasSeenOnboarding = await AsyncStorage.getItem('hasSeenOnboarding');
+    if (hasSeenOnboarding === 'true') {
+      router.replace('/(auth)/login');
+    } else {
+      await logCarouselRedirect('_layout:routeInitializeAuthNoSession', '/(auth)/onboarding');
+      router.replace('/(auth)/onboarding');
     }
   };
 
@@ -69,9 +104,8 @@ export default function RootLayout() {
     currentSegment: string | undefined
   ) => {
     if (hasCompletedOnboarding !== 'true') {
-      console.log('📝 User needs to complete interactive onboarding');
-      if (currentSegment !== 'onboarding') {
-        router.replace('/onboarding');
+      if (currentSegment !== 'setup') {
+        router.replace('/setup');
       }
       return;
     }
@@ -82,14 +116,6 @@ export default function RootLayout() {
         !subscriptionInfo.hasAccess ||
         subscriptionInfo.subscriptionStatus === 'expired';
 
-      console.log('[GATE DEBUG]', {
-        source: 'routeAuthenticatedUser',
-        status: subscriptionInfo.subscriptionStatus,
-        hasAccess: subscriptionInfo.hasAccess,
-        redirectToSubscribe,
-        currentSegment,
-      });
-
       if (redirectToSubscribe) {
         if (currentSegment !== 'subscribe') {
           router.replace('/subscribe');
@@ -98,23 +124,74 @@ export default function RootLayout() {
       }
     } catch (error) {
       console.error('Subscription check failed during auth routing:', error);
-      console.log('[GATE DEBUG]', {
-        source: 'routeAuthenticatedUser',
-        status: 'error',
-        hasAccess: false,
-        redirectToSubscribe: true,
-        currentSegment,
-      });
       if (currentSegment !== 'subscribe') {
         router.replace('/subscribe');
       }
       return;
     }
 
-    console.log('✅ User has access, going to main app');
     if (currentSegment !== '(tabs)' && currentSegment !== 'subscribe') {
       router.replace('/(tabs)');
     }
+  };
+
+  /**
+   * Deferred no-session redirect — re-checks live segment, session, and flags
+   * before navigating so a stale timeout cannot override signup/onboarding.
+   * Skips entirely once the marketing carousel has been seen; login/signup/index own routing.
+   */
+  const runDeferredAuthRedirect = async () => {
+    const currentSegment = segmentsRef.current[0];
+    if (
+      currentSegment === '(tabs)' ||
+      currentSegment === 'setup' ||
+      currentSegment === '(auth)' ||
+      currentSegment === 'welcome'
+    ) {
+      return;
+    }
+
+    const hasSeenOnboarding = await AsyncStorage.getItem('hasSeenOnboarding');
+    if (hasSeenOnboarding === 'true') {
+      return;
+    }
+
+    if (!supabase) {
+      await logCarouselRedirect('_layout:runDeferredAuthRedirect', '/(auth)/onboarding');
+      router.replace('/(auth)/onboarding');
+      return;
+    }
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        try {
+          await checkUser();
+        } catch (checkError) {
+          console.error('Error checking user:', checkError);
+        }
+        const hasCompletedOnboarding = await AsyncStorage.getItem('hasCompletedOnboarding');
+        await routeAuthenticatedUser(hasCompletedOnboarding, currentSegment);
+        return;
+      }
+
+      await logCarouselRedirect('_layout:runDeferredAuthRedirect', '/(auth)/onboarding');
+      router.replace('/(auth)/onboarding');
+    } catch (error) {
+      console.error('🚨 Deferred auth redirect error:', error);
+      await logCarouselRedirect('_layout:runDeferredAuthRedirect:catch', '/(auth)/onboarding');
+      router.replace('/(auth)/onboarding');
+    }
+  };
+
+  /** Cold-start routing when there is no session — login if carousel already seen, else defer. */
+  const routeColdStartNoSession = async () => {
+    const hasSeenOnboarding = await AsyncStorage.getItem('hasSeenOnboarding');
+    if (hasSeenOnboarding === 'true') {
+      router.replace('/(auth)/login');
+      return;
+    }
+    await runDeferredAuthRedirect();
   };
 
   useEffect(() => {
@@ -170,24 +247,9 @@ export default function RootLayout() {
         }
         
         setAppReady(true);
-        
-        // Fade in the app
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 300,
-          useNativeDriver: true,
-        }).start();
       } catch (error) {
         console.error('Critical error initializing app:', error);
-        // Still allow app to render on error - better than crashing
         setAppReady(true);
-        
-        // Fade in even on error
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 300,
-          useNativeDriver: true,
-        }).start();
       }
     };
 
@@ -198,10 +260,15 @@ export default function RootLayout() {
   }, [fontsLoaded]);
 
   useEffect(() => {
-    if (fontsLoaded && appReady) {
+    if (fontsLoaded && appReady && authRoutingReady) {
       SplashScreen.hideAsync();
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }).start();
     }
-  }, [fontsLoaded, appReady]);
+  }, [fontsLoaded, appReady, authRoutingReady, fadeAnim]);
 
   // Initialize RevenueCat on app start (production builds only)
   useEffect(() => {
@@ -264,144 +331,106 @@ export default function RootLayout() {
     authInitializedRef.current = true;
 
     const initializeAuth = async () => {
-      // Wait for all interactions to complete before checking auth
-      // This ensures native modules are fully initialized
-      await new Promise(resolve => InteractionManager.runAfterInteractions(() => resolve(undefined)));
-      
-      console.log('🔍 Checking authentication...');
-      
-      // Check if we're already navigating to avoid duplicate navigation
-      const currentSegment = segments[0];
-      if (currentSegment === '(tabs)' || currentSegment === 'onboarding' || currentSegment === '(auth)') {
-        console.log('📍 Already navigating, skipping auth check');
-        return;
-      }
-      
       try {
-        if (!supabase) {
-          console.log('❌ Supabase not initialized, routing to onboarding');
-          router.replace('/(auth)/onboarding');
+        await new Promise(resolve => InteractionManager.runAfterInteractions(() => resolve(undefined)));
+
+        const currentSegment = segments[0];
+        if (currentSegment === '(tabs)' || currentSegment === 'setup' || currentSegment === '(auth)') {
           return;
         }
 
-        // getSession() works offline - reads from SecureStore
-        // Use a shorter timeout since it should be fast (local storage)
+        if (!supabase) {
+          await routeInitializeAuthNoSession();
+          return;
+        }
+
         const sessionPromise = supabase.auth.getSession();
-        const sessionTimeoutPromise = new Promise((_, reject) => 
+        const sessionTimeoutPromise = new Promise((_, reject) =>
           setTimeout(() => reject(new Error('Session check timeout')), 2000)
         );
-        
+
         let sessionResult;
         try {
-          sessionResult = await Promise.race([sessionPromise, sessionTimeoutPromise]) as any;
-        } catch (sessionError: any) {
-          // If getSession fails, check if it's a network error
-          if (sessionError?.message?.includes('Network') || sessionError?.message?.includes('timeout')) {
-            console.log('⚠️ Network unavailable, checking cached session...');
-            // Try to get session without timeout (should be instant from cache)
+          sessionResult = await Promise.race([sessionPromise, sessionTimeoutPromise]) as Awaited<
+            ReturnType<NonNullable<typeof supabase.auth.getSession>>
+          >;
+        } catch (sessionError: unknown) {
+          const message = sessionError instanceof Error ? sessionError.message : '';
+          if (message.includes('Network') || message.includes('timeout')) {
             try {
               sessionResult = await supabase.auth.getSession();
             } catch (cacheError) {
               console.error('🚨 Could not get cached session:', cacheError);
-              router.replace('/(auth)/onboarding');
+              await routeInitializeAuthNoSession();
               return;
             }
           } else {
             throw sessionError;
           }
         }
-        
+
         const { data: { session } } = sessionResult;
-        console.log('📱 Session exists:', !!session);
-        
+
         if (session) {
-          console.log('✅ Session found, verifying...');
-          
-          // getUser() requires network - handle offline gracefully
-          // Use a longer timeout for network calls
           const userPromise = supabase.auth.getUser();
-          const userTimeoutPromise = new Promise((_, reject) => 
+          const userTimeoutPromise = new Promise((_, reject) =>
             setTimeout(() => reject(new Error('User check timeout')), 5000)
           );
-          
+
           let userResult;
           try {
-            userResult = await Promise.race([userPromise, userTimeoutPromise]) as any;
-          } catch (userError: any) {
-            // If network is unavailable, use cached session
-            if (userError?.message?.includes('Network') || userError?.message?.includes('timeout')) {
-              console.log('⚠️ Network unavailable, using cached session');
-              // If we have a session, trust it (offline mode)
-              // The session will be validated when network is available
-              console.log('✅ Using cached session (offline mode)');
+            userResult = await Promise.race([userPromise, userTimeoutPromise]) as Awaited<
+              ReturnType<NonNullable<typeof supabase.auth.getUser>>
+            >;
+          } catch (userError: unknown) {
+            const message = userError instanceof Error ? userError.message : '';
+            if (message.includes('Network') || message.includes('timeout')) {
               try {
                 await checkUser();
               } catch (checkError) {
                 console.error('Error checking user:', checkError);
               }
-              // Check onboarding status even in offline mode
               const hasCompletedOnboarding = await AsyncStorage.getItem('hasCompletedOnboarding');
-              const currentSegment = segments[0];
-              await routeAuthenticatedUser(hasCompletedOnboarding, currentSegment);
+              await routeAuthenticatedUser(hasCompletedOnboarding, segments[0]);
               return;
-            } else {
-              throw userError;
             }
+            throw userError;
           }
-          
+
           const { data: { user }, error } = userResult;
-          
+
           if (error) {
-            console.log('❌ Session invalid:', error.message);
             try {
               await supabase.auth.signOut();
             } catch (signOutError) {
               console.error('Error signing out:', signOutError);
             }
-            router.replace('/(auth)/onboarding');
+            await routeInitializeAuthNoSession();
           } else if (!user) {
-            console.log('❌ No user found in session');
             try {
               await supabase.auth.signOut();
             } catch (signOutError) {
               console.error('Error signing out:', signOutError);
             }
-            router.replace('/(auth)/onboarding');
+            await routeInitializeAuthNoSession();
           } else {
-            console.log('✅ Valid user:', user?.email);
-            // Valid session, ensure user is in auth store
             try {
               await checkUser();
             } catch (checkError) {
               console.error('Error checking user:', checkError);
             }
-            
+
             const hasCompletedOnboarding = await AsyncStorage.getItem('hasCompletedOnboarding');
-            const currentSegment = segments[0];
-            await routeAuthenticatedUser(hasCompletedOnboarding, currentSegment);
+            await routeAuthenticatedUser(hasCompletedOnboarding, segments[0]);
           }
         } else {
-          console.log('📝 No session, checking onboarding status');
-          // Check if user has seen Canva welcome
-          const hasSeenOnboarding = await AsyncStorage.getItem('hasSeenOnboarding');
-          if (hasSeenOnboarding === 'true') {
-            console.log('✅ User has seen welcome, going to signup');
-            setTimeout(() => {
-              router.replace('/(auth)/signup');
-            }, 100);
-          } else {
-            console.log('📝 New user, showing Canva welcome');
-            setTimeout(() => {
-              router.replace('/(auth)/onboarding');
-            }, 100);
-          }
+          await routeColdStartNoSession();
         }
       } catch (error) {
         console.error('🚨 Auth error:', error);
-        // On error, always route to onboarding to prevent crashes
-        setTimeout(() => {
-          router.replace('/(auth)/onboarding');
-        }, 100);
+        await routeColdStartNoSession();
+      } finally {
+        setAuthRoutingReady(true);
       }
     };
     
@@ -422,14 +451,11 @@ export default function RootLayout() {
       
       // Navigate based on notification type
       if (data.type === 'daily-reminder') {
-        // Navigate to dashboard
-        router.push('/(tabs)/' as any);
+        router.push('/(tabs)/' as Parameters<typeof router.push>[0]);
       } else if (data.type === 'goal-celebration') {
-        // Navigate to progress
-        router.push('/(tabs)/progress' as any);
+        router.push('/(tabs)/progress');
       } else if (data.type === 'streak-reminder') {
-        // Navigate to calendar
-        router.push('/(tabs)/calendar' as any);
+        router.push('/(tabs)/calendar');
       }
     });
 
@@ -471,21 +497,21 @@ export default function RootLayout() {
     }
   };
 
-  // Show nothing while initializing (very brief)
+  // Show brand splash until fonts, app init, and auth routing are ready
   if (!fontsLoaded || !appReady) {
     return (
-      <View style={{ 
-        flex: 1, 
+      <View style={{
+        flex: 1,
         backgroundColor: Colors.brand[100],
       }} />
     );
   }
 
-  // Fade in the actual app
   return (
     <ErrorBoundary>
       <SafeAreaProvider>
-        <Animated.View style={{ flex: 1, backgroundColor: Colors.ui.background, opacity: fadeAnim }}>
+        <View style={{ flex: 1, backgroundColor: Colors.brand[100] }}>
+          <Animated.View style={{ flex: 1, backgroundColor: Colors.ui.background, opacity: fadeAnim }}>
           <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
             <SnackbarProvider>
               <SubscriptionProvider>
@@ -503,7 +529,7 @@ export default function RootLayout() {
                     }}
                   />
                   <Stack.Screen
-                    name="onboarding"
+                    name="setup"
                     options={{
                       headerShown: false,
                       gestureEnabled: false,
@@ -552,7 +578,20 @@ export default function RootLayout() {
               </SubscriptionProvider>
             </SnackbarProvider>
           </ThemeProvider>
-        </Animated.View>
+          </Animated.View>
+          {!authRoutingReady && (
+            <View
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: Colors.brand[100],
+              }}
+            />
+          )}
+        </View>
       </SafeAreaProvider>
     </ErrorBoundary>
   );

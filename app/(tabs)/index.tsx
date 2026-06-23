@@ -3,7 +3,6 @@
  */
 
 import TrialBanner from '@/components/TrialBanner';
-import SetupChecklistCard from '@/components/dashboard/SetupChecklistCard';
 import WeeklySummaryCard from '@/components/dashboard/WeeklySummaryCard';
 import Avatar from '@/components/ui/Avatar';
 import DatePicker from '@/components/ui/DatePicker';
@@ -231,10 +230,6 @@ export default function Dashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Debug logging for dashboard data
-  console.log('👨‍🎓 Dashboard students:', students.length);
-  console.log('📚 Dashboard lessons:', lessons.length);
-
   // Check onboarding status after successful login
   useEffect(() => {
     checkOnboarding();
@@ -244,9 +239,8 @@ export default function Dashboard() {
     try {
       const hasCompletedOnboarding = await AsyncStorage.getItem('hasCompletedOnboarding');
       
-      if (!hasCompletedOnboarding) {
-        // First time after sign up - show onboarding
-        router.push('/onboarding' as any);
+      if (hasCompletedOnboarding !== 'true') {
+        router.replace('/setup' as Parameters<typeof router.replace>[0]);
       }
     } catch (error) {
       console.error('Error checking onboarding:', error);
@@ -706,10 +700,6 @@ export default function Dashboard() {
             showsVerticalScrollIndicator={false}
           >
         <TrialBanner />
-        <SetupChecklistCard
-          firstStudent={students[0] ?? null}
-          onOpenSubjects={handleEditSubjects}
-        />
         {/* Header Section */}
         <View style={styles.headerContainer}>
           {/* 1. Name and Date Section - At TOP */}

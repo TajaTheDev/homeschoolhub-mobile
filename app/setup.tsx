@@ -1,11 +1,10 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  TextInput,
   Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -15,53 +14,64 @@ import { Calendar, Users, BookOpen, Repeat, Sparkles } from 'lucide-react-native
 import Colors from '@/constants/Colors';
 import { supabase } from '@/lib/supabase/client';
 import { useStudentStore } from '@/store/studentStore';
-import { useLessonStore } from '@/store/lessonStore';
 import { useScheduleStore } from '@/store/scheduleStore';
 import { useSubscriptionStore } from '@/store/subscriptionStore';
 import StudentModal from '@/components/students/StudentModal';
-import * as ImagePicker from 'expo-image-picker';
+import EditSubjectsModal from '@/components/students/EditSubjectsModal';
 
-type OnboardingStep = 'welcome' | 'schedule' | 'students' | 'lesson' | 'recurring' | 'complete';
-
+type OnboardingStep =
+  | 'welcome'
+  | 'schedule'
+  | 'students'
+  | 'subjects'
+  | 'lesson'
+  | 'recurring'
+  | 'complete';
 export default function OnboardingScreen() {
-  console.log('🔄 OnboardingScreen RENDER - checking if component re-rendered');
-  
   const router = useRouter();
   const confettiRef = useRef<any>(null);
   
   const [currentStep, setCurrentStep] = useState<OnboardingStep>('welcome');
-  const [schoolDays, setSchoolDays] = useState([1, 2, 3, 4, 5]); // Mon-Fri default
+  const [schoolDays, setSchoolDays] = useState([1, 2, 3, 4, 5]);
   const [studentModalVisible, setStudentModalVisible] = useState(false);
-  const [lessonTitle, setLessonTitle] = useState('');
-  const [lessonSubject, setLessonSubject] = useState('');
-  
-  const { students } = useStudentStore();
-  const { addLesson } = useLessonStore();
-  const { updateSchedule } = useScheduleStore();
-  
-  // Check if component re-render is resetting modal state
+  const [showSubjectsModal, setShowSubjectsModal] = useState(false);
+  const [activeStudentId, setActiveStudentId] = useState<string | null>(null);
+
+  const { students, subjects, fetchSubjects } = useStudentStore();
+  const { updateSchedule, fetchSchedule } = useScheduleStore();
+
+  const activeStudent = useMemo(
+    () => students.find((s) => s.id === activeStudentId) ?? students[0] ?? null,
+    [students, activeStudentId]
+  );
+
+  const activeStudentSubjects = useMemo(
+    () =>
+      activeStudent
+        ? subjects.filter((subject) => subject.student_id === activeStudent.id)
+        : [],
+    [subjects, activeStudent]
+  );
+
   useEffect(() => {
-    console.log('🔄 Component mounted/re-rendered - currentStep:', currentStep, 'modalVisible:', studentModalVisible);
-  }, []);
-  
-  // Check if currentStep change is affecting modal
-  useEffect(() => {
-    console.log('📝 currentStep changed to:', currentStep);
-    if (currentStep !== 'students' && studentModalVisible) {
-      console.log('⚠️ WARNING: currentStep changed away from "students" but modal is still visible!');
+    if (currentStep !== 'subjects' || students.length === 0) {
+      return;
     }
-  }, [currentStep]);
-  
-  // Debug: Watch studentModalVisible state changes
+
+    setActiveStudentId((current) => {
+      if (current && students.some((s) => s.id === current)) {
+        return current;
+      }
+      return students[0].id;
+    });
+  }, [currentStep, students]);
+
   useEffect(() => {
-    console.log('⚠️ useEffect running - studentModalVisible changed to:', studentModalVisible);
-    console.log('⚠️ useEffect STACK:', new Error().stack);
-    // Check if there's any code here that sets studentModalVisible to false
-    if (studentModalVisible === false) {
-      console.log('⚠️ WARNING: Modal was set to false - checking why...');
+    if (!activeStudentId) {
+      return;
     }
-  }, [studentModalVisible]);
-  
+    void fetchSubjects(activeStudentId);
+  }, [activeStudentId, fetchSubjects]);  
   const shootConfetti = () => {
     confettiRef.current?.start();
   };
@@ -83,8 +93,8 @@ export default function OnboardingScreen() {
         saturday: schoolDays.includes(6),
       };
       
+      await fetchSchedule();
       await updateSchedule(scheduleData);
-      console.log('✅ Schedule saved from onboarding:', scheduleData);
       setCurrentStep('students');
     } catch (error) {
       console.error('Error saving schedule:', error);
@@ -93,10 +103,22 @@ export default function OnboardingScreen() {
     }
   };
   
-  const handleStudentAdd = async (studentData?: any) => {
-    console.log('✅ Student added in onboarding:', studentData);
-    console.log('❌ MODAL CLOSING FROM handleStudentAdd - STACK:', new Error().stack);
-    setStudentModalVisible(false);
+  const goToSubjectsStep = (studentId?: string) => {
+    const targetId = studentId ?? students[students.length - 1]?.id ?? students[0]?.id ?? null;
+    if (targetId) {
+      setActiveStudentId(targetId);
+    }
+    setCurrentStep('subjects');
+  };
+
+  const handleSubjectsModalSave = async () => {
+    setShowSubjectsModal(false);
+    if (activeStudent?.id) {
+      await fetchSubjects(activeStudent.id);
+    }
+  };
+
+  const handleStudentAdd = async () => {    setStudentModalVisible(false);
     shootConfetti();
     
     // Show option to add more students
@@ -118,10 +140,9 @@ export default function OnboardingScreen() {
             text: 'Continue',
             onPress: () => {
               if (currentStep === 'students') {
-                setCurrentStep('lesson');
+                goToSubjectsStep(latestStudent?.id);
               }
-            },
-            style: 'default',
+            },            style: 'default',
           },
         ]
       );
@@ -149,11 +170,7 @@ export default function OnboardingScreen() {
         return;
       }
       
-      console.log('✅ User session verified');
-      
-      // Mark onboarding as complete - CRITICAL: Do this AFTER verifying session
       await AsyncStorage.setItem('hasCompletedOnboarding', 'true');
-      console.log('✅ Onboarding marked complete in AsyncStorage');
       
       // Wait a moment to ensure AsyncStorage write completes
       await new Promise(resolve => setTimeout(resolve, 200));
@@ -166,20 +183,11 @@ export default function OnboardingScreen() {
         return;
       }
       
-      console.log('✅ Onboarding completion verified, navigating based on subscription');
-
       try {
         const subscriptionInfo = await useSubscriptionStore.getState().checkSubscription();
         const redirectToSubscribe =
           !subscriptionInfo.hasAccess ||
           subscriptionInfo.subscriptionStatus === 'expired';
-
-        console.log('[GATE DEBUG]', {
-          source: 'onboarding',
-          status: subscriptionInfo.subscriptionStatus,
-          hasAccess: subscriptionInfo.hasAccess,
-          redirectToSubscribe,
-        });
 
         if (redirectToSubscribe) {
           router.replace('/subscribe');
@@ -188,12 +196,6 @@ export default function OnboardingScreen() {
         }
       } catch (error) {
         console.error('Subscription check failed after onboarding:', error);
-        console.log('[GATE DEBUG]', {
-          source: 'onboarding',
-          status: 'error',
-          hasAccess: false,
-          redirectToSubscribe: true,
-        });
         router.replace('/subscribe');
       }
     } catch (error) {
@@ -249,11 +251,10 @@ export default function OnboardingScreen() {
         {currentStep === 'schedule' && (
           <View style={styles.stepContainer}>
             <View style={styles.progressBar}>
-              <View style={[styles.progressFill, { width: '25%' }]} />
+              <View style={[styles.progressFill, { width: '17%' }]} />
             </View>
             
-            <Text style={styles.stepNumber}>Step 1 of 4</Text>
-            <Text style={styles.stepTitle}>School Schedule</Text>
+            <Text style={styles.stepNumber}>Step 1 of 6</Text>            <Text style={styles.stepTitle}>School Schedule</Text>
             <Text style={styles.stepDescription}>
               Which days do you typically have school?
             </Text>
@@ -312,11 +313,10 @@ export default function OnboardingScreen() {
         {currentStep === 'students' && (
           <View style={styles.stepContainer}>
             <View style={styles.progressBar}>
-              <View style={[styles.progressFill, { width: '50%' }]} />
+              <View style={[styles.progressFill, { width: '33%' }]} />
             </View>
             
-            <Text style={styles.stepNumber}>Step 2 of 4</Text>
-            <Text style={styles.stepTitle}>Add Your First Student 👨‍🎓</Text>
+            <Text style={styles.stepNumber}>Step 2 of 6</Text>            <Text style={styles.stepTitle}>Add Your First Student 👨‍🎓</Text>
             <Text style={styles.stepDescription}>
               {students.length === 0 
                 ? "Let's add your first student!"
@@ -343,15 +343,8 @@ export default function OnboardingScreen() {
             {/* Add Student Button */}
             <TouchableOpacity
               style={styles.primaryButton}
-              onPress={() => {
-                console.log('🔍 DEBUG: Add First Student button pressed');
-                console.log('🔍 DEBUG: Current studentModalVisible:', studentModalVisible);
-                console.log('🔍 DEBUG: Setting studentModalVisible to true');
-                setStudentModalVisible(true);
-                console.log('🔍 DEBUG: After setState, studentModalVisible:', studentModalVisible);
-              }}
-            >
-              <Text style={styles.primaryButtonText}>
+              onPress={() => setStudentModalVisible(true)}
+            >              <Text style={styles.primaryButtonText}>
                 {students.length === 0 ? 'Add Your First Student 🎊' : 'Add Another Student'}
               </Text>
             </TouchableOpacity>
@@ -361,9 +354,8 @@ export default function OnboardingScreen() {
                 style={styles.secondaryButton}
                 onPress={() => {
                   shootConfetti();
-                  setTimeout(() => setCurrentStep('lesson'), 1500);
-                }}
-              >
+                  setTimeout(() => goToSubjectsStep(), 1500);
+                }}              >
                 <Text style={styles.secondaryButtonText}>
                   Continue with {students.length} student{students.length > 1 ? 's' : ''}
                 </Text>
@@ -378,15 +370,105 @@ export default function OnboardingScreen() {
             </TouchableOpacity>
           </View>
         )}
+
+        {/* Subjects & curriculum */}
+        {currentStep === 'subjects' && (
+          <View style={styles.stepContainer}>
+            <View style={styles.progressBar}>
+              <View style={[styles.progressFill, { width: '50%' }]} />
+            </View>
+
+            <Text style={styles.stepNumber}>Step 3 of 6</Text>
+            <Text style={styles.stepTitle}>Subjects & Curriculum 📚</Text>
+            <Text style={styles.stepDescription}>
+              {activeStudent
+                ? `What subjects is ${activeStudent.name} studying?`
+                : 'Add subjects for your student. Curriculum is optional — skip anytime.'}
+            </Text>
+
+            {students.length > 1 && (
+              <View style={styles.addedStudents}>
+                {students.map((student) => {
+                  const isActive = student.id === activeStudent?.id;
+                  return (
+                    <TouchableOpacity
+                      key={student.id}
+                      style={[
+                        styles.studentChip,
+                        isActive && styles.studentChipActive,
+                      ]}
+                      onPress={() => setActiveStudentId(student.id)}
+                      activeOpacity={0.7}
+                    >
+                      <Text
+                        style={[
+                          styles.studentChipText,
+                          isActive && styles.studentChipTextActive,
+                        ]}
+                      >
+                        {student.name}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+
+            {activeStudentSubjects.length > 0 && (
+              <View style={styles.subjectList}>
+                <Text style={styles.subjectListTitle}>Added for {activeStudent?.name}:</Text>
+                {activeStudentSubjects.map((subject) => (
+                  <View key={subject.id} style={styles.subjectListItem}>
+                    <Text style={styles.subjectListText}>✓ {subject.subject}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={styles.primaryButton}
+              onPress={() => {
+                if (activeStudent) {
+                  setShowSubjectsModal(true);
+                }
+              }}
+              disabled={!activeStudent}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.primaryButtonText}>Add Subjects & Curriculum</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.secondaryButton}
+              onPress={() => setCurrentStep('lesson')}
+            >
+              <Text style={styles.secondaryButtonText}>Continue</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.secondaryButton}
+              onPress={() => setCurrentStep('lesson')}
+            >
+              <Text style={styles.secondaryButtonText}>Skip for now</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.secondaryButton}
+              onPress={() => setCurrentStep('students')}
+            >
+              <Text style={styles.secondaryButtonText}>Back</Text>
+            </TouchableOpacity>
+          </View>
+        )}
         
         {/* Add First Lesson */}
         {currentStep === 'lesson' && (
           <View style={styles.stepContainer}>
             <View style={styles.progressBar}>
-              <View style={[styles.progressFill, { width: '75%' }]} />
+              <View style={[styles.progressFill, { width: '67%' }]} />
             </View>
             
-            <Text style={styles.stepNumber}>Step 3 of 4</Text>
+            <Text style={styles.stepNumber}>Step 4 of 6</Text>
             <Text style={styles.stepTitle}>Great Job! 🎉</Text>
             <Text style={styles.stepDescription}>
               You've added your students! Now let's talk about lessons.
@@ -412,7 +494,7 @@ export default function OnboardingScreen() {
             
             <TouchableOpacity
               style={styles.secondaryButton}
-              onPress={() => setCurrentStep('students')}
+              onPress={() => setCurrentStep('subjects')}
             >
               <Text style={styles.secondaryButtonText}>Back</Text>
             </TouchableOpacity>
@@ -423,10 +505,10 @@ export default function OnboardingScreen() {
         {currentStep === 'recurring' && (
           <View style={styles.stepContainer}>
             <View style={styles.progressBar}>
-              <View style={[styles.progressFill, { width: '100%' }]} />
+              <View style={[styles.progressFill, { width: '83%' }]} />
             </View>
             
-            <Text style={styles.stepNumber}>Step 4 of 4</Text>
+            <Text style={styles.stepNumber}>Step 5 of 6</Text>
             <Text style={styles.stepTitle}>Recurring Lessons 🔄</Text>
             <Text style={styles.stepDescription}>
               Save time by creating lessons that repeat automatically!
@@ -515,31 +597,18 @@ export default function OnboardingScreen() {
       {/* Student Modal */}
       <StudentModal
         visible={studentModalVisible}
-        onClose={() => {
-          console.log('❌ MODAL ONCLOSE CALLED - WHO CALLED ME?', new Error().stack);
-          setStudentModalVisible(false);
-        }}
+        onClose={() => setStudentModalVisible(false)}
         onSave={handleStudentAdd}
         student={null}
       />
-      
-      {/* Debug: Force show modal state */}
-      {studentModalVisible && (
-        <View style={{
-          position: 'absolute',
-          top: 100,
-          left: 20,
-          backgroundColor: 'red',
-          padding: 10,
-          zIndex: 9999,
-        }}>
-          <Text style={{ color: 'white', fontWeight: 'bold' }}>
-            MODAL SHOULD BE VISIBLE!
-          </Text>
-        </View>
-      )}
-    </View>
-  );
+
+      <EditSubjectsModal
+        visible={showSubjectsModal}
+        student={activeStudent}
+        onClose={() => setShowSubjectsModal(false)}
+        onSave={handleSubjectsModalSave}
+      />
+    </View>  );
 }
 
 // Helper component
@@ -699,12 +768,42 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.brand[300],
   },
+  studentChipActive: {
+    backgroundColor: Colors.brand[500],
+    borderColor: Colors.brand[500],
+  },
   studentChipText: {
     fontSize: 14,
     fontWeight: '600',
     color: Colors.brand[700],
   },
-  infoBox: {
+  studentChipTextActive: {
+    color: '#FFFFFF',
+  },
+  subjectList: {
+    width: '100%',
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 24,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: Colors.brand[200],
+  },
+  subjectListTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.brand[700],
+    marginBottom: 4,
+  },
+  subjectListItem: {
+    paddingVertical: 4,
+  },
+  subjectListText: {
+    fontSize: 16,
+    color: Colors.ui.text,
+    fontWeight: '500',
+  },  infoBox: {
     width: '100%',
     backgroundColor: Colors.brand[50],
     borderRadius: 16,

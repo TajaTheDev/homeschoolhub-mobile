@@ -25,27 +25,25 @@ export default function Index() {
       const hasCompletedOnboarding = await AsyncStorage.getItem('hasCompletedOnboarding');
       const { data: { session } } = await supabase.auth.getSession();
 
-      console.log('🔍 User status:', {
-        hasSeenOnboarding,
-        hasCompletedOnboarding,
-        hasSession: !!session,
-      });
-
       if (!hasSeenOnboarding) {
-        console.log('→ Going to Canva welcome');
+        console.log('[REDIRECT]', {
+          source: 'index:checkUserStatus',
+          destination: '/onboarding/welcome',
+          hasSession: !!session,
+          hasSeenOnboarding,
+          hasCompletedOnboarding,
+        });
         router.replace('/onboarding/welcome');
         return;
       }
 
       if (hasSeenOnboarding && !session) {
-        console.log('→ Going to signup');
         router.replace('/(auth)/signup');
         return;
       }
 
       if (session && !hasCompletedOnboarding) {
-        console.log('→ Going to interactive onboarding');
-        router.replace('/onboarding');
+        router.replace('/setup');
         return;
       }
 
@@ -56,28 +54,28 @@ export default function Index() {
         !subscriptionInfo.hasAccess ||
         subscriptionInfo.subscriptionStatus === 'expired';
 
-      console.log('[GATE DEBUG]', {
-        source: 'index',
-        status: subscriptionInfo.subscriptionStatus,
-        hasAccess: subscriptionInfo.hasAccess,
-        redirectToSubscribe,
-      });
-
       if (!redirectToSubscribe) {
-        console.log('→ Going to main app');
         router.replace('/(tabs)');
         return;
       }
 
-      console.log('→ Trial expired, going to subscribe');
       router.replace('/subscribe');
     } catch (error) {
       console.error('Error checking user status:', error);
 
+      const hasSeenOnboarding = await AsyncStorage.getItem('hasSeenOnboarding');
+      const hasCompletedOnboarding = await AsyncStorage.getItem('hasCompletedOnboarding');
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
         router.replace('/subscribe');
       } else {
+        console.log('[REDIRECT]', {
+          source: 'index:checkUserStatus:catch',
+          destination: '/onboarding/welcome',
+          hasSession: !!session,
+          hasSeenOnboarding,
+          hasCompletedOnboarding,
+        });
         router.replace('/onboarding/welcome');
       }
     } finally {

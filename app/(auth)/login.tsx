@@ -28,30 +28,50 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
+  const handleDevResetOnboarding = async () => {
+    await AsyncStorage.multiRemove(['hasSeenOnboarding', 'hasCompletedOnboarding']);
+    Alert.alert('Flags cleared - restart app');
+  };
+
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
+      console.log('[LOGIN]', { hasSession: false, hasCompletedOnboarding: null, destination: 'alert:missing-fields' });
       Alert.alert('Error', 'Please enter both email and password');
       return;
     }
 
     const result = await signIn(email.trim(), password);
 
-    if (result.success) {
-      // Check if session exists
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (session) {
-        // Mark onboarding as seen (in case they went straight to login)
-        await AsyncStorage.setItem('hasSeenOnboarding', 'true');
-        
-        // Navigate to dashboard
-        router.replace('/(tabs)');
-      } else {
-        // Fallback to onboarding if no session
-        router.replace('/(auth)/onboarding');
-      }
-    } else {
+    if (!result.success) {
+      console.log('[LOGIN]', { hasSession: false, hasCompletedOnboarding: null, destination: 'alert:login-failed' });
       Alert.alert('Login Failed', result.error || 'An error occurred');
+      return;
+    }
+
+    let session = result.session ?? null;
+
+    if (!session) {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      const { data: { session: retriedSession } } = await supabase.auth.getSession();
+      session = retriedSession ?? null;
+    }
+
+    if (!session) {
+      console.log('[LOGIN]', { hasSession: false, hasCompletedOnboarding: null, destination: 'alert:no-session' });
+      Alert.alert("Couldn't establish your session", 'Please try again.');
+      return;
+    }
+
+    await AsyncStorage.setItem('hasSeenOnboarding', 'true');
+
+    const hasCompletedOnboarding = await AsyncStorage.getItem('hasCompletedOnboarding');
+
+    if (hasCompletedOnboarding !== 'true') {
+      console.log('[LOGIN]', { hasSession: !!session, hasCompletedOnboarding, destination: '/setup' });
+      router.replace('/setup');
+    } else {
+      console.log('[LOGIN]', { hasSession: !!session, hasCompletedOnboarding, destination: '/(tabs)' });
+      router.replace('/(tabs)');
     }
   };
 
@@ -123,6 +143,16 @@ export default function LoginScreen() {
               <Text style={styles.linkText}>Sign Up</Text>
             </TouchableOpacity>
           </View>
+
+          {__DEV__ && (
+            <TouchableOpacity
+              style={styles.devResetButton}
+              onPress={handleDevResetOnboarding}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.devResetButtonText}>DEV: Reset Onboarding</Text>
+            </TouchableOpacity>
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -213,6 +243,21 @@ const styles = StyleSheet.create({
     color: Colors.brand[600],
     fontWeight: '600',
     textDecorationLine: 'underline',
+  },
+  devResetButton: {
+    marginTop: 32,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.ui.border,
+    borderStyle: 'dashed',
+    alignItems: 'center',
+  },
+  devResetButtonText: {
+    fontSize: 13,
+    color: Colors.ui.textLight,
+    fontWeight: '600',
   },
 });
 

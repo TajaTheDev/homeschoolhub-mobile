@@ -37,8 +37,6 @@ const COLORS: { name: StudentColor; color: string }[] = [
 ];
 
 export default function StudentModal({ visible, student, onClose, onSave }: StudentModalProps) {
-  console.log('🎨 StudentModal render - visible:', visible, 'student:', student ? student.name : 'null');
-  
   const [name, setName] = useState('');
   const [grade, setGrade] = useState<GradeLevel>('1st');
   const [colorTheme, setColorTheme] = useState<StudentColor>('purple');
@@ -51,9 +49,7 @@ export default function StudentModal({ visible, student, onClose, onSave }: Stud
   const slideAnim = useRef(new Animated.Value(300)).current;
 
   useEffect(() => {
-    console.log('🎨 StudentModal useEffect [visible] - visible:', visible);
     if (visible) {
-      console.log('🎨 Starting slide animation');
       Animated.spring(slideAnim, {
         toValue: 0,
         friction: 8,
@@ -61,12 +57,15 @@ export default function StudentModal({ visible, student, onClose, onSave }: Stud
         useNativeDriver: true,
       }).start();
     } else {
-      console.log('🎨 Resetting slide animation');
       slideAnim.setValue(300);
     }
   }, [visible]);
 
   useEffect(() => {
+    if (!visible) {
+      return;
+    }
+
     if (student) {
       setName(student.name);
       setGrade(student.grade as GradeLevel);
@@ -74,22 +73,18 @@ export default function StudentModal({ visible, student, onClose, onSave }: Stud
       setAvatarType(student.avatar_type || 'initial');
       setAvatarValue(student.avatar_value || null);
     } else {
-      // Reset form when adding new student
       setName('');
       setGrade('1st');
       setColorTheme('purple');
       setAvatarType('initial');
       setAvatarValue(null);
     }
-  }, [student]);
+  }, [visible, student]);
 
   // Only check visible prop - allow null student for adding new students
   if (!visible) {
-    console.log('🎨 StudentModal returning null - visible is false');
     return null;
   }
-  
-  console.log('🎨 StudentModal rendering Modal component - visible:', visible);
 
   const handleAvatarSelect = async (type: 'initial' | 'photo' | 'illustration', value?: string) => {
     setAvatarType(type);
@@ -97,7 +92,6 @@ export default function StudentModal({ visible, student, onClose, onSave }: Stud
     
     // If editing existing student and photo was selected, save immediately
     if (student && type === 'photo' && value) {
-      console.log('📸 Photo selected, saving immediately for student:', student.id);
       setLoading(true);
       
       const result = await studentStore.updateStudent(student.id, {
@@ -108,7 +102,6 @@ export default function StudentModal({ visible, student, onClose, onSave }: Stud
       setLoading(false);
       
       if (result.success) {
-        console.log('✅ Student photo saved immediately');
         // Refresh students to get updated data
         await studentStore.fetchStudents();
       } else {

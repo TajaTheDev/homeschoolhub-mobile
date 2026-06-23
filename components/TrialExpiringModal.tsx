@@ -109,7 +109,7 @@ export default function TrialExpiringModal() {
   const [dismissChecked, setDismissChecked] = useState(false);
 
   const isOnMainApp = segments[0] === '(tabs)';
-  const hideOnRoutes = ['subscribe', 'welcome', '(auth)', 'onboarding'].includes(segments[0] ?? '');
+  const hideOnRoutes = ['subscribe', 'welcome', '(auth)', 'setup'].includes(segments[0] ?? '');
 
   const modalState = useMemo(() => {
     if (!subscriptionInfo || subscriptionInfo.subscriptionStatus === 'active') {

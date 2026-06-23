@@ -43,14 +43,6 @@ export default function AttendanceModal({
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
   
-  // Debug output
-  console.log('🔍 AttendanceModal DEBUG:');
-  console.log('  visible:', visible);
-  console.log('  date:', date);
-  console.log('  students count:', students.length);
-  console.log('  students:', students);
-  console.log('  presentStudentIds:', presentStudentIds);
-  
   // Load existing attendance when modal opens
   useEffect(() => {
     if (visible) {

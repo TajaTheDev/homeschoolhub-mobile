@@ -4,13 +4,13 @@
 
 import Colors from '@/constants/Colors';
 import { supabase } from '@/lib/supabase/client';
-import { useAuthStore } from '@/store/authStore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
-import { ChevronLeft } from 'lucide-react-native';
-import React, { useState } from 'react';
+import { Check, ChevronLeft } from 'lucide-react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
+  Animated,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -20,22 +20,63 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import ConfettiCannon from 'react-native-confetti-cannon';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+const SUCCESS_FALLBACK_MS = 6000;
+const FADE_OUT_MS = 450;
 
 export default function SignupScreen() {
   const router = useRouter();
-  const { signUp, loading } = useAuthStore();
+  const confettiRef = useRef<any>(null);
+  const hasNavigatedRef = useRef(false);
+  const fadeAnim = useRef(new Animated.Value(1)).current;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
+
+  const navigateToLogin = useCallback(() => {
+    if (hasNavigatedRef.current) {
+      return;
+    }
+    hasNavigatedRef.current = true;
+
+    Animated.timing(fadeAnim, {
+      toValue: 0,
+      duration: FADE_OUT_MS,
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) {
+        router.replace('/(auth)/login');
+      }
+    });
+  }, [fadeAnim, router]);
+
+  useEffect(() => {
+    if (!showSuccess) {
+      return;
+    }
+
+    fadeAnim.setValue(1);
+    hasNavigatedRef.current = false;
+
+    const confettiTimer = setTimeout(() => confettiRef.current?.start(), 150);
+    const fallbackTimer = setTimeout(() => navigateToLogin(), SUCCESS_FALLBACK_MS);
+
+    return () => {
+      clearTimeout(confettiTimer);
+      clearTimeout(fallbackTimer);
+    };
+  }, [showSuccess, fadeAnim, navigateToLogin]);
 
   const handleSignup = async () => {
+    if (isSubmitting || showSuccess) {
+      return;
+    }
+
     try {
-      console.log('🔐 Starting signup...');
-      console.log('📧 Email:', email);
-      console.log('🔑 Password length:', password?.length);
-      
-      // Validation
       if (!email.trim() || !password.trim() || !confirmPassword.trim()) {
         Alert.alert('Error', 'Please fill in all fields');
         return;
@@ -51,60 +92,72 @@ export default function SignupScreen() {
         return;
       }
 
+      setIsSubmitting(true);
+
       const { data, error } = await supabase.auth.signUp({
         email: email.trim(),
         password: password,
       });
-      
-      console.log('📊 Signup response:', JSON.stringify(data, null, 2));
-      console.log('❌ Signup error:', error);
-      
+
       if (error) {
-        console.error('❌ Signup failed:', error.message);
         Alert.alert('Signup Error', error.message);
+        setIsSubmitting(false);
         return;
       }
-      
+
       if (!data.user) {
-        console.error('❌ No user returned from signup');
         Alert.alert('Error', 'Failed to create account. Please try again.');
+        setIsSubmitting(false);
         return;
       }
-      
-      // CRITICAL: Verify session was created and persisted
-      console.log('✅ Signup successful!');
-      console.log('👤 User ID:', data.user?.id);
-      console.log('📧 User email:', data.user?.email);
-      
-      // Wait a moment for session to be established
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // Verify session exists
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      
-      if (sessionError || !session) {
-        console.error('⚠️ No session after signup!', sessionError);
-        // Some Supabase configurations require email confirmation
-        // In that case, we should still allow user to proceed
-        console.log('⚠️ Session not immediately available - may require email confirmation');
-      }
-      
-      // Update auth store to reflect logged in state
-      await useAuthStore.getState().checkUser();
-      
-      // Mark onboarding welcome as seen
+
       await AsyncStorage.setItem('hasSeenOnboarding', 'true');
-      
-      console.log('✅ Account created, navigating to interactive onboarding');
-      
-      // Navigate to interactive onboarding (user is logged in at this point)
-      router.replace('/onboarding');
-      
+      await supabase.auth.signOut();
+      setShowSuccess(true);
     } catch (err) {
-      console.error('🚨 Signup exception:', err);
+      console.error('Signup exception:', err);
       Alert.alert('Error', 'Something went wrong');
+      setIsSubmitting(false);
     }
   };
+
+  if (showSuccess) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <Animated.View style={[styles.successContainer, { opacity: fadeAnim }]}>
+          <ConfettiCannon
+            count={250}
+            origin={{ x: -10, y: 0 }}
+            autoStart={false}
+            ref={confettiRef}
+            fadeOut
+            fallSpeed={2200}
+            colors={[
+              Colors.brand[400],
+              Colors.brand[500],
+              Colors.secondary[400],
+              Colors.accent[400],
+              '#FFFFFF',
+            ]}
+          />
+          <View style={styles.checkCircle}>
+            <Check size={48} color="#FFFFFF" strokeWidth={3} />
+          </View>
+          <Text style={styles.successTitle}>Welcome to The Homeschool Hub!</Text>
+          <Text style={styles.successSubtitle}>
+            Your account is ready — let&apos;s get you signed in
+          </Text>
+          <TouchableOpacity
+            style={styles.continueButton}
+            onPress={navigateToLogin}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.continueButtonText}>Continue to Login</Text>
+          </TouchableOpacity>
+        </Animated.View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -118,7 +171,7 @@ export default function SignupScreen() {
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.header}>
-            <TouchableOpacity 
+            <TouchableOpacity
               onPress={() => router.replace('/(auth)/onboarding')}
               style={styles.backButton}
               activeOpacity={0.7}
@@ -169,13 +222,13 @@ export default function SignupScreen() {
             />
 
             <TouchableOpacity
-              style={[styles.signupButton, loading && styles.signupButtonDisabled]}
+              style={[styles.signupButton, isSubmitting && styles.signupButtonDisabled]}
               onPress={handleSignup}
-              disabled={loading}
+              disabled={isSubmitting}
               activeOpacity={0.8}
             >
               <Text style={styles.signupButtonText}>
-                {loading ? 'Creating Account...' : 'Create Account'}
+                {isSubmitting ? 'Creating Account...' : 'Create Account'}
               </Text>
             </TouchableOpacity>
           </View>
@@ -277,5 +330,47 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textDecorationLine: 'underline',
   },
+  successContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+  },
+  checkCircle: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    backgroundColor: Colors.brand[500],
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 28,
+  },
+  successTitle: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: Colors.brand[900],
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  successSubtitle: {
+    fontSize: 17,
+    color: Colors.brand[700],
+    textAlign: 'center',
+    lineHeight: 24,
+    marginBottom: 36,
+    paddingHorizontal: 8,
+  },
+  continueButton: {
+    backgroundColor: Colors.brand[500],
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    minWidth: 220,
+    alignItems: 'center',
+  },
+  continueButtonText: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '600',
+  },
 });
-

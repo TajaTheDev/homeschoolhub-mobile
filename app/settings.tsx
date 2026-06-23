@@ -218,6 +218,8 @@ export default function SettingsScreen() {
         throw deleteError;
       }
 
+      await AsyncStorage.multiRemove(['hasSeenOnboarding', 'hasCompletedOnboarding']);
+
       // Sign out the user
       await supabase.auth.signOut();
 
