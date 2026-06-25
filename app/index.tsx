@@ -28,17 +28,17 @@ export default function Index() {
       if (!hasSeenOnboarding) {
         console.log('[REDIRECT]', {
           source: 'index:checkUserStatus',
-          destination: '/onboarding/welcome',
+          destination: '/(auth)/onboarding',
           hasSession: !!session,
           hasSeenOnboarding,
           hasCompletedOnboarding,
         });
-        router.replace('/onboarding/welcome');
+        router.replace('/(auth)/onboarding');
         return;
       }
 
       if (hasSeenOnboarding && !session) {
-        router.replace('/(auth)/signup');
+        router.replace('/(auth)/login');
         return;
       }
 
@@ -71,12 +71,12 @@ export default function Index() {
       } else {
         console.log('[REDIRECT]', {
           source: 'index:checkUserStatus:catch',
-          destination: '/onboarding/welcome',
+          destination: '/(auth)/onboarding',
           hasSession: !!session,
           hasSeenOnboarding,
           hasCompletedOnboarding,
         });
-        router.replace('/onboarding/welcome');
+        router.replace('/(auth)/onboarding');
       }
     } finally {
       setChecking(false);
