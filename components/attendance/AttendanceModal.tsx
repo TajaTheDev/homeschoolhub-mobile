@@ -7,7 +7,6 @@ import {
   ScrollView,
   TextInput,
   StyleSheet,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   Keyboard,
@@ -17,6 +16,7 @@ import {
 import { X, Check } from 'lucide-react-native';
 import { format } from 'date-fns';
 import Colors from '@/constants/Colors';
+import { useSnackbar } from '@/contexts/SnackbarContext';
 import { useStudentStore } from '@/store/studentStore';
 import { useAttendanceStore } from '@/store/attendanceStore';
 
@@ -35,6 +35,7 @@ export default function AttendanceModal({
 }: AttendanceModalProps) {
   const { students } = useStudentStore();
   const { getAttendanceForDate, markAttendance } = useAttendanceStore();
+  const { showSnackbar } = useSnackbar();
   
   const dateString = format(date, 'yyyy-MM-dd');
   
@@ -84,26 +85,24 @@ export default function AttendanceModal({
   const handleSave = async () => {
     try {
       setLoading(true);
-      
-                                          
-      // Show who is present vs absent
-      students.forEach(student => {
-        const isPresent = presentStudentIds.includes(student.id);
-              });
-      
-      const result = await markAttendance(dateString, presentStudentIds, notes);
-      
-            
+
+      const result = await markAttendance(dateString, presentStudentIds, notes, {
+        persistInBackground: true,
+        onPersistError: (error) => {
+          showSnackbar(error, 'error');
+        },
+      });
+
       if (result.success) {
-        Alert.alert('Success! ✅', 'Attendance saved');
-        onSave();
+        showSnackbar('Attendance saved', 'success');
+        void Promise.resolve(onSave());
         onClose();
       } else {
-        Alert.alert('Error', result.error || 'Failed to save attendance');
+        showSnackbar(result.error || 'Failed to save attendance', 'error');
       }
     } catch (error) {
       console.error('❌ Error saving attendance:', error);
-      Alert.alert('Error', 'Something went wrong');
+      showSnackbar('Something went wrong', 'error');
     } finally {
       setLoading(false);
     }

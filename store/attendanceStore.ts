@@ -3,6 +3,13 @@ import { supabase } from '@/lib/supabase/client';
 import type { AttendanceRecord, DailyAttendance, AttendanceStats } from '@/types';
 import { useStudentStore } from './studentStore';
 
+import type { Student } from '@/types';
+
+type MarkAttendanceOptions = {
+  persistInBackground?: boolean;
+  onPersistError?: (error: string) => void;
+};
+
 interface AttendanceStore {
   attendance: AttendanceRecord[];
   loading: boolean;
@@ -18,7 +25,12 @@ interface AttendanceStore {
   hasAttendanceForDate: (date: string) => boolean;
   
   // Mark attendance for multiple students on a date
-  markAttendance: (date: string, presentStudentIds: string[], notes?: string) => Promise<{ success: boolean; error?: string }>;
+  markAttendance: (
+    date: string,
+    presentStudentIds: string[],
+    notes?: string,
+    options?: MarkAttendanceOptions
+  ) => Promise<{ success: boolean; error?: string }>;
   
   // Update attendance for a student on a date
   updateAttendance: (studentId: string, date: string, present: boolean, notes?: string) => Promise<{ success: boolean; error?: string }>;
@@ -91,79 +103,38 @@ export const useAttendanceStore = create<AttendanceStore>((set, get) => ({
     return attendance.some(a => a.date === date);
   },
 
-  markAttendance: async (date: string, presentStudentIds: string[], notes?: string) => {
-    // Save current state for rollback
+  markAttendance: async (date, presentStudentIds, notes, options) => {
     const previousAttendance = get().attendance;
-    
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        console.error('❌ Not authenticated');
-        return { success: false, error: 'Not authenticated' };
-      }
 
-                              // Import student store
-      const { students } = await import('./studentStore').then(m => m.useStudentStore.getState());
-      
-      if (!students || students.length === 0) {
-        console.error('❌ No students found!');
-        return { success: false, error: 'No students found' };
-      }
-
-            // STEP 1: Optimistic update - update UI immediately
-      const now = Date.now();
-      lastLocalModification = now;
-      
-      const optimisticRecords: AttendanceRecord[] = students.map(student => {
-        const isPresent = presentStudentIds.includes(student.id);
-        return {
-          id: `temp-${student.id}-${date}`, // Temporary ID
-          user_id: user.id,
-          student_id: student.id,
-          date: date,
-          present: isPresent,
-          notes: notes || null,
-          created_at: new Date().toISOString(),
-        };
-      });
-
-      // Update state optimistically (remove old records for this date, add new ones)
-      const updatedAttendance = [
-        ...previousAttendance.filter(a => a.date !== date),
-        ...optimisticRecords,
-      ];
-      
-      set({ attendance: updatedAttendance });
-            // STEP 2: Delete existing attendance for this date (clean slate)
-            
+    const persistToServer = async (
+      userId: string,
+      students: Student[]
+    ): Promise<{ success: boolean; error?: string }> => {
       const { error: deleteError } = await supabase
         .from('attendance')
         .delete()
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .eq('date', date);
 
       if (deleteError) {
         console.error('❌ Error deleting old attendance:', deleteError);
-        // Rollback on error
         set({ attendance: previousAttendance });
         lastLocalModification = 0;
         return { success: false, error: deleteError.message };
       }
 
-            // STEP 3: Create new attendance records for ALL students
-      const attendanceRecords = students.map(student => {
+      const attendanceRecords = students.map((student) => {
         const isPresent = presentStudentIds.includes(student.id);
-                
+
         return {
-          user_id: user.id,
+          user_id: userId,
           student_id: student.id,
-          date: date,
+          date,
           present: isPresent,
           notes: notes || null,
         };
       });
 
-            // STEP 4: Insert all records
       const { data: insertedData, error: insertError } = await supabase
         .from('attendance')
         .insert(attendanceRecords)
@@ -171,44 +142,93 @@ export const useAttendanceStore = create<AttendanceStore>((set, get) => ({
 
       if (insertError) {
         console.error('❌ Error inserting attendance:', insertError);
-        // Rollback on error
         set({ attendance: previousAttendance });
         lastLocalModification = 0;
         return { success: false, error: insertError.message };
       }
 
-            // VALIDATE: Check that we inserted correct number of records
       if (insertedData?.length !== students.length) {
         console.error('❌ MISMATCH! Expected', students.length, 'records, got', insertedData?.length);
-        // Rollback on error
         set({ attendance: previousAttendance });
         lastLocalModification = 0;
-        return { 
-          success: false, 
-          error: `Only saved ${insertedData?.length} of ${students.length} students` 
+        return {
+          success: false,
+          error: `Only saved ${insertedData?.length} of ${students.length} students`,
         };
       }
 
-      // STEP 5: Update with real data from server (replace optimistic records)
       const finalAttendance = [
-        ...previousAttendance.filter(a => a.date !== date),
+        ...previousAttendance.filter((a) => a.date !== date),
         ...insertedData,
       ];
-      
+
       set({ attendance: finalAttendance });
-      
-      // Reset grace period after successful save (allow future fetches)
+
       setTimeout(() => {
         lastLocalModification = 0;
       }, GRACE_PERIOD);
 
-            return { success: true };
-    } catch (error: any) {
+      return { success: true };
+    };
+
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        console.error('❌ Not authenticated');
+        return { success: false, error: 'Not authenticated' };
+      }
+
+      const { students } = await import('./studentStore').then((m) =>
+        m.useStudentStore.getState()
+      );
+
+      if (!students || students.length === 0) {
+        console.error('❌ No students found!');
+        return { success: false, error: 'No students found' };
+      }
+
+      lastLocalModification = Date.now();
+
+      const optimisticRecords: AttendanceRecord[] = students.map((student) => {
+        const isPresent = presentStudentIds.includes(student.id);
+        return {
+          id: `temp-${student.id}-${date}`,
+          user_id: user.id,
+          student_id: student.id,
+          date,
+          present: isPresent,
+          notes: notes || null,
+          created_at: new Date().toISOString(),
+        };
+      });
+
+      const updatedAttendance = [
+        ...previousAttendance.filter((a) => a.date !== date),
+        ...optimisticRecords,
+      ];
+
+      set({ attendance: updatedAttendance });
+
+      if (options?.persistInBackground) {
+        void persistToServer(user.id, students).then((result) => {
+          if (!result.success) {
+            options.onPersistError?.(result.error ?? 'Failed to save attendance');
+          }
+        });
+        return { success: true };
+      }
+
+      return await persistToServer(user.id, students);
+    } catch (error: unknown) {
       console.error('❌ CRITICAL ERROR in markAttendance:', error);
-      // Rollback on error
       set({ attendance: previousAttendance });
       lastLocalModification = 0;
-      return { success: false, error: error.message };
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to save attendance',
+      };
     }
   },
 
