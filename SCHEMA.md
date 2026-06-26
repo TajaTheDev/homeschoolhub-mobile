@@ -205,6 +205,10 @@ TypeScript `string` columns are documented as `UUID`, `TEXT`, or `TIMESTAMPTZ` b
 | `date_finished` | `TEXT` | yes | no | |
 | `rating` | `INTEGER` | yes | no | |
 | `notes` | `TEXT` | yes | no | |
+| `pages_read` | `INTEGER` | yes | no | |
+| `minutes_read` | `INTEGER` | yes | no | |
+| `reader_type` | `TEXT` | yes | no | `independent` \| `read_aloud` |
+| `book_photo_path` | `TEXT` | yes | no | Supabase storage path in `lesson-photos` bucket |
 | `created_at` | `TIMESTAMPTZ` | yes | no | |
 
 ---

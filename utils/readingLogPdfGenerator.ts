@@ -1,4 +1,4 @@
-import type { ReadingLogExportData } from '@/lib/fetchPdfExportData';
+import type { ReadingLogExportBook, ReadingLogExportData } from '@/lib/fetchPdfExportData';
 import { format, parseISO } from 'date-fns';
 import { printToFileAsync } from 'expo-print';
 
@@ -40,54 +40,106 @@ function renderStars(rating: number | null): string {
   return `<span class="stars">${filled}${empty}</span>`;
 }
 
+function renderBookPhoto(photoUrl: string | null | undefined): string {
+  try {
+    if (!photoUrl) {
+      return '';
+    }
+
+    return `<img class="book-photo" src="${escapeHtml(photoUrl)}" alt="Book cover" />`;
+  } catch {
+    return '';
+  }
+}
+
+function renderFinishedBookCard(book: ReadingLogExportBook): string {
+  try {
+    const author = book.author ? escapeHtml(book.author) : '';
+    const notes = book.notes?.trim()
+      ? `<p class="book-notes">${escapeHtml(book.notes.trim())}</p>`
+      : '';
+    const photoHtml = renderBookPhoto(book.photoUrl);
+
+    return `
+      <div class="book-card finished">
+        <div class="book-card-inner">
+          ${photoHtml}
+          <div class="book-card-content">
+            <div class="book-header">
+              <span class="book-title">${escapeHtml(book.title)}</span>
+              ${author ? `<span class="book-author">by ${author}</span>` : ''}
+            </div>
+            <div class="book-meta">
+              ${book.date_finished ? `<span class="book-date">Finished ${formatDisplayDate(book.date_finished)}</span>` : ''}
+              ${book.rating ? renderStars(book.rating) : ''}
+            </div>
+            ${notes}
+          </div>
+        </div>
+      </div>
+    `;
+  } catch (error) {
+    console.error('Finished book card render failed (non-blocking):', error);
+    const author = book.author ? escapeHtml(book.author) : '';
+    return `
+      <div class="book-card finished">
+        <div class="book-header">
+          <span class="book-title">${escapeHtml(book.title)}</span>
+          ${author ? `<span class="book-author">by ${author}</span>` : ''}
+        </div>
+      </div>
+    `;
+  }
+}
+
+function renderReadingBookCard(book: ReadingLogExportBook): string {
+  try {
+    const author = book.author ? escapeHtml(book.author) : '';
+    const started = book.date_started
+      ? `<span class="book-date">Started ${formatDisplayDate(book.date_started)}</span>`
+      : '';
+    const photoHtml = renderBookPhoto(book.photoUrl);
+
+    return `
+      <div class="book-card reading">
+        <div class="book-card-inner">
+          ${photoHtml}
+          <div class="book-card-content">
+            <div class="book-header">
+              <span class="book-title">${escapeHtml(book.title)}</span>
+              ${author ? `<span class="book-author">by ${author}</span>` : ''}
+            </div>
+            ${started ? `<div class="book-meta">${started}</div>` : ''}
+          </div>
+        </div>
+      </div>
+    `;
+  } catch (error) {
+    console.error('Currently reading book card render failed (non-blocking):', error);
+    const author = book.author ? escapeHtml(book.author) : '';
+    return `
+      <div class="book-card reading">
+        <div class="book-header">
+          <span class="book-title">${escapeHtml(book.title)}</span>
+          ${author ? `<span class="book-author">by ${author}</span>` : ''}
+        </div>
+      </div>
+    `;
+  }
+}
+
 export async function generateReadingLogPdf({
   studentName,
   data,
 }: GenerateReadingLogPdfParams): Promise<string> {
   const finishedHtml =
     data.finishedBooks.length > 0
-      ? data.finishedBooks
-          .map((book) => {
-            const author = book.author ? escapeHtml(book.author) : '';
-            const notes = book.notes?.trim()
-              ? `<p class="book-notes">${escapeHtml(book.notes.trim())}</p>`
-              : '';
-            return `
-              <div class="book-card finished">
-                <div class="book-header">
-                  <span class="book-title">${escapeHtml(book.title)}</span>
-                  ${author ? `<span class="book-author">by ${author}</span>` : ''}
-                </div>
-                <div class="book-meta">
-                  ${book.date_finished ? `<span class="book-date">Finished ${formatDisplayDate(book.date_finished)}</span>` : ''}
-                  ${book.rating ? renderStars(book.rating) : ''}
-                </div>
-                ${notes}
-              </div>
-            `;
-          })
-          .join('')
+      ? data.finishedBooks.map((book) => renderFinishedBookCard(book)).join('')
       : `<p class="empty-text">No books finished this year yet.</p>`;
 
   const readingHtml =
     data.currentlyReading.length > 0
-      ? data.currentlyReading
-          .map((book) => {
-            const author = book.author ? escapeHtml(book.author) : '';
-            const started = book.date_started
-              ? `<span class="book-date">Started ${formatDisplayDate(book.date_started)}</span>`
-              : '';
-            return `
-              <div class="book-card reading">
-                <div class="book-header">
-                  <span class="book-title">${escapeHtml(book.title)}</span>
-                  ${author ? `<span class="book-author">by ${author}</span>` : ''}
-                </div>
-                ${started ? `<div class="book-meta">${started}</div>` : ''}
-              </div>
-            `;
-          })
-          .join('')
+      ? data.currentlyReading.map((book) => renderReadingBookCard(book)).join('')
       : `<p class="empty-text">No books currently being read.</p>`;
 
   const html = `
@@ -171,6 +223,22 @@ export async function generateReadingLogPdf({
         .book-card.reading {
           background: white;
           border: 2px solid ${BRAND_200};
+        }
+        .book-card-inner {
+          display: flex;
+          gap: 14px;
+          align-items: flex-start;
+        }
+        .book-card-content {
+          flex: 1;
+          min-width: 0;
+        }
+        .book-photo {
+          width: 56px;
+          height: 80px;
+          object-fit: cover;
+          border-radius: 8px;
+          flex-shrink: 0;
         }
         .book-title { font-size: 16px; font-weight: 700; display: block; }
         .book-author { font-size: 13px; color: ${TEXT_LIGHT}; display: block; margin-top: 2px; }

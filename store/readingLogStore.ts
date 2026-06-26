@@ -2,6 +2,7 @@
  * Reading log store — per-student book tracking.
  */
 
+import { LESSON_PHOTOS_BUCKET, deleteStorageObject } from '@/lib/photoStorage';
 import { supabase } from '@/lib/supabase/client';
 import type { Tables, TablesInsert, TablesUpdate } from '@/types/database.generated';
 import { create } from 'zustand';
@@ -26,6 +27,7 @@ export type ReadingLogFields = {
   pages_read?: number | null;
   minutes_read?: number | null;
   reader_type?: ReaderType | null;
+  book_photo_path?: string | null;
 };
 
 type ReadingLogStore = {
@@ -86,6 +88,7 @@ export const useReadingLogStore = create<ReadingLogStore>((set, get) => ({
         pages_read: fields.pages_read ?? null,
         minutes_read: fields.minutes_read ?? null,
         reader_type: fields.reader_type ?? null,
+        book_photo_path: fields.book_photo_path ?? null,
       };
 
       const { data, error } = await supabase
@@ -147,6 +150,9 @@ export const useReadingLogStore = create<ReadingLogStore>((set, get) => ({
       if (fields.reader_type !== undefined) {
         payload.reader_type = fields.reader_type;
       }
+      if (fields.book_photo_path !== undefined) {
+        payload.book_photo_path = fields.book_photo_path;
+      }
 
       const { data, error } = await supabase
         .from('reading_log')
@@ -175,6 +181,7 @@ export const useReadingLogStore = create<ReadingLogStore>((set, get) => ({
 
   deleteBook: async (id) => {
     const previousBooks = get().books;
+    const bookToDelete = previousBooks.find((book) => book.id === id);
 
     try {
       set((state) => ({
@@ -182,6 +189,10 @@ export const useReadingLogStore = create<ReadingLogStore>((set, get) => ({
       }));
 
       const { error } = await supabase.from('reading_log').delete().eq('id', id);
+
+      if (!error && bookToDelete?.book_photo_path) {
+        await deleteStorageObject(LESSON_PHOTOS_BUCKET, bookToDelete.book_photo_path);
+      }
 
       if (error) {
         console.error('Error deleting book:', error);

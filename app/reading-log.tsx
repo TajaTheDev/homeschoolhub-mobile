@@ -3,9 +3,15 @@
  */
 
 import Button from '@/components/ui/Button';
+import BookPhotoUpload from '@/components/reading-log/BookPhotoUpload';
 import Colors from '@/constants/Colors';
 import Typography from '@/constants/Typography';
 import { useSnackbar } from '@/contexts/SnackbarContext';
+import {
+  LESSON_PHOTOS_BUCKET,
+  deleteStorageObject,
+  getStoragePublicUrl,
+} from '@/lib/photoStorage';
 import {
   useReadingLogStore,
   type ReadingLogEntry,
@@ -14,6 +20,7 @@ import {
 } from '@/store/readingLogStore';
 import { useStudentStore } from '@/store/studentStore';
 import { format, parseISO } from 'date-fns';
+import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ChevronLeft, Plus, Star, X } from 'lucide-react-native';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -75,6 +82,8 @@ export default function ReadingLogScreen() {
   const [readerType, setReaderType] = useState<ReaderType | null>(null);
   const [pagesRead, setPagesRead] = useState('');
   const [minutesRead, setMinutesRead] = useState('');
+  const [bookPhotoPath, setBookPhotoPath] = useState<string | null>(null);
+  const [committedPhotoPath, setCommittedPhotoPath] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const student = useMemo(
@@ -125,6 +134,8 @@ export default function ReadingLogScreen() {
     setReaderType(null);
     setPagesRead('');
     setMinutesRead('');
+    setBookPhotoPath(null);
+    setCommittedPhotoPath(null);
     setEditingBook(null);
     setSheetMode('add');
   };
@@ -132,6 +143,7 @@ export default function ReadingLogScreen() {
   const openAddSheet = () => {
     resetSheet();
     setSheetMode('add');
+    setCommittedPhotoPath(null);
     setSheetVisible(true);
   };
 
@@ -147,13 +159,38 @@ export default function ReadingLogScreen() {
     setReaderType(book.reader_type ?? null);
     setPagesRead(book.pages_read != null ? String(book.pages_read) : '');
     setMinutesRead(book.minutes_read != null ? String(book.minutes_read) : '');
+    setBookPhotoPath(book.book_photo_path ?? null);
+    setCommittedPhotoPath(book.book_photo_path ?? null);
     setSheetVisible(true);
+  };
+
+  const cleanupUnsavedPhotoUpload = async (
+    mode: SheetMode,
+    workingPath: string | null,
+    committed: string | null
+  ) => {
+    if (!workingPath) return;
+
+    if (mode === 'add') {
+      await deleteStorageObject(LESSON_PHOTOS_BUCKET, workingPath);
+      return;
+    }
+
+    if (workingPath !== committed) {
+      await deleteStorageObject(LESSON_PHOTOS_BUCKET, workingPath);
+    }
   };
 
   const closeSheet = () => {
     if (saving) return;
+
+    const mode = sheetMode;
+    const workingPath = bookPhotoPath;
+    const committed = committedPhotoPath;
+
     setSheetVisible(false);
     resetSheet();
+    void cleanupUnsavedPhotoUpload(mode, workingPath, committed);
   };
 
   const canSave = title.trim().length > 0 && !saving;
@@ -177,6 +214,7 @@ export default function ReadingLogScreen() {
           pages_read: pages,
           minutes_read: minutes,
           reader_type: readerType,
+          book_photo_path: bookPhotoPath,
         });
 
         if (!result.success) {
@@ -186,6 +224,7 @@ export default function ReadingLogScreen() {
 
         showSnackbar('Book added', 'success');
       } else if (editingBook) {
+        const previousPhotoPath = editingBook.book_photo_path ?? null;
         const result = await updateBook(editingBook.id, {
           title: title.trim(),
           author: author.trim() || null,
@@ -196,6 +235,7 @@ export default function ReadingLogScreen() {
           pages_read: pages,
           minutes_read: minutes,
           reader_type: readerType,
+          book_photo_path: bookPhotoPath,
         });
 
         if (!result.success) {
@@ -203,10 +243,15 @@ export default function ReadingLogScreen() {
           return;
         }
 
+        if (previousPhotoPath && previousPhotoPath !== bookPhotoPath) {
+          await deleteStorageObject(LESSON_PHOTOS_BUCKET, previousPhotoPath);
+        }
+
         showSnackbar('Book updated', 'success');
       }
 
-      closeSheet();
+      setSheetVisible(false);
+      resetSheet();
     } finally {
       setSaving(false);
     }
@@ -313,26 +358,42 @@ export default function ReadingLogScreen() {
         onPress={() => openEditSheet(book)}
         activeOpacity={0.7}
       >
-        <View style={styles.bookCardHeader}>
-          <Text style={styles.bookTitle}>{book.title}</Text>
-          {readerBadgeLabel ? (
-            <View style={styles.readerBadge}>
-              <Text style={styles.readerBadgeText}>{readerBadgeLabel}</Text>
-            </View>
+        <View style={styles.bookCardRow}>
+          {book.book_photo_path ? (
+            <Image
+              source={{
+                uri: getStoragePublicUrl(LESSON_PHOTOS_BUCKET, book.book_photo_path),
+              }}
+              style={styles.bookCardThumb}
+              contentFit="cover"
+              transition={200}
+            />
           ) : null}
-        </View>
-        {book.author ? <Text style={styles.bookAuthor}>{book.author}</Text> : null}
-        {trackingParts.length > 0 ? (
-          <Text style={styles.bookTracking}>{trackingParts.join(' · ')}</Text>
-        ) : null}
-        {book.status === 'finished' ? (
-          <View style={styles.bookMeta}>
-            {book.rating ? renderStars(book.rating) : null}
-            {book.date_finished ? (
-              <Text style={styles.bookDate}>Finished {formatDisplayDate(book.date_finished)}</Text>
+          <View style={styles.bookCardBody}>
+            <View style={styles.bookCardHeader}>
+              <Text style={styles.bookTitle}>{book.title}</Text>
+              {readerBadgeLabel ? (
+                <View style={styles.readerBadge}>
+                  <Text style={styles.readerBadgeText}>{readerBadgeLabel}</Text>
+                </View>
+              ) : null}
+            </View>
+            {book.author ? <Text style={styles.bookAuthor}>{book.author}</Text> : null}
+            {trackingParts.length > 0 ? (
+              <Text style={styles.bookTracking}>{trackingParts.join(' · ')}</Text>
+            ) : null}
+            {book.status === 'finished' ? (
+              <View style={styles.bookMeta}>
+                {book.rating ? renderStars(book.rating) : null}
+                {book.date_finished ? (
+                  <Text style={styles.bookDate}>
+                    Finished {formatDisplayDate(book.date_finished)}
+                  </Text>
+                ) : null}
+              </View>
             ) : null}
           </View>
-        ) : null}
+        </View>
       </TouchableOpacity>
     );
   };
@@ -445,6 +506,14 @@ export default function ReadingLogScreen() {
                 placeholder="Optional"
                 placeholderTextColor={Colors.ui.textLight}
                 editable={!saving}
+              />
+
+              <BookPhotoUpload
+                studentId={studentId}
+                committedPhotoPath={committedPhotoPath}
+                photoPath={bookPhotoPath}
+                onPhotoPathChange={setBookPhotoPath}
+                disabled={saving}
               />
 
               <Text style={styles.fieldLabel}>Reader type</Text>
@@ -722,6 +791,20 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     borderWidth: 1,
     borderColor: Colors.ui.border,
+  },
+  bookCardRow: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'flex-start',
+  },
+  bookCardThumb: {
+    width: 52,
+    height: 72,
+    borderRadius: 8,
+    backgroundColor: Colors.ui.border,
+  },
+  bookCardBody: {
+    flex: 1,
   },
   bookCardHeader: {
     flexDirection: 'row',

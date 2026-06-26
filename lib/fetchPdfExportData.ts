@@ -3,6 +3,7 @@
  * Does not use Zustand stores — queries directly.
  */
 
+import { LESSON_PHOTOS_BUCKET, cleanStoragePath, getStoragePublicUrl } from '@/lib/photoStorage';
 import { supabase } from '@/lib/supabase/client';
 import type { Tables } from '@/types/database.generated';
 import { format, parseISO } from 'date-fns';
@@ -98,9 +99,13 @@ export type YearInReviewData = {
   subjectSections: YearInReviewSubjectSection[];
 };
 
+export type ReadingLogExportBook = ReadingLogRow & {
+  photoUrl?: string | null;
+};
+
 export type ReadingLogExportData = {
-  finishedBooks: ReadingLogRow[];
-  currentlyReading: ReadingLogRow[];
+  finishedBooks: ReadingLogExportBook[];
+  currentlyReading: ReadingLogExportBook[];
   stats: {
     total: number;
     finished: number;
@@ -837,7 +842,7 @@ export async function fetchReadingLogExportData(
   }
 
   const allBooks = data ?? [];
-  const finishedBooks = allBooks
+  const finishedBooksRaw = allBooks
     .filter(
       (book) =>
         book.status === 'finished' &&
@@ -846,13 +851,16 @@ export async function fetchReadingLogExportData(
     )
     .sort((a, b) => (b.date_finished ?? '').localeCompare(a.date_finished ?? ''));
 
-  const currentlyReading = allBooks
+  const currentlyReadingRaw = allBooks
     .filter((book) => book.status === 'reading')
     .sort((a, b) => {
       const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
       const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
       return bTime - aTime;
     });
+
+  const finishedBooks = enrichReadingLogBooksWithPhotoUrls(finishedBooksRaw);
+  const currentlyReading = enrichReadingLogBooksWithPhotoUrls(currentlyReadingRaw);
 
   return {
     finishedBooks,
@@ -864,4 +872,42 @@ export async function fetchReadingLogExportData(
       currentlyReading: currentlyReading.length,
     },
   };
+}
+
+/**
+ * Resolves book_photo_path to a public URL; never throws.
+ */
+function resolveBookPhotoUrl(storagePath: string | null | undefined): string | null {
+  try {
+    if (!storagePath?.trim()) {
+      return null;
+    }
+
+    const cleanPath = cleanStoragePath(storagePath);
+    const url = getStoragePublicUrl(LESSON_PHOTOS_BUCKET, cleanPath);
+
+    if (!url || !url.startsWith('http')) {
+      return null;
+    }
+
+    return url;
+  } catch (error) {
+    console.error('Book photo URL build failed (non-blocking):', error);
+    return null;
+  }
+}
+
+/**
+ * Attaches optional photoUrl to each book for PDF export; per-book failures are non-blocking.
+ */
+function enrichReadingLogBooksWithPhotoUrls(books: ReadingLogRow[]): ReadingLogExportBook[] {
+  return books.map((book) => {
+    try {
+      const photoUrl = resolveBookPhotoUrl(book.book_photo_path);
+      return { ...book, photoUrl };
+    } catch (error) {
+      console.error('Single book photo enrich failed (non-blocking):', error);
+      return { ...book, photoUrl: null };
+    }
+  });
 }
