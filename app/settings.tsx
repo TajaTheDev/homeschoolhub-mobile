@@ -1,47 +1,44 @@
+import { presentCustomerCenter } from '@/components/subscription/CustomerCenter';
 import Avatar from '@/components/ui/Avatar';
 import Colors from '@/constants/Colors';
 import Typography from '@/constants/Typography';
 import { useSnackbar } from '@/contexts/SnackbarContext';
+import { useSubscription } from '@/contexts/SubscriptionContext';
+import { restorePurchases } from '@/lib/revenuecat';
 import { supabase } from '@/lib/supabase';
 import type { AvatarType } from '@/types';
-import { requestNotificationPermissions, scheduleAttendanceReminder, cancelAttendanceReminder } from '@/utils/notificationManager';
-import { useSubscription } from '@/contexts/SubscriptionContext';
-import { presentCustomerCenter } from '@/components/subscription/CustomerCenter';
-import { restorePurchases } from '@/lib/revenuecat';
+import { cancelAttendanceReminder, requestNotificationPermissions, scheduleAttendanceReminder } from '@/utils/notificationManager';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { format } from 'date-fns';
 import { useRouter } from 'expo-router';
 import {
   Bell,
   Calendar,
   ChevronRight,
-  Clock,
   CreditCard,
-  Download,
   Image as ImageIcon,
   Info,
   LogOut,
   Moon,
   RefreshCw,
   Settings,
-  Shield,
   Share2,
-  TrendingUp,
+  Shield,
   Trash2,
+  TrendingUp,
   User
 } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
 import {
   Alert,
-  Platform,
   ScrollView,
   StyleSheet,
   Switch,
   Text,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
-import DateTimePicker from '@react-native-community/datetimepicker';
-import { format } from 'date-fns';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function SettingsScreen() {
