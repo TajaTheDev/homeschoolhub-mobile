@@ -183,7 +183,7 @@ export default function Dashboard() {
   const [galleryPhotos, setGalleryPhotos] = useState<any[]>([]);
   const [galleryStartIndex, setGalleryStartIndex] = useState(0);
   const [showAttendanceModal, setShowAttendanceModal] = useState(false);
-  const { hasAttendanceForDate } = useAttendanceStore();
+  const { hasAttendanceForDate, fetchAttendance } = useAttendanceStore();
   const [hasError, setHasError] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
 
@@ -212,6 +212,9 @@ export default function Dashboard() {
           loadParentData().catch((err: any) => {
             console.error('❌ Error loading parent data:', err?.message);
             // Parent data is not critical, so don't set error state
+          }),
+          fetchAttendance().catch((err: any) => {
+            console.error('❌ Error fetching attendance:', err?.message);
           }),
         ];
         
