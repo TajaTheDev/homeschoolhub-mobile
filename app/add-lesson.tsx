@@ -274,12 +274,7 @@ export default function AddLessonScreen() {
     let currentDate = new Date(startDate);
     const finalDate = new Date(endDate);
     
-    console.log('📅 Generating recurring lessons...');
-    console.log(`  Start: ${format(startDate, 'MMM dd, yyyy')}`);
-    console.log(`  End: ${format(endDate, 'MMM dd, yyyy')}`);
-    console.log(`  Pattern: ${pattern}`);
-    console.log(`  School days: ${schoolDays.join(', ')}`);
-    
+                        
     let skippedBreaks = 0;
     let skippedWeekends = 0;
     let lessonsCreated = 0;
@@ -311,8 +306,7 @@ export default function AddLessonScreen() {
             lessonsCreated++;
           } else {
             // Skip this day - it's a break
-            console.log(`  ⏭️  Skipping ${format(currentDate, 'MMM dd')} - break day`);
-            skippedBreaks++;
+                        skippedBreaks++;
           }
         } else {
           skippedWeekends++;
@@ -322,18 +316,14 @@ export default function AddLessonScreen() {
       currentDate.setDate(currentDate.getDate() + 1);
     }
     
-    console.log(`✅ Generated ${lessonsCreated} lessons`);
-    console.log(`⏭️  Skipped ${skippedBreaks} days due to breaks`);
-    console.log(`⏭️  Skipped ${skippedWeekends} non-school days`);
-    
+                
     return lessons;
   };
 
   const handleSave = async () => {
     // Prevent double-tap
     if (loading) {
-      console.log('⚠️ Already creating lesson, ignoring tap');
-      return;
+            return;
     }
 
     // Validate required fields
@@ -395,19 +385,14 @@ export default function AddLessonScreen() {
 
         // Ensure breaks are loaded before generating lessons
         if (breaks.length === 0) {
-          console.log('📅 No breaks in store, fetching...');
-          await fetchBreaks();
+                    await fetchBreaks();
           // Get updated breaks from store after fetching
           const updatedBreaks = useBreakStore.getState().breaks;
-          console.log(`📅 Fetched ${updatedBreaks.length} breaks`);
-          updatedBreaks.forEach(b => {
-            console.log(`  - ${b.reason || 'Break'}: ${b.start_date} to ${b.end_date}`);
-          });
+                    updatedBreaks.forEach(b => {
+                      });
         } else {
-          console.log(`📅 Current breaks in system: ${breaks.length}`);
-          breaks.forEach(b => {
-            console.log(`  - ${b.reason || 'Break'}: ${b.start_date} to ${b.end_date}`);
-          });
+                    breaks.forEach(b => {
+                      });
         }
 
         // Generate all recurring lessons
@@ -446,11 +431,7 @@ export default function AddLessonScreen() {
                 try {
                   // user_id is already in baseLesson, so recurringLessons already have it
                   // No need to check user again - already checked at start of handleSave
-                  console.log('✅ Recurring lessons already include user_id from baseLesson');
-                  console.log('📝 Sample lesson data:', recurringLessons[0]);
-                  console.log(`📚 Total lessons to insert: ${recurringLessons.length}`);
-
-                  // Use recurringLessons directly (user_id already included in baseLesson)
+                                                                        // Use recurringLessons directly (user_id already included in baseLesson)
                   const recurringLessonsWithUserId = recurringLessons;
 
                   // VERIFY: Check that user_id is present in all lessons
@@ -461,9 +442,7 @@ export default function AddLessonScreen() {
                     setLoading(false);
                     return;
                   }
-                  console.log('✅ Verified: All recurring lessons have user_id');
-
-                  // Insert all lessons at once
+                                    // Insert all lessons at once
                   const { data: insertedLessons, error } = await supabase
         .from('lessons')
                     .insert(recurringLessonsWithUserId)
@@ -493,9 +472,7 @@ export default function AddLessonScreen() {
                     });
                   });
 
-                  console.log('Linking students to recurring lessons:', lessonStudentRecords.length, 'records');
-
-                  const { error: linkError } = await supabase
+                                    const { error: linkError } = await supabase
                     .from('lesson_students')
                     .insert(lessonStudentRecords);
 
@@ -506,14 +483,11 @@ export default function AddLessonScreen() {
                       `${insertedLessons.length} lessons created but some students may not be linked. Error: ${linkError.message}`
                     );
                   } else {
-                    console.log('✅ Students linked to recurring lessons');
-                  }
+                                      }
 
                   // Refresh lessons in store (force fresh fetch)
                   await lessonStore.fetchLessons(undefined, undefined, true);
-                  console.log('✅ Lessons created, store refreshed');
-
-                  // Success!
+                                    // Success!
                   Alert.alert(
                     'Success! 🎉',
                     `Created ${insertedLessons.length} recurring lessons!`,
@@ -565,9 +539,7 @@ export default function AddLessonScreen() {
           setLoading(false);
           return;
         }
-        console.log('✅ Verified: Single lesson has user_id:', singleLesson.user_id);
-
-        const { data: lesson, error } = await supabase
+                const { data: lesson, error } = await supabase
           .from('lessons')
           .insert([singleLesson])
         .select()
@@ -586,9 +558,7 @@ export default function AddLessonScreen() {
           return;
       }
 
-      console.log('✅ Lesson created:', lesson.id);
-
-      // Set the lesson ID so PhotoUpload component can be used
+            // Set the lesson ID so PhotoUpload component can be used
       setCreatedLessonId(lesson.id);
 
         // Link ALL selected students (including the first one)
@@ -597,9 +567,7 @@ export default function AddLessonScreen() {
         student_id: studentId,
       }));
 
-      console.log('Linking students:', lessonStudentRecords);
-
-      const { data: linkedData, error: linkError } = await supabase
+            const { data: linkedData, error: linkError } = await supabase
         .from('lesson_students')
         .insert(lessonStudentRecords)
         .select();
@@ -611,14 +579,11 @@ export default function AddLessonScreen() {
           'Lesson created but some students may not be linked. Error: ' + linkError.message
         );
       } else {
-        console.log('✅ Students linked:', linkedData?.length);
-      }
+              }
 
         // Refresh lesson data (force fresh fetch)
       await lessonStore.fetchLessons(undefined, undefined, true);
-      console.log('✅ Lessons created, store refreshed');
-
-      Alert.alert('Success', 'Lesson created!', [
+            Alert.alert('Success', 'Lesson created!', [
         {
           text: 'OK',
           onPress: async () => {
@@ -658,16 +623,9 @@ export default function AddLessonScreen() {
   // };
 
   // useEffect(() => {
-  //   console.log('=== PHOTOS STATE ===');
-  //   console.log('Photos array:', photos);
-  //   console.log('Photos count:', photos.length);
-  //   if (photos.length > 0) {
-  //     console.log('First photo:', photos[0]);
-  //     console.log('First photo path:', photos[0].photo_path);
-  //     console.log('First photo URL:', getPhotoUrl(photos[0].photo_path));
-  //   }
-  //   console.log('===================');
-  // }, [photos]);
+  //     //     //     //   if (photos.length > 0) {
+  //       //       //       //   }
+  //     // }, [photos]);
 
   const allStudents = students;
   const studentSubjects = getStudentSubjects();

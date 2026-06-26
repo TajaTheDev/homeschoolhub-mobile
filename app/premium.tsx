@@ -64,21 +64,6 @@ export default function PremiumScreen() {
 
   // Device detection and logging on mount
   useEffect(() => {
-    const { width, height } = Dimensions.get('window');
-    const isTablet = width >= 768;
-    
-    console.log('🎯 Premium screen mounted');
-    console.log('📱 Device Model:', Device.modelName || 'Unknown');
-    console.log('📐 Screen Dimensions:', `${width}x${height}`);
-    console.log('🖥️ Is Tablet:', isTablet);
-    console.log('🍎 Platform:', Platform.OS, Platform.Version);
-    console.log('📦 Device Type:', Device.deviceType || 'Unknown');
-    console.log('🔧 Expo Go:', Constants.appOwnership === 'expo');
-    console.log('🔨 Development Mode:', __DEV__);
-  }, []);
-
-  // Load offerings on mount
-  useEffect(() => {
     loadOfferings();
     checkCurrentSubscription();
   }, []);
@@ -94,78 +79,31 @@ export default function PremiumScreen() {
   };
 
   // Error logging utility - Enhanced for iPad/ARS debugging
-  const logPurchaseError = (error: any, context: string) => {
-    console.group('❌ Purchase Error Details');
-    console.log('Context:', context);
-    console.log('Error Type:', typeof error);
-    console.log('Error Code:', error.code || 'N/A');
-    console.log('Error Message:', error.message || 'N/A');
-    console.log('User Cancelled:', error.userCancelled || false);
-    console.log('Underlying Error:', error.underlyingErrorMessage || 'N/A');
-    console.log('Readable Error:', error.readableErrorMessage || 'N/A');
-    console.log('Store Error Code:', error.storeErrorCode || 'N/A');
-    console.log('Store Error String:', error.storeErrorString || 'N/A');
-    console.log('Device Model:', Device.modelName || 'Unknown');
-    console.log('Device Type:', Device.deviceType || 'Unknown');
-    console.log('Platform:', Platform.OS, Platform.Version);
-    console.log('Screen Size:', Dimensions.get('window'));
-    console.log('Is iPad:', isIPad);
-    console.log('Expo Go:', Constants.appOwnership === 'expo');
-    console.log('Development Mode:', __DEV__);
-    console.log('Timestamp:', new Date().toISOString());
-    
-    // Check for specific error types
-    if (error.message?.includes('ARS') || error.message?.includes('Annual')) {
-      console.error('⚠️ ANNUAL SUBSCRIPTION ERROR DETECTED');
-      console.error('   This may indicate an issue with annual subscription configuration');
-      console.error('   Check RevenueCat dashboard for product setup');
-      console.error('   Verify App Store Connect product IDs match');
+  const logPurchaseError = (error: unknown, context: string) => {
+    console.error(`Purchase error (${context}):`, error);
+
+    if (
+      error &&
+      typeof error === 'object' &&
+      'message' in error &&
+      typeof (error as { message?: string }).message === 'string'
+    ) {
+      const message = (error as { message: string }).message;
+      if (message.includes('ARS') || message.includes('Annual')) {
+        console.error('Annual subscription configuration issue — check RevenueCat / App Store Connect');
+      }
     }
-    
-    // Log full error object for debugging
-    try {
-      const errorKeys = Object.getOwnPropertyNames(error);
-      console.log('Error Properties:', errorKeys);
-      console.log('Full Error Object:', JSON.stringify(error, errorKeys, 2));
-    } catch (stringifyError) {
-      console.log('Full Error Object (fallback):', error);
-      console.log('Error toString:', error.toString());
-    }
-    
-    console.groupEnd();
   };
 
   // Load available subscription packages from RevenueCat
   const loadOfferings = async () => {
-    console.log('📦 Starting to fetch offerings...');
-    console.log('📱 Device:', Device.modelName || 'Unknown');
-    console.log('🖥️ Is iPad:', isIPad);
-    setLoading(true);
+                setLoading(true);
     setError(null);
     
     try {
-      console.log('📡 Calling getOfferings()...');
-      const offering = await getOfferings();
+            const offering = await getOfferings();
       
-      console.log('✅ Offerings API call succeeded');
-      
-      if (offering) {
-        console.log('📦 Current offering identifier:', offering.identifier || 'N/A');
-        console.log('📦 Available packages count:', offering.availablePackages.length);
-        
-        // Log each package
-        offering.availablePackages.forEach((pkg, index) => {
-          console.log(`  Package ${index + 1}:`);
-          console.log(`    - Identifier: ${pkg.identifier}`);
-          console.log(`    - Type: ${pkg.packageType}`);
-          console.log(`    - Price: ${pkg.product.priceString}`);
-          console.log(`    - Product ID: ${pkg.product.identifier}`);
-          console.log(`    - Period: ${pkg.product.subscriptionPeriod || 'N/A'}`);
-        });
-      } else {
-        console.warn('⚠️ getOfferings() returned null or undefined');
-      }
-      
+            
       if (offering && offering.availablePackages.length > 0) {
         const availablePackages = offering.availablePackages;
         setPackages(availablePackages);
@@ -178,14 +116,11 @@ export default function PremiumScreen() {
         );
         if (annualPkg) {
           setSelectedPackage(annualPkg);
-          console.log('✅ Auto-selected annual package:', annualPkg.identifier);
-        } else {
+                  } else {
           setSelectedPackage(availablePackages[0]); // Select first package
-          console.log('✅ Auto-selected first package:', availablePackages[0].identifier);
-        }
+                  }
         
-        console.log('📦 Successfully loaded', availablePackages.length, 'packages');
-      } else {
+              } else {
         console.warn('⚠️ No offerings available');
         console.warn('   - Offering exists:', !!offering);
         console.warn('   - Packages count:', offering?.availablePackages.length || 0);
@@ -197,74 +132,34 @@ export default function PremiumScreen() {
       setError('Failed to load subscription options. Please check your connection and try again.');
     } finally {
       setLoading(false);
-      console.log('📦 Offerings fetch completed');
-    }
+          }
   };
 
   // Handle package purchase - Enhanced with comprehensive logging for iPad debugging
   const handlePurchase = async (pkg: PurchasesPackage) => {
-    console.log('═══════════════════════════════════');
-    console.log('🛒 PURCHASE INITIATED');
-    console.log('═══════════════════════════════════');
-    console.log('📦 Package Identifier:', pkg.identifier);
-    console.log('📦 Package Type:', pkg.packageType);
-    console.log('💰 Price:', pkg.product.priceString);
-    console.log('🆔 Product ID:', pkg.product.identifier);
-    console.log('📅 Subscription Period:', pkg.product.subscriptionPeriod || 'N/A');
-    console.log('📱 Device Model:', Device.modelName || 'Unknown');
-    console.log('📱 Device Type:', Device.deviceType || 'Unknown');
-    console.log('🖥️ Is iPad:', isIPad);
-    console.log('📐 Screen Dimensions:', Dimensions.get('window'));
-    console.log('🍎 Platform:', Platform.OS, Platform.Version);
-    console.log('🔧 Expo Go:', Constants.appOwnership === 'expo');
-    console.log('🔨 Development Mode:', __DEV__);
-    
+                                                                
     setPurchasing(true);
     setError(null);
     
     try {
-      console.log('➡️ Calling purchasePackage() wrapper...');
-      const purchaseStartTime = Date.now();
+            const purchaseStartTime = Date.now();
       
       const result = await purchasePackage(pkg);
       
       const purchaseDuration = Date.now() - purchaseStartTime;
-      console.log(`⏱️ Purchase API call took ${purchaseDuration}ms`);
-      
-      console.log('✅ Purchase wrapper returned');
-      console.log('📊 Purchase Result:', {
-        success: result.success,
-        cancelled: result.cancelled,
-        hasCustomerInfo: !!result.customerInfo,
-        error: result.error || 'None',
-      });
-      
+            
+                  
       if (result.success && result.customerInfo) {
-        console.log('✅ Purchase successful');
-        console.log('👤 Customer Info:');
-        console.log('   - Customer ID:', result.customerInfo.originalAppUserId);
-        console.log('   - First Seen:', result.customerInfo.firstSeen);
-        console.log('   - Active Entitlements:', Object.keys(result.customerInfo.entitlements.active));
-        console.log('   - All Entitlements:', Object.keys(result.customerInfo.entitlements.all));
-        console.log('   - Latest Expiration:', result.customerInfo.latestExpirationDate || 'N/A');
-        
+                                                                
         // Check if premium entitlement is now active
         const entitlementId = 'pro';
         const premiumEntitlement = result.customerInfo.entitlements.active[entitlementId];
         const hasPremium = premiumEntitlement !== undefined;
         
         if (hasPremium) {
-          console.log('🎉 Premium entitlement confirmed active');
-          console.log('   - Entitlement ID:', entitlementId);
-          console.log('   - Expiration Date:', premiumEntitlement.expirationDate || 'N/A');
-          console.log('   - Product Identifier:', premiumEntitlement.productIdentifier || 'N/A');
-          console.log('   - Period Type:', premiumEntitlement.periodType || 'N/A');
-          console.log('   - Will Renew:', premiumEntitlement.willRenew || 'N/A');
-          console.log('   - Store:', premiumEntitlement.store || 'N/A');
-          
+                                                                                
           // Refresh subscription status
-          console.log('🔄 Refreshing subscription status...');
-          await refreshSubscriptionStatus();
+                    await refreshSubscriptionStatus();
           await checkCurrentSubscription();
           
           Alert.alert(
@@ -292,19 +187,14 @@ export default function PremiumScreen() {
           );
         }
       } else if (result.cancelled) {
-        console.log('ℹ️ User cancelled purchase');
-        console.log('   - No error shown to user (expected behavior)');
-        // Don't show error for cancellation
+                        // Don't show error for cancellation
       } else {
         const errorMsg = result.error || 'Purchase failed';
         console.error('❌ Purchase failed:', errorMsg);
         throw new Error(errorMsg);
       }
     } catch (err: any) {
-      console.log('═══════════════════════════════════');
-      console.log('❌ PURCHASE EXCEPTION CAUGHT');
-      console.log('═══════════════════════════════════');
-      logPurchaseError(err, 'handlePurchase');
+                        logPurchaseError(err, 'handlePurchase');
       
       // Don't show error if user cancelled
       if (!err.userCancelled && !err.cancelled && !err.userCancelled) {
@@ -338,8 +228,7 @@ export default function PremiumScreen() {
         console.error('   - Error code:', err.code || 'N/A');
         console.error('   - Device:', Device.modelName || 'Unknown');
         console.error('   - Is iPad:', isIPad);
-        console.log('═══════════════════════════════════');
-        
+                
         Alert.alert(
           'Purchase Failed',
           errorMessage,
@@ -359,49 +248,32 @@ export default function PremiumScreen() {
           ]
         );
       } else {
-        console.log('ℹ️ Purchase cancelled by user (no error shown)');
-        console.log('═══════════════════════════════════');
-      }
+                      }
     } finally {
       setPurchasing(false);
-      console.log('🏁 Purchase flow completed');
-      console.log('═══════════════════════════════════');
-    }
+                }
   };
 
   // Restore previous purchases
   const handleRestore = async () => {
-    console.log('🔄 Restore purchases initiated');
-    console.log('📱 Device:', Device.modelName || 'Unknown');
-    console.log('🖥️ Is iPad:', isIPad);
-    
+                
     setRestoring(true);
     setError(null);
     
     try {
-      console.log('📡 Calling restorePurchases()...');
-      const restoreStartTime = Date.now();
+            const restoreStartTime = Date.now();
       
       const result = await restorePurchases();
       
       const restoreDuration = Date.now() - restoreStartTime;
-      console.log(`⏱️ Restore API call took ${restoreDuration}ms`);
-      
-      console.log('✅ Restore API call completed');
-      console.log('📊 Restore Result:', {
-        success: result.success,
-        hasProAccess: result.hasProAccess,
-        error: result.error || 'None',
-      });
-      
+            
+                  
       if (result.success) {
-        console.log('🔄 Refreshing subscription status after restore...');
-        await refreshSubscriptionStatus();
+                await refreshSubscriptionStatus();
         await checkCurrentSubscription();
         
         if (result.hasProAccess) {
-          console.log('🎉 Premium access confirmed after restore');
-          
+                    
           Alert.alert(
             'Purchases Restored! ✅',
             'Your premium subscription has been restored.',
@@ -414,8 +286,7 @@ export default function PremiumScreen() {
             { cancelable: false }
           );
         } else {
-          console.log('ℹ️ No active subscriptions found to restore');
-          
+                    
           Alert.alert(
             'No Purchases Found',
             'We couldn\'t find any active subscriptions to restore.',
@@ -441,8 +312,7 @@ export default function PremiumScreen() {
       Alert.alert('Restore Failed', errorMessage, [{ text: 'OK' }]);
     } finally {
       setRestoring(false);
-      console.log('🏁 Restore flow completed');
-    }
+          }
   };
 
   // Determine if package is annual (best value)

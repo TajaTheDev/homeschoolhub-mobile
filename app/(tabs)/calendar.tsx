@@ -154,24 +154,13 @@ export default function CalendarScreen() {
 
   // Debug: Check attendance data
   useEffect(() => {
-    console.log('📅 CALENDAR ATTENDANCE:', {
-      attendanceCount: attendance.length,
-      sample: attendance.slice(0, 3).map(a => ({
-        date: a.date,
-        student_id: a.student_id,
-        present: a.present
-      }))
-    });
-  }, [attendance]);
+      }, [attendance]);
 
   // Debug: Check if breaks exist
   useEffect(() => {
-    console.log('📅 Calendar - Loaded breaks:', breaks);
-    if (breaks.length > 0) {
+        if (breaks.length > 0) {
       const testDate = breaks[0].start_date;
-      console.log(`Testing break check for ${testDate}:`, isBreakDay(testDate));
-      console.log('Should be TRUE');
-    }
+                }
   }, [breaks, isBreakDay]);
 
   // Fade in content when data loads
@@ -224,8 +213,7 @@ export default function CalendarScreen() {
     // Get all lessons for this date
     const dayLessons = lessons.filter(lesson => lesson.date === dateString);
     
-    console.log(`📅 Tapped ${dateString}, found ${dayLessons.length} lessons`);
-    
+        
     if (dayLessons.length > 0) {
       // Show lessons
       setSelectedDayLessons(dayLessons);
@@ -374,8 +362,7 @@ export default function CalendarScreen() {
                 
                 // Debug first few days
                 if (index < 5 && breaks.length > 0) {
-                  console.log(`Day ${format(day, 'MMM d')}: isBreak=${isBreak}`, breakInfo?.name);
-                }
+                                  }
 
                 return (
                   <TouchableOpacity
@@ -544,8 +531,7 @@ export default function CalendarScreen() {
                       ]}
                       onPress={() => {
                         // Open lesson detail modal
-                        console.log('Tap to edit lesson:', lesson.id);
-                      }}
+                                              }}
                       activeOpacity={0.7}
                     >
                       <View style={styles.lessonHeader}>

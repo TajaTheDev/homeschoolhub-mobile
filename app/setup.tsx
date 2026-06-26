@@ -118,6 +118,12 @@ export default function OnboardingScreen() {
     }
   };
 
+  const handleSubjectsUpdated = async () => {
+    if (activeStudent?.id) {
+      await fetchSubjects(activeStudent.id);
+    }
+  };
+
   const handleStudentAdd = async () => {    setStudentModalVisible(false);
     shootConfetti();
     
@@ -607,6 +613,7 @@ export default function OnboardingScreen() {
         student={activeStudent}
         onClose={() => setShowSubjectsModal(false)}
         onSave={handleSubjectsModalSave}
+        onSubjectsUpdated={handleSubjectsUpdated}
       />
     </View>  );
 }

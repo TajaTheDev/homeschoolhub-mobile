@@ -56,8 +56,7 @@ async function persistRevenueCatCustomerId(
     return;
   }
 
-  console.log('✅ Saved revenuecat_customer_id to user_subscriptions:', appUserId);
-}
+  }
 
 /**
  * Links the RevenueCat customer to the Supabase auth user via Purchases.logIn().
@@ -76,8 +75,7 @@ export async function identifyRevenueCatUser(supabaseUserId: string): Promise<vo
   try {
     await Purchases.logIn(supabaseUserId);
     const appUserId = await Purchases.getAppUserID();
-    console.log('✅ RevenueCat logIn:', supabaseUserId, '→ appUserId:', appUserId);
-    await persistRevenueCatCustomerId(supabaseUserId, appUserId);
+        await persistRevenueCatCustomerId(supabaseUserId, appUserId);
     pendingSupabaseUserId = null;
   } catch (error) {
     console.error('❌ RevenueCat logIn failed:', error);
@@ -96,8 +94,7 @@ export async function logoutRevenueCatUser(): Promise<void> {
 
   try {
     await Purchases.logOut();
-    console.log('✅ RevenueCat logOut complete');
-  } catch (error) {
+      } catch (error) {
     console.error('❌ RevenueCat logOut failed:', error);
   }
 }
@@ -164,8 +161,7 @@ function setupSupabaseRevenueCatAuthSync(): void {
     }
   });
 
-  console.log('✅ RevenueCat auth sync listener registered');
-}
+  }
 
 /**
  * Presents the RevenueCat paywall after ensuring the user is identified.
@@ -210,9 +206,7 @@ export const initializeRevenueCat = async (): Promise<boolean> => {
 
   // Skip RevenueCat in Expo Go or development mode
   if (isDevelopmentMode()) {
-    console.log('⏭️ Skipping RevenueCat initialization in Expo Go/development mode');
-    console.log('💡 Subscriptions will work in production builds');
-    return false;
+            return false;
   }
 
   try {
@@ -243,10 +237,7 @@ export const initializeRevenueCat = async (): Promise<boolean> => {
       }
     }
 
-    console.log('✅ RevenueCat initialized successfully');
-    console.log('   Platform:', Platform.OS);
-    console.log('   API Key:', apiKey.substring(0, 20) + '...');
-    
+                
     return true;
   } catch (error) {
     console.error('❌ RevenueCat initialization failed:', error);
@@ -262,8 +253,7 @@ export const initializeRevenueCat = async (): Promise<boolean> => {
 export const checkProStatus = async (): Promise<boolean> => {
   // In development mode, grant premium access
   if (isDevelopmentMode()) {
-    console.log('📊 Pro Status Check (Dev Mode): Granting premium access');
-    return true;
+        return true;
   }
 
   try {
@@ -271,10 +261,7 @@ export const checkProStatus = async (): Promise<boolean> => {
     
     const hasProAccess = customerInfo.entitlements.active[PRO_ENTITLEMENT_ID] !== undefined;
     
-    console.log('📊 Pro Status Check:');
-    console.log('   Has Pro:', hasProAccess);
-    console.log('   Active entitlements:', Object.keys(customerInfo.entitlements.active));
-    
+                
     return hasProAccess;
   } catch (error) {
     console.error('❌ Error checking Pro status:', error);
@@ -289,23 +276,18 @@ export const checkProStatus = async (): Promise<boolean> => {
  */
 export const getOfferings = async (): Promise<PurchasesOffering | null> => {
   if (isDevelopmentMode()) {
-    console.log('⏭️ Skipping offerings fetch in development mode');
-    return null;
+        return null;
   }
 
   try {
-    console.log('📦 Fetching offerings...');
-    
+        
     const offerings = await Purchases.getOfferings();
     
     if (offerings.current !== null) {
       const packages = offerings.current.availablePackages;
       
-      console.log('✅ Offerings loaded:');
-      console.log('   Available packages:', packages.length);
-      packages.forEach(pkg => {
-        console.log('   -', pkg.identifier, ':', pkg.product.priceString);
-      });
+                  packages.forEach(pkg => {
+              });
       
       return offerings.current;
     }
@@ -333,9 +315,7 @@ export const purchasePackage = async (
   error?: string;
 }> => {
   if (isDevelopmentMode()) {
-    console.log('⏭️ Skipping purchase in development mode');
-    console.log('💡 Purchase would be:', packageToPurchase.identifier, packageToPurchase.product.priceString);
-    return {
+            return {
       success: false,
       error: 'Purchases not available in development mode',
     };
@@ -350,34 +330,16 @@ export const purchasePackage = async (
   }
 
   try {
-    console.log('═══════════════════════════════════');
-    console.log('💳 REVENUECAT: Starting purchase');
-    console.log('═══════════════════════════════════');
-    console.log('📦 Package ID:', packageToPurchase.identifier);
-    console.log('🆔 Product ID:', packageToPurchase.product.identifier);
-    console.log('💵 Price:', packageToPurchase.product.priceString);
-    console.log('📅 Period:', packageToPurchase.product.subscriptionPeriod || 'N/A');
-    
+                                
     const { customerInfo, productIdentifier } = await Purchases.purchasePackage(packageToPurchase);
     
-    console.log('✅ RevenueCat API returned successfully');
-    console.log('🆔 Product purchased:', productIdentifier);
-    console.log('👤 Customer ID:', customerInfo.originalAppUserId);
-    console.log('🎫 Active Entitlements:', Object.keys(customerInfo.entitlements.active));
-    console.log('📅 Latest Expiration:', customerInfo.latestExpirationDate || 'N/A');
-    
+                        
     // Check if purchase granted Pro access
     const hasProAccess = customerInfo.entitlements.active[PRO_ENTITLEMENT_ID] !== undefined;
     
     if (hasProAccess) {
-      console.log('🎉 Purchase successful! User now has Pro access');
-      console.log('   Entitlement:', PRO_ENTITLEMENT_ID);
-      const entitlement = customerInfo.entitlements.active[PRO_ENTITLEMENT_ID];
-      console.log('   - Expiration:', entitlement.expirationDate || 'N/A');
-      console.log('   - Product:', entitlement.productIdentifier || 'N/A');
-      console.log('   - Will Renew:', entitlement.willRenew || 'N/A');
-      console.log('═══════════════════════════════════');
-      
+                  const entitlement = customerInfo.entitlements.active[PRO_ENTITLEMENT_ID];
+                              
       return {
         success: true,
         customerInfo,
@@ -388,18 +350,14 @@ export const purchasePackage = async (
     console.warn('   Expected entitlement:', PRO_ENTITLEMENT_ID);
     console.warn('   Available entitlements:', Object.keys(customerInfo.entitlements.active));
     console.warn('   All entitlements:', Object.keys(customerInfo.entitlements.all));
-    console.log('═══════════════════════════════════');
-    
+        
     return {
       success: false,
       customerInfo,
       error: 'Purchase completed but premium entitlement not found',
     };
   } catch (error: any) {
-    console.log('═══════════════════════════════════');
-    console.log('❌ REVENUECAT: Purchase Error');
-    console.log('═══════════════════════════════════');
-    console.error('Error type:', typeof error);
+                console.error('Error type:', typeof error);
     console.error('Error code:', error.code);
     console.error('Error message:', error.message);
     console.error('User cancelled:', error.userCancelled);
@@ -414,12 +372,10 @@ export const purchasePackage = async (
     } catch (stringifyError) {
       console.error('Full error object:', error);
     }
-    console.log('═══════════════════════════════════');
-    
+        
     // Check if user cancelled the purchase
     if (error.userCancelled) {
-      console.log('🚫 User cancelled purchase (no error shown)');
-      return {
+            return {
         success: false,
         cancelled: true,
       };
@@ -462,8 +418,7 @@ export const restorePurchases = async (): Promise<{
   error?: string;
 }> => {
   if (isDevelopmentMode()) {
-    console.log('⏭️ Skipping restore in development mode');
-    return {
+        return {
       success: true,
       hasProAccess: false, // No purchases in dev mode
     };
@@ -479,18 +434,14 @@ export const restorePurchases = async (): Promise<{
   }
 
   try {
-    console.log('🔄 Restoring purchases...');
-    
+        
     const customerInfo = await Purchases.restorePurchases();
     
     const hasProAccess = customerInfo.entitlements.active[PRO_ENTITLEMENT_ID] !== undefined;
     
     if (hasProAccess) {
-      console.log('✅ Purchases restored! User has Pro access');
-      console.log('   Active entitlements:', Object.keys(customerInfo.entitlements.active));
-    } else {
-      console.log('ℹ️ No active purchases to restore');
-    }
+                } else {
+          }
     
     return {
       success: true,
@@ -519,8 +470,7 @@ export const getCustomerInfo = async (): Promise<{
   error?: string;
 }> => {
   if (isDevelopmentMode()) {
-    console.log('⏭️ Skipping customer info fetch in development mode');
-    return {
+        return {
       success: true,
       hasProAccess: true, // Grant premium in dev mode
       activeSubscriptions: [],
@@ -533,10 +483,7 @@ export const getCustomerInfo = async (): Promise<{
     const hasProAccess = customerInfo.entitlements.active[PRO_ENTITLEMENT_ID] !== undefined;
     const activeSubscriptions = Object.keys(customerInfo.entitlements.active);
     
-    console.log('👤 Customer Info:');
-    console.log('   Has Pro:', hasProAccess);
-    console.log('   Active subs:', activeSubscriptions.join(', ') || 'none');
-    
+                
     return {
       success: true,
       customerInfo,
@@ -572,8 +519,7 @@ export const isInFreeTrial = async (): Promise<boolean> => {
       const isTrial = proEntitlement.periodType === 'TRIAL' || 
                       proEntitlement.periodType === 'INTRO';
       
-      console.log('🎁 Trial Status:', isTrial);
-      return isTrial;
+            return isTrial;
     }
     
     return false;

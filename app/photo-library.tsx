@@ -29,8 +29,7 @@ export default function PhotoLibraryScreen() {
   
   // Get all photos from lessons
   const photoItems = useMemo(() => {
-    console.log('📸 Building Photo Library from storage_path...');
-    
+        
     const items: Array<{
       photoUrl: string;
       lessonId: string;
@@ -74,8 +73,7 @@ export default function PhotoLibraryScreen() {
                 .getPublicUrl(photo.storage_path);
               
               photoUrl = data.publicUrl;
-              console.log('✅ Built URL from storage_path:', photoUrl.substring(0, 70));
-            }
+                          }
             // Check for photo_url (OLD FORMAT)
             else if (photo.photo_url) {
               photoUrl = photo.photo_url;
@@ -101,8 +99,7 @@ export default function PhotoLibraryScreen() {
       }
     });
     
-    console.log('✅ Total photos found:', items.length);
-    
+        
     return items.sort((a, b) => 
       new Date(b.date).getTime() - new Date(a.date).getTime()
     );

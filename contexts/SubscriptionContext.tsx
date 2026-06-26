@@ -28,7 +28,6 @@ export function SubscriptionProvider({ children }: SubscriptionProviderProps) {
       setIsLoading(true);
       const info = await useSubscriptionStore.getState().checkSubscription();
       setHasSubscription(info.subscriptionStatus === 'active');
-      console.log('🔄 Subscription status:', info.subscriptionStatus);
     } catch (error) {
       console.error('Error checking subscription:', error);
       setHasSubscription(false);

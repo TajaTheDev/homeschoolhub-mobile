@@ -107,17 +107,14 @@ export default function PhotoUpload({ lessonId, photos, onPhotosChange }: PhotoU
       onPhotosChange(currentPhotos);
       setOptimisticPhotos(prev => [...prev, optimisticPhoto]);
       
-      console.log('⚡ Optimistic preview added - showing local URI immediately');
-
-      // STEP 2: Get user (non-blocking, quick check)
+            // STEP 2: Get user (non-blocking, quick check)
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError || !user) {
         throw new Error('Not authenticated');
       }
 
       // STEP 3: Compress full image for upload (background operation)
-      console.log('🖼️ Compressing full image...');
-      const manipulated = await ImageManipulator.manipulateAsync(
+            const manipulated = await ImageManipulator.manipulateAsync(
         uri,
         [{ resize: { width: 1200 } }], // Full size but reasonable
         { 
@@ -184,8 +181,7 @@ export default function PhotoUpload({ lessonId, photos, onPhotosChange }: PhotoU
       onPhotosChange([...updatedPhotos, photoData]);
       setOptimisticPhotos(prev => prev.filter(p => p.id !== tempId));
       
-      console.log('✅ Photo uploaded successfully');
-      
+            
     } catch (error: any) {
       console.error('❌ Photo upload failed:', error);
       
@@ -294,25 +290,13 @@ export default function PhotoUpload({ lessonId, photos, onPhotosChange }: PhotoU
     // URL encode the path to handle special characters
     const encodedPath = encodeURIComponent(cleanPath).replace(/%2F/g, '/');
     
-    console.log('getPhotoUrl input:', { 
-      originalPath: path, 
-      cleanPath,
-      encodedPath 
-    });
-    
+        
     const { data } = supabase.storage
       .from('lesson-photos')
       .getPublicUrl(cleanPath);
     const url = data.publicUrl;
     
-    console.log('getPhotoUrl result:', { 
-      originalPath: path, 
-      cleanPath, 
-      encodedPath,
-      generatedUrl: url,
-      urlLength: url?.length
-    });
-    
+        
     // Validate URL format
     if (!url || !url.startsWith('http')) {
       console.error('⚠️ Invalid URL generated:', url);

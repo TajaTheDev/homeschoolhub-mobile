@@ -318,13 +318,7 @@ export const useLessonStore = create<LessonState>((set, get) => ({
   },
 
   addLesson: async (lessonData) => {
-    console.log('➕ Creating lesson:', {
-      title: lessonData.title,
-      subject: lessonData.subject,
-      date: lessonData.date,
-      student_id: lessonData.student_id
-    });
-    
+        
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
       return { success: false, error: 'Not authenticated' };
@@ -349,8 +343,7 @@ export const useLessonStore = create<LessonState>((set, get) => ({
       loading: false,
     }));
     
-    console.log('➕ Lesson added optimistically with temp ID:', tempId);
-    
+        
     // Save to database in background
     try {
       const { data, error } = await supabase
@@ -376,8 +369,7 @@ export const useLessonStore = create<LessonState>((set, get) => ({
         lessons: state.lessons.map((l) => l.id === tempId ? data : l),
       }));
       
-      console.log('✅ Lesson saved to database, replaced temp with real ID:', data.id);
-      return { success: true, data };
+            return { success: true, data };
     } catch (error) {
       console.error('❌ Unexpected error saving lesson:', error);
       // Rollback: Remove the optimistic lesson
@@ -409,8 +401,7 @@ export const useLessonStore = create<LessonState>((set, get) => ({
       loading: false,
     }));
     
-    console.log('✏️ Lesson updated optimistically:', id);
-    
+        
     // Save to database in background
     try {
       const { error } = await supabase
@@ -427,8 +418,7 @@ export const useLessonStore = create<LessonState>((set, get) => ({
         return { success: false, error: error.message };
       }
 
-      console.log('✅ Lesson update saved to database:', id);
-      return { success: true };
+            return { success: true };
     } catch (error) {
       console.error('❌ Unexpected error saving lesson update:', error);
       // Rollback: Restore previous lesson state
@@ -443,8 +433,7 @@ export const useLessonStore = create<LessonState>((set, get) => ({
   },
 
   deleteLesson: async (id) => {
-    console.log('🗑️ Deleting lesson:', id);
-    
+        
     // Store the lesson for potential rollback
     const lessonToDelete = get().lessons.find((l) => l.id === id);
     if (!lessonToDelete) {
@@ -457,8 +446,7 @@ export const useLessonStore = create<LessonState>((set, get) => ({
       loading: false,
     }));
     
-    console.log('🗑️ Lesson removed optimistically from store');
-    
+        
     // Delete from database in background
     try {
       const { error } = await supabase.from('lessons').delete().eq('id', id);
@@ -474,8 +462,7 @@ export const useLessonStore = create<LessonState>((set, get) => ({
         return { success: false, error: error.message };
       }
 
-      console.log('✅ Lesson deleted from database:', id);
-      return { success: true };
+            return { success: true };
     } catch (error) {
       console.error('❌ Unexpected error deleting lesson:', error);
       // Rollback: Restore the lesson
@@ -492,11 +479,9 @@ export const useLessonStore = create<LessonState>((set, get) => ({
   },
 
   deleteLessons: async (ids) => {
-    console.log('🗑️ Deleting lessons (bulk):', ids.length, 'lessons');
-    // Only log IDs if there are few lessons
+        // Only log IDs if there are few lessons
     if (ids.length < 10) {
-      console.log('  Lesson IDs:', ids);
-    }
+          }
     
     if (ids.length === 0) {
       return { success: false, error: 'No lessons to delete' };
@@ -511,8 +496,7 @@ export const useLessonStore = create<LessonState>((set, get) => ({
       loading: false,
     }));
     
-    console.log(`🗑️ ${ids.length} lessons removed optimistically from store`);
-    
+        
     // Delete from database in background
     try {
       const { error } = await supabase
@@ -531,8 +515,7 @@ export const useLessonStore = create<LessonState>((set, get) => ({
         return { success: false, error: error.message };
       }
 
-      console.log(`✅ ${ids.length} lessons deleted from database`);
-      return { success: true };
+            return { success: true };
     } catch (error) {
       console.error('❌ Unexpected error deleting lessons:', error);
       // Rollback: Restore the lessons
@@ -623,8 +606,7 @@ export const useLessonStore = create<LessonState>((set, get) => ({
   },
 
   clearCache: async () => {
-    console.log('🗑️ Clearing all lesson cache...');
-    try {
+        try {
       // Clear AsyncStorage cache (all cache_ keys)
       await clearAllCache();
       
@@ -635,23 +617,20 @@ export const useLessonStore = create<LessonState>((set, get) => ({
       // Clear lessons from store
       set({ lessons: [], loading: false });
       
-      console.log('✅ Cache cleared successfully');
-    } catch (error) {
+          } catch (error) {
       console.error('❌ Error clearing cache:', error);
     }
   },
 
   forceRefresh: async () => {
-    console.log('🔄 Force refreshing lessons (clearing cache and fetching fresh)...');
-    try {
+        try {
       // Clear cache first
       await get().clearCache();
       
       // Force fresh fetch (no cache)
       await get().fetchLessons(undefined, undefined, true);
       
-      console.log('✅ Force refresh complete');
-    } catch (error) {
+          } catch (error) {
       console.error('❌ Error during force refresh:', error);
     }
   },

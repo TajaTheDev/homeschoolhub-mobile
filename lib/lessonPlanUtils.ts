@@ -102,6 +102,7 @@ export type StagedScanCurriculum = {
   kind: 'scan';
   name: string;
   tocImagePath: string;
+  lessonCount?: number;
 };
 
 export type StagedCurriculumSelection = StagedLibraryCurriculum | StagedScanCurriculum;

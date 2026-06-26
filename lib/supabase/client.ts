@@ -54,8 +54,6 @@ if (!supabaseUrl || !supabaseAnonKey) {
   console.error('❌ Supabase credentials missing!');
   console.error('URL:', supabaseUrl ? 'Found' : 'Missing');
   console.error('Key:', supabaseAnonKey ? 'Found' : 'Missing');
-} else {
-  console.log('✅ Supabase credentials loaded');
 }
 
 // Create Supabase client options
@@ -75,4 +73,3 @@ export const supabase = createClient(
   supabaseOptions
 );
 
-console.log('✅ Supabase client created');

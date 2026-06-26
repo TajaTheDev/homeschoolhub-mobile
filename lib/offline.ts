@@ -24,8 +24,7 @@ export const cacheData = async (key: string, data: any): Promise<void> => {
       data,
       timestamp: Date.now(),
     }));
-    console.log(`✅ Cached data for key: ${key}`);
-  } catch (error) {
+      } catch (error) {
     console.error(`Error caching data for key ${key}:`, error);
   }
 };
@@ -39,22 +38,19 @@ export const getCachedData = async (key: string, maxAge: number = 3600000): Prom
   try {
     const cached = await AsyncStorage.getItem(`cache_${key}`);
     if (!cached) {
-      console.log(`📦 No cache found for key: ${key}`);
-      return null;
+            return null;
     }
     
     const { data, timestamp } = JSON.parse(cached);
     const age = Date.now() - timestamp;
     
     if (age > maxAge) {
-      console.log(`⏰ Cache expired for key: ${key} (age: ${Math.round(age / 1000)}s, max: ${Math.round(maxAge / 1000)}s)`);
-      // Clean up expired cache
+            // Clean up expired cache
       await AsyncStorage.removeItem(`cache_${key}`);
       return null;
     }
     
-    console.log(`📦 Using cached data for key: ${key} (age: ${Math.round(age / 1000)}s)`);
-    return data;
+        return data;
   } catch (error) {
     console.error(`Error getting cached data for key ${key}:`, error);
     return null;
@@ -67,8 +63,7 @@ export const getCachedData = async (key: string, maxAge: number = 3600000): Prom
 export const clearCache = async (key: string): Promise<void> => {
   try {
     await AsyncStorage.removeItem(`cache_${key}`);
-    console.log(`🗑️ Cleared cache for key: ${key}`);
-  } catch (error) {
+      } catch (error) {
     console.error(`Error clearing cache for key ${key}:`, error);
   }
 };
@@ -81,8 +76,7 @@ export const clearAllCache = async (): Promise<void> => {
     const keys = await AsyncStorage.getAllKeys();
     const cacheKeys = keys.filter(key => key.startsWith('cache_'));
     await AsyncStorage.multiRemove(cacheKeys);
-    console.log(`🗑️ Cleared ${cacheKeys.length} cache entries`);
-  } catch (error) {
+      } catch (error) {
     console.error('Error clearing all cache:', error);
   }
 };

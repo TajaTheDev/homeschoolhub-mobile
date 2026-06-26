@@ -600,8 +600,16 @@ export default function ProgressScreen() {
   const handleSaveSubjects = async () => {
     if (selectedStudentId) {
       await fetchSubjects(selectedStudentId);
+      setProgressDataVersion((version) => version + 1);
     }
     setShowSubjectsModal(false);
+  };
+
+  const handleSubjectsUpdated = async () => {
+    if (selectedStudentId) {
+      await fetchSubjects(selectedStudentId);
+      setProgressDataVersion((version) => version + 1);
+    }
   };
 
   // Group lessons by date for recent activity (only last 7 calendar days)
@@ -627,14 +635,7 @@ export default function ProgressScreen() {
       .slice(0, 7);
     
     // Debug logging
-    console.log('📊 Progress page date range:', {
-      today: new Date().toISOString().split('T')[0],
-      lastSevenDays: lastSevenDaysStr,
-      lessonsInRange: weekLessons.length,
-      recentActivityDates: result.map(([date]) => date),
-      allStudentLessons: studentLessons.length,
-    });
-    
+        
     return result;
   }, [studentLessons]);
 
@@ -1190,6 +1191,7 @@ export default function ProgressScreen() {
           student={selectedStudent || null}
           onClose={handleCloseSubjectsModal}
           onSave={handleSaveSubjects}
+          onSubjectsUpdated={handleSubjectsUpdated}
         />
       </Suspense>
 

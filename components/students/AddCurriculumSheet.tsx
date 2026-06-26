@@ -396,6 +396,7 @@ export default function AddCurriculumSheet({
       kind: 'scan',
       name,
       tocImagePath: imagePathJson,
+      lessonCount,
     };
     resetForm();
     onComplete(staged);

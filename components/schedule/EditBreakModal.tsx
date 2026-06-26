@@ -46,38 +46,27 @@ export default function EditBreakModal({
 
   // Add logging when picker visibility changes
   useEffect(() => {
-    console.log('📅 Start picker visible:', showStartPicker);
-  }, [showStartPicker]);
+      }, [showStartPicker]);
 
   useEffect(() => {
-    console.log('📅 End picker visible:', showEndPicker);
-  }, [showEndPicker]);
+      }, [showEndPicker]);
 
   // Add logging when dates change
   useEffect(() => {
-    console.log('📅 Start date changed:', format(startDate, 'yyyy-MM-dd'));
-  }, [startDate]);
+      }, [startDate]);
 
   useEffect(() => {
-    console.log('📅 End date changed:', format(endDate, 'yyyy-MM-dd'));
-  }, [endDate]);
+      }, [endDate]);
 
   // Update state when breakData changes
   useEffect(() => {
     if (breakData) {
-      console.log('🔄 Loading break data into form:', {
-        name: breakData.name,
-        emoji: breakData.emoji,
-        start_date: breakData.start_date,
-        end_date: breakData.end_date,
-      });
-      setName(breakData.name);
+            setName(breakData.name);
       setStartDate(new Date(breakData.start_date));
       setEndDate(new Date(breakData.end_date));
       setSelectedEmoji(breakData.emoji || '🎄');
     } else {
-      console.log('🔄 Resetting form (new break)');
-      setName('');
+            setName('');
       setStartDate(new Date());
       setEndDate(new Date());
       setSelectedEmoji('🎄');
@@ -105,15 +94,7 @@ export default function EditBreakModal({
       ...(breakData?.id && { id: breakData.id }),
     };
 
-    console.log('💾 Saving break with data:', {
-      name: breakToSave.name,
-      emoji: breakToSave.emoji,
-      start_date: breakToSave.start_date,
-      end_date: breakToSave.end_date,
-      id: breakToSave.id || 'NEW',
-    });
-
-    try {
+        try {
       await onSave(breakToSave);
       setLoading(false);
       onClose();
@@ -145,8 +126,7 @@ export default function EditBreakModal({
                 style={styles.input}
                 value={name}
                 onChangeText={(text) => {
-                  console.log('📝 Break name changed:', text);
-                  setName(text);
+                                    setName(text);
                 }}
                 placeholder="e.g., Christmas Break"
                 placeholderTextColor={Colors.ui.textLight}
@@ -188,8 +168,7 @@ export default function EditBreakModal({
                         selectedEmoji === emoji && styles.emojiButtonActive
                       ]}
                       onPress={() => {
-                        console.log('😀 Emoji selected:', emoji);
-                        setSelectedEmoji(emoji);
+                                                setSelectedEmoji(emoji);
                         setShowEmojiPicker(false);
                       }}
                     >

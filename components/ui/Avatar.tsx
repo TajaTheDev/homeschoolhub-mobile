@@ -23,9 +23,7 @@ function Avatar({ type, value, name, color, size = 40 }: AvatarProps) {
       .from('student-avatars')
       .getPublicUrl(value);
     
-    console.log('Avatar path:', value);
-    console.log('Avatar URL:', data.publicUrl);
-    
+            
     return data.publicUrl;
   }, [type, value]);
 
@@ -60,12 +58,10 @@ function Avatar({ type, value, name, color, size = 40 }: AvatarProps) {
           onError={(e) => {
             console.error('Avatar image load error:', e);
             console.error('Attempted URL:', photoUrl);
-            console.log('🔄 Falling back to initials for:', name);
-            setImageError(true);
+                        setImageError(true);
           }}
           onLoad={() => {
-            console.log('✅ Avatar loaded:', value);
-            setImageError(false);
+                        setImageError(false);
           }}
         />
       </View>

@@ -181,16 +181,9 @@ export default function LessonModal({ visible, lesson, onClose, onSave }: Lesson
   }, [visible, lesson?.id]); // Only depend on lesson.id to avoid re-running on lesson object changes
 
   // useEffect(() => {
-  //   console.log('=== PHOTOS STATE ===');
-  //   console.log('Photos array:', photos);
-  //   console.log('Photos count:', photos.length);
-  //   if (photos.length > 0) {
-  //     console.log('First photo:', photos[0]);
-  //     console.log('First photo path:', photos[0].photo_path);
-  //     console.log('First photo URL:', getPhotoUrl(photos[0].photo_path));
-  //   }
-  //   console.log('===================');
-  // }, [photos]);
+  //     //     //     //   if (photos.length > 0) {
+  //       //       //       //   }
+  //     // }, [photos]);
 
   if (!visible || !lesson) return null;
 
@@ -361,8 +354,7 @@ export default function LessonModal({ visible, lesson, onClose, onSave }: Lesson
 
   const handleDeletePhoto = async (photoUrl: string) => {
     try {
-      console.log('🗑️ Deleting photo:', photoUrl);
-      
+            
       // Remove from local state
       const updatedPhotos = photos.filter(p => {
         // Check if this photo matches the URL we're deleting
@@ -402,8 +394,7 @@ export default function LessonModal({ visible, lesson, onClose, onSave }: Lesson
         });
         
         if (photoToDelete) {
-          console.log('✅ Found photo to delete:', photoToDelete.id);
-          
+                    
           // Delete from database
           const { error: deleteError } = await supabase
             .from('lesson_photos')
@@ -422,8 +413,7 @@ export default function LessonModal({ visible, lesson, onClose, onSave }: Lesson
               console.error('⚠️ Storage delete error:', storageError);
               // Don't throw - database record is already deleted
             } else {
-              console.log('✅ Storage file deleted');
-            }
+                          }
           }
           
           showSnackbar('Photo deleted', 'success');

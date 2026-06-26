@@ -38,12 +38,10 @@ export const presentCustomerCenter = async () => {
       return;
     }
 
-    console.log('📋 Presenting Customer Center...');
-    
+        
     const result = await RevenueCatUI.presentCustomerCenter();
     
-    console.log('Customer Center result:', result);
-    
+        
     if (result === CUSTOMER_CENTER_RESULT.RESTORED) {
       Alert.alert(
         'Purchases Restored',

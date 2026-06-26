@@ -26,14 +26,7 @@ export default function Index() {
       const { data: { session } } = await supabase.auth.getSession();
 
       if (!hasSeenOnboarding) {
-        console.log('[REDIRECT]', {
-          source: 'index:checkUserStatus',
-          destination: '/(auth)/onboarding',
-          hasSession: !!session,
-          hasSeenOnboarding,
-          hasCompletedOnboarding,
-        });
-        router.replace('/(auth)/onboarding');
+                router.replace('/(auth)/onboarding');
         return;
       }
 
@@ -69,14 +62,7 @@ export default function Index() {
       if (session) {
         router.replace('/subscribe');
       } else {
-        console.log('[REDIRECT]', {
-          source: 'index:checkUserStatus:catch',
-          destination: '/(auth)/onboarding',
-          hasSession: !!session,
-          hasSeenOnboarding,
-          hasCompletedOnboarding,
-        });
-        router.replace('/(auth)/onboarding');
+                router.replace('/(auth)/onboarding');
       }
     } finally {
       setChecking(false);

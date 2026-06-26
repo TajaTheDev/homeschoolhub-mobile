@@ -33,8 +33,7 @@ export default function PremiumPaywall({
 
       const result = await presentRevenueCatPaywall();
       
-      console.log('Paywall result:', result);
-      
+            
       if (result === PAYWALL_RESULT.PURCHASED || 
           result === PAYWALL_RESULT.RESTORED) {
         
@@ -57,8 +56,7 @@ export default function PremiumPaywall({
           );
         }
       } else if (result === PAYWALL_RESULT.CANCELLED) {
-        console.log('User cancelled paywall');
-      }
+              }
     } catch (error) {
       console.error('Paywall error:', error);
       Alert.alert('Error', 'Could not load subscription options');

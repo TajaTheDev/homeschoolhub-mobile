@@ -66,13 +66,7 @@ export default function AttendanceHistoryScreen() {
     // Absent = total - present (should equal records with present=false)
     const absent = total - present;
     
-    console.log(`📊 Stats for ${date}:`, {
-      total,
-      recordedStudents,
-      present,
-      absent,
-    });
-    
+        
     // Warning if not all students have records
     if (recordedStudents !== total) {
       console.warn(`⚠️ Missing records! Expected ${total}, got ${recordedStudents}`);

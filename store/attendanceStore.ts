@@ -45,8 +45,7 @@ export const useAttendanceStore = create<AttendanceStore>((set, get) => ({
       
       // Don't overwrite if we just modified locally (within grace period)
       if (now - lastLocalModification < GRACE_PERIOD) {
-        console.log('⏭️ Skipping fetch - recent local modification detected');
-        return;
+                return;
       }
 
       set({ loading: true, error: null });
@@ -74,8 +73,7 @@ export const useAttendanceStore = create<AttendanceStore>((set, get) => ({
       if (checkTime - lastLocalModification >= GRACE_PERIOD) {
         set({ attendance: data || [], loading: false });
       } else {
-        console.log('⏭️ Skipping state update - recent local modification');
-        set({ loading: false });
+                set({ loading: false });
       }
     } catch (error: any) {
       console.error('Error in fetchAttendance:', error);
@@ -104,12 +102,7 @@ export const useAttendanceStore = create<AttendanceStore>((set, get) => ({
         return { success: false, error: 'Not authenticated' };
       }
 
-      console.log('🔍 START ATTENDANCE SAVE');
-      console.log('  Date:', date);
-      console.log('  Present IDs:', presentStudentIds);
-      console.log('  Notes:', notes);
-
-      // Import student store
+                              // Import student store
       const { students } = await import('./studentStore').then(m => m.useStudentStore.getState());
       
       if (!students || students.length === 0) {
@@ -117,9 +110,7 @@ export const useAttendanceStore = create<AttendanceStore>((set, get) => ({
         return { success: false, error: 'No students found' };
       }
 
-      console.log('  Total students:', students.length);
-
-      // STEP 1: Optimistic update - update UI immediately
+            // STEP 1: Optimistic update - update UI immediately
       const now = Date.now();
       lastLocalModification = now;
       
@@ -143,11 +134,8 @@ export const useAttendanceStore = create<AttendanceStore>((set, get) => ({
       ];
       
       set({ attendance: updatedAttendance });
-      console.log('⚡ Optimistic update applied - UI updated immediately');
-
-      // STEP 2: Delete existing attendance for this date (clean slate)
-      console.log('🗑️ Deleting existing attendance for', date);
-      
+            // STEP 2: Delete existing attendance for this date (clean slate)
+            
       const { error: deleteError } = await supabase
         .from('attendance')
         .delete()
@@ -162,13 +150,10 @@ export const useAttendanceStore = create<AttendanceStore>((set, get) => ({
         return { success: false, error: deleteError.message };
       }
 
-      console.log('✅ Old attendance deleted');
-
-      // STEP 3: Create new attendance records for ALL students
+            // STEP 3: Create new attendance records for ALL students
       const attendanceRecords = students.map(student => {
         const isPresent = presentStudentIds.includes(student.id);
-        console.log(`  ${isPresent ? '✓' : '✗'} ${student.name} (${student.id}): ${isPresent ? 'PRESENT' : 'ABSENT'}`);
-        
+                
         return {
           user_id: user.id,
           student_id: student.id,
@@ -178,9 +163,7 @@ export const useAttendanceStore = create<AttendanceStore>((set, get) => ({
         };
       });
 
-      console.log('📝 Inserting', attendanceRecords.length, 'new records');
-
-      // STEP 4: Insert all records
+            // STEP 4: Insert all records
       const { data: insertedData, error: insertError } = await supabase
         .from('attendance')
         .insert(attendanceRecords)
@@ -194,9 +177,7 @@ export const useAttendanceStore = create<AttendanceStore>((set, get) => ({
         return { success: false, error: insertError.message };
       }
 
-      console.log('✅ Inserted records:', insertedData?.length);
-
-      // VALIDATE: Check that we inserted correct number of records
+            // VALIDATE: Check that we inserted correct number of records
       if (insertedData?.length !== students.length) {
         console.error('❌ MISMATCH! Expected', students.length, 'records, got', insertedData?.length);
         // Rollback on error
@@ -221,9 +202,7 @@ export const useAttendanceStore = create<AttendanceStore>((set, get) => ({
         lastLocalModification = 0;
       }, GRACE_PERIOD);
 
-      console.log('✅ ATTENDANCE SAVE COMPLETE - All students saved');
-
-      return { success: true };
+            return { success: true };
     } catch (error: any) {
       console.error('❌ CRITICAL ERROR in markAttendance:', error);
       // Rollback on error

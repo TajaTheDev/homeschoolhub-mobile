@@ -93,8 +93,7 @@ export default function SettingsScreen() {
         const result = await scheduleAttendanceReminder(selectedTime);
         if (result.success) {
           // Silent update - no alert for inline picker
-          console.log('✅ Reminder updated to', format(selectedTime, 'h:mm a'));
-        } else {
+                  } else {
           Alert.alert('Error', result.error || 'Failed to schedule reminder');
         }
       }
@@ -432,8 +431,11 @@ export default function SettingsScreen() {
             <TouchableOpacity
               style={styles.settingsOption}
               onPress={() => {
-                // Always navigate to subscription screen so reviewers can see IAPs
-                router.push('/subscribe' as any);
+                if (hasSubscription) {
+                  void presentCustomerCenter();
+                } else {
+                  router.push('/subscribe' as any);
+                }
               }}
               activeOpacity={0.7}
             >

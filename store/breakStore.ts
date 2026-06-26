@@ -54,8 +54,7 @@ export const useBreakStore = create<BreakStore>((set, get) => ({
         return;
       }
       
-      console.log(`📅 Fetched ${data?.length || 0} breaks`);
-      set({ breaks: data || [], loading: false });
+            set({ breaks: data || [], loading: false });
       
     } catch (error: any) {
       console.error('Error in fetchBreaks:', error);
@@ -84,8 +83,7 @@ export const useBreakStore = create<BreakStore>((set, get) => ({
         return { success: false, error: error.message };
       }
       
-      console.log('✅ Break added:', data.id);
-      
+            
       // Add to local state
       set(state => ({
         breaks: [data, ...state.breaks],
@@ -111,8 +109,7 @@ export const useBreakStore = create<BreakStore>((set, get) => ({
         return { success: false, error: error.message };
       }
       
-      console.log('✅ Break deleted:', breakId);
-      
+            
       // Remove from local state
       set(state => ({
         breaks: state.breaks.filter(b => b.id !== breakId),
@@ -135,8 +132,7 @@ export const useBreakStore = create<BreakStore>((set, get) => ({
                       dateStr <= breakItem.end_date;
       
       if (inRange) {
-        console.log(`  📅 ${dateStr} is during break: ${breakItem.name || 'Break'}`);
-      }
+              }
       
       return inRange;
     });

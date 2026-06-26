@@ -1,5 +1,6 @@
 import AddCurriculumSheet from '@/components/students/AddCurriculumSheet';
 import CurriculumLibraryDetailSheet from '@/components/students/CurriculumLibraryDetailSheet';
+import PersonalCurriculumSheet from '@/components/students/PersonalCurriculumSheet';
 import Colors from '@/constants/Colors';
 import Typography from '@/constants/Typography';
 import {
@@ -31,9 +32,10 @@ type CurriculumPickerStepProps = {
   studentId: string;
   subject: string;
   stagedSelection?: StagedCurriculumSelection;
-  onStage: (selection: StagedCurriculumSelection) => void;
+  onStage: (selection: StagedCurriculumSelection) => void | Promise<void>;
   onSkip: () => void;
   onBack: () => void;
+  onPlanUpdated?: () => void;
 };
 
 export default function CurriculumPickerStep({
@@ -43,13 +45,16 @@ export default function CurriculumPickerStep({
   onStage,
   onSkip,
   onBack,
+  onPlanUpdated,
 }: CurriculumPickerStepProps) {
   const { fetchVerifiedLibrary, fetchPlan, fetchLibraryItems } = useLessonPlanStore();
   const [curricula, setCurricula] = useState<CurriculumWithItems[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [existingPlan, setExistingPlan] = useState<LessonPlan | null>(null);
+  const [existingPlanItemCount, setExistingPlanItemCount] = useState(0);
   const [showAddSheet, setShowAddSheet] = useState(false);
+  const [showPersonalSheet, setShowPersonalSheet] = useState(false);
   const [detailCurriculum, setDetailCurriculum] = useState<CurriculumWithItems | null>(null);
   const [studentName, setStudentName] = useState('Student');
   const [searchQuery, setSearchQuery] = useState('');
@@ -68,15 +73,18 @@ export default function CurriculumPickerStep({
         ]);
         setCurricula(libraryEntries);
         setExistingPlan(planResult.plan);
+        setExistingPlanItemCount(planResult.items.length);
       } else {
         const planResult = await fetchPlan(studentId, subject);
         setCurricula([]);
         setExistingPlan(planResult.plan);
+        setExistingPlanItemCount(planResult.items.length);
       }
     } catch (error) {
       console.error('Failed to load curriculum picker:', error);
       setCurricula([]);
       setExistingPlan(null);
+      setExistingPlanItemCount(0);
       setLoadError(
         error instanceof Error ? error.message : 'Could not load curriculum options.'
       );
@@ -153,16 +161,8 @@ export default function CurriculumPickerStep({
     return false;
   };
 
-  const isScanSelected =
-    stagedSelection?.kind === 'scan' ||
-    (!stagedSelection && existingPlan?.source === 'scan' && !!existingPlan.name);
-
-  const selectedScanName =
-    stagedSelection?.kind === 'scan'
-      ? stagedSelection.name
-      : existingPlan?.source === 'scan'
-        ? existingPlan.name ?? undefined
-        : undefined;
+  const hasPersonalScanPlan =
+    existingPlan?.source === 'scan' && !!existingPlan.name;
 
   const confirmAndStageLibrary = (curriculum: CurriculumWithItems) => {
     const hasDifferentExisting =
@@ -192,12 +192,34 @@ export default function CurriculumPickerStep({
     applySelection();
   };
 
-  const handleScanComplete = (staged: StagedCurriculumSelection) => {
+  const handleScanComplete = async (staged: StagedCurriculumSelection) => {
     setShowAddSheet(false);
-    onStage(staged);
-    Alert.alert(
-      'Curriculum saved!',
-      'Your lesson sequence will be ready shortly. Tap Save Subjects to finish.'
+    await onStage(staged);
+    await loadData();
+    onPlanUpdated?.();
+  };
+
+  const handlePersonalPlanSaved = async () => {
+    await loadData();
+    onPlanUpdated?.();
+  };
+
+  const renderPersonalCurriculumCard = () => {
+    if (!hasPersonalScanPlan || !existingPlan?.name) return null;
+
+    return (
+      <TouchableOpacity
+        style={[styles.entryCard, styles.entryCardSelected]}
+        onPress={() => setShowPersonalSheet(true)}
+        activeOpacity={0.7}
+      >
+        <Text style={styles.entryName}>{existingPlan.name}</Text>
+        <Text style={styles.entryMeta}>Your curriculum</Text>
+        <Text style={styles.entryCount}>
+          {existingPlanItemCount} lesson{existingPlanItemCount === 1 ? '' : 's'}
+        </Text>
+        <Text style={styles.selectedBadge}>Selected</Text>
+      </TouchableOpacity>
     );
   };
 
@@ -266,12 +288,16 @@ export default function CurriculumPickerStep({
         </View>
       ) : (
         <>
+          {!isLibraryCategory ? renderPersonalCurriculumCard() : null}
+
           {isLibraryCategory ? (
             <ScrollView
               style={styles.listScroll}
               contentContainerStyle={styles.listContent}
               showsVerticalScrollIndicator={false}
             >
+              {renderPersonalCurriculumCard()}
+
               {loadError ? (
                 <View style={styles.emptyCard}>
                   <BookOpen size={28} color={Colors.ui.error} />
@@ -357,13 +383,6 @@ export default function CurriculumPickerStep({
               <Text style={styles.addCurriculumText}>Add Curriculum — not in list?</Text>
             </TouchableOpacity>
 
-            {isScanSelected && selectedScanName ? (
-              <View style={styles.scanSelectedCard}>
-                <Text style={styles.scanSelectedTitle}>{selectedScanName}</Text>
-                <Text style={styles.scanSelectedHint}>Sequence coming soon</Text>
-              </View>
-            ) : null}
-
             {stagedSelection?.kind === 'library' ? (
               <View style={styles.stagedHint}>
                 <Text style={styles.stagedHintText}>
@@ -371,6 +390,8 @@ export default function CurriculumPickerStep({
                 </Text>
               </View>
             ) : null}
+
+            <Text style={styles.saveChangesHint}>Tap Save Subjects to save other changes.</Text>
 
             <TouchableOpacity style={styles.skipButton} onPress={onSkip} activeOpacity={0.7}>
               <Text style={styles.skipText}>Skip for now</Text>
@@ -390,6 +411,18 @@ export default function CurriculumPickerStep({
           void openDetailCurriculum(curriculum);
         }}
       />
+
+      {hasPersonalScanPlan && existingPlan?.name ? (
+        <PersonalCurriculumSheet
+          visible={showPersonalSheet}
+          studentId={studentId}
+          subject={subject}
+          curriculumName={existingPlan.name}
+          onClose={() => setShowPersonalSheet(false)}
+          onSaved={handlePersonalPlanSaved}
+          onOpenAddCurriculum={() => setShowAddSheet(true)}
+        />
+      ) : null}
 
       {detailCurriculum ? (
         <CurriculumLibraryDetailSheet
@@ -549,21 +582,6 @@ const styles = StyleSheet.create({
     ...Typography.label,
     color: Colors.brand[600],
   },
-  scanSelectedCard: {
-    backgroundColor: Colors.accent[100],
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 12,
-  },
-  scanSelectedTitle: {
-    ...Typography.label,
-    color: Colors.accent[600],
-    marginBottom: 4,
-  },
-  scanSelectedHint: {
-    ...Typography.bodySmall,
-    color: Colors.accent[600],
-  },
   stagedHint: {
     backgroundColor: Colors.brand[50],
     borderRadius: 12,
@@ -574,6 +592,12 @@ const styles = StyleSheet.create({
     ...Typography.bodySmall,
     color: Colors.brand[700],
     textAlign: 'center',
+  },
+  saveChangesHint: {
+    ...Typography.bodySmall,
+    color: Colors.ui.textLight,
+    textAlign: 'center',
+    marginBottom: 8,
   },
   skipButton: {
     paddingVertical: 14,

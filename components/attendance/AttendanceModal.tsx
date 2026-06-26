@@ -85,23 +85,15 @@ export default function AttendanceModal({
     try {
       setLoading(true);
       
-      console.log('💾 ATTENDANCE SAVE DEBUG:');
-      console.log('  Date:', dateString);
-      console.log('  Present student IDs:', presentStudentIds);
-      console.log('  Total students:', students.length);
-      console.log('  Present count:', presentStudentIds.length);
-      console.log('  Absent count:', students.length - presentStudentIds.length);
-      
+                                          
       // Show who is present vs absent
       students.forEach(student => {
         const isPresent = presentStudentIds.includes(student.id);
-        console.log(`  ${isPresent ? '✓' : '✗'} ${student.name}: ${isPresent ? 'PRESENT' : 'ABSENT'}`);
-      });
+              });
       
       const result = await markAttendance(dateString, presentStudentIds, notes);
       
-      console.log('💾 Save result:', result);
-      
+            
       if (result.success) {
         Alert.alert('Success! ✅', 'Attendance saved');
         onSave();

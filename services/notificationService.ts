@@ -15,7 +15,6 @@ Notifications.setNotificationHandler({
 // Request notification permissions
 export async function requestNotificationPermissions() {
   if (!Device.isDevice) {
-    console.log('Notifications only work on physical devices');
     return false;
   }
 
@@ -28,7 +27,7 @@ export async function requestNotificationPermissions() {
   }
 
   if (finalStatus !== 'granted') {
-    console.log('Failed to get notification permissions');
+    console.warn('Notification permissions not granted');
     return false;
   }
 
@@ -76,8 +75,6 @@ export async function scheduleDailyReminder(
       },
     });
   }
-
-  console.log(`✅ Scheduled daily reminders for school days at ${hour}:${minute}`);
 }
 
 // Schedule streak reminder
@@ -123,13 +120,10 @@ export async function sendGoalCelebration(studentName: string, subject: string) 
 // Cancel all notifications
 export async function cancelAllNotifications() {
   await Notifications.cancelAllScheduledNotificationsAsync();
-  console.log('❌ All notifications cancelled');
 }
 
 // Get scheduled notifications (for debugging)
 export async function getScheduledNotifications() {
-  const notifications = await Notifications.getAllScheduledNotificationsAsync();
-  console.log('Scheduled notifications:', notifications);
-  return notifications;
+  return Notifications.getAllScheduledNotificationsAsync();
 }
 

@@ -46,18 +46,15 @@ export default function PhotoGallery({
     try {
       const currentPhoto = photos[currentIndex];
       
-      console.log('📤 Sharing photo:', currentPhoto.substring(0, 60));
-      
+            
       // Download the photo to local storage first
       const filename = currentPhoto.split('/').pop() || `photo_${Date.now()}.jpg`;
       const localUri = FileSystem.documentDirectory + filename;
       
-      console.log('⬇️ Downloading to:', localUri);
-      
+            
       const downloadResult = await FileSystem.downloadAsync(currentPhoto, localUri);
       
-      console.log('✅ Downloaded:', downloadResult.uri);
-      
+            
       // Now share the local file
       const canShare = await Sharing.isAvailableAsync();
       
@@ -67,8 +64,7 @@ export default function PhotoGallery({
           dialogTitle: 'Share Photo',
         });
         
-        console.log('✅ Share completed');
-      } else {
+              } else {
         Alert.alert('Sharing not available', 'Unable to share on this device');
       }
     } catch (error: any) {

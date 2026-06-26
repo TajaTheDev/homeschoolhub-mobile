@@ -50,13 +50,7 @@ export default function BreaksScreen() {
       throw new Error('Please enter a name for this break');
     }
     
-    console.log('📝 Creating break:', {
-      name: breakData.name,
-      emoji: breakData.emoji || '🎄',
-      start_date: breakData.start_date,
-      end_date: breakData.end_date,
-    });
-    
+        
     const { data, error } = await supabase
       .from('breaks')
       .insert({
@@ -76,8 +70,7 @@ export default function BreaksScreen() {
       throw error;
     }
     
-    console.log('✅ Break created:', data);
-    await fetchBreaks();
+        await fetchBreaks();
     return data;
   };
   
@@ -92,13 +85,7 @@ export default function BreaksScreen() {
       throw new Error('Please enter a name for this break');
     }
     
-    console.log('📝 Creating break record:', {
-      name: breakData.name,
-      emoji: breakData.emoji || '🎄',
-      start_date: format(new Date(breakData.start_date), 'yyyy-MM-dd'),
-      end_date: format(new Date(breakData.end_date), 'yyyy-MM-dd'),
-    });
-    
+        
     const { error } = await supabase
       .from('breaks')
       .insert({
@@ -116,8 +103,7 @@ export default function BreaksScreen() {
       throw error;
     }
     
-    console.log('✅ Break record created');
-    await fetchBreaks();
+        await fetchBreaks();
     void requestReviewAtWinMoment();
   };
 
@@ -132,9 +118,7 @@ export default function BreaksScreen() {
       const breakStart = new Date(startDate);
       const breakEnd = new Date(endDate);
       
-      console.log('🔍 Checking for conflicts...');
-      console.log(`  Break: ${format(breakStart, 'yyyy-MM-dd')} to ${format(breakEnd, 'yyyy-MM-dd')}`);
-      
+                  
       // Fetch lessons that fall within break period
       const { data: conflicts, error } = await supabase
         .from('lessons')
@@ -149,12 +133,10 @@ export default function BreaksScreen() {
         throw error;
       }
       
-      console.log(`  Found ${conflicts?.length || 0} conflicting lessons`);
-      
+            
       if (conflicts && conflicts.length > 0) {
         conflicts.forEach(lesson => {
-          console.log(`    - ${lesson.title || lesson.subject} on ${lesson.date}`);
-        });
+                  });
       }
       
       return conflicts || [];
@@ -181,12 +163,7 @@ export default function BreaksScreen() {
         throw new Error('User not authenticated');
       }
 
-      console.log('💾 Saving break:', {
-        id: breakData.id,
-        name: breakData.name,
-        mode: breakData.id ? 'EDIT' : 'CREATE'
-      });
-      
+            
       if (!breakData.name || breakData.name.trim() === '') {
         Alert.alert('Error', 'Please enter a name for this break');
         return;
@@ -194,15 +171,7 @@ export default function BreaksScreen() {
       
       if (breakData.id) {
         // EDIT MODE - Use direct Supabase call since store doesn't have update
-        console.log('📝 Updating existing break with ID:', breakData.id);
-        console.log('💾 Saving break:', {
-          id: breakData.id,
-          name: breakData.name,
-          emoji: breakData.emoji || '🎄',
-          start_date: breakData.start_date,
-          end_date: breakData.end_date,
-        });
-        
+                        
         const { error: updateError } = await supabase
           .from('breaks')
           .update({
@@ -218,19 +187,11 @@ export default function BreaksScreen() {
           throw updateError;
         }
         
-        console.log('✅ Break updated successfully');
-        // Refresh breaks after update
+                // Refresh breaks after update
         await fetchBreaks();
       } else {
         // CREATE MODE - Use store method
-        console.log('➕ Creating new break');
-        console.log('💾 Saving break:', {
-          name: breakData.name,
-          emoji: breakData.emoji || '🎄',
-          start_date: breakData.start_date,
-          end_date: breakData.end_date,
-        });
-        
+                        
         const result = await addBreak({
           start_date: breakData.start_date,
           end_date: breakData.end_date,
@@ -244,8 +205,7 @@ export default function BreaksScreen() {
           throw new Error(result.error || 'Failed to create break');
         }
         
-        console.log('✅ Break created successfully');
-        void requestReviewAtWinMoment();
+                void requestReviewAtWinMoment();
       }
     } catch (error: any) {
       console.error('❌ Break save error:', {
@@ -303,8 +263,7 @@ export default function BreaksScreen() {
               text: 'Cancel',
               style: 'cancel',
               onPress: () => {
-                console.log('User cancelled break addition');
-              }
+                              }
             },
             {
               text: 'Delete Lessons',
@@ -312,8 +271,7 @@ export default function BreaksScreen() {
               onPress: async () => {
                 // Delete conflicting lessons
                 const lessonIds = conflictingLessons.map(l => l.id);
-                console.log('🗑️ Deleting conflicting lessons:', lessonIds);
-                
+                                
                 const { error: deleteError } = await supabase
                   .from('lessons')
                   .delete()
@@ -337,9 +295,7 @@ export default function BreaksScreen() {
                   return;
                 }
                 
-                console.log('✅ Conflicting lessons deleted successfully');
-
-                // Now save the break
+                                // Now save the break
                 await saveBreakToDatabase(breakData);
                 
                 // Refresh lessons and breaks
@@ -355,8 +311,7 @@ export default function BreaksScreen() {
             {
               text: 'Shift Lessons',
               onPress: async () => {
-                console.log('➡️ Shifting conflicting lessons');
-                
+                                
                 const breakStart = new Date(breakData.start_date);
                 const breakEnd = new Date(breakData.end_date);
                 
@@ -365,10 +320,7 @@ export default function BreaksScreen() {
                   (breakEnd.getTime() - breakStart.getTime()) / (1000 * 60 * 60 * 24)
                 ) + 1;
                 
-                console.log(`📅 Break: ${format(breakStart, 'MMM dd')} - ${format(breakEnd, 'MMM dd')}`);
-                console.log(`📊 Break duration: ${breakDuration} calendar days`);
-                console.log(`📚 Lessons to shift: ${conflictingLessons.length}`);
-                
+                                                                
                 // Get school days configuration
                 const schoolDayNumbers = getSchoolDayNumbers(); // [1,2,3,4,5] for Mon-Fri
                 const schoolDayNames = schoolDayNumbers.map(n => {
@@ -376,8 +328,7 @@ export default function BreaksScreen() {
                   return days[n];
                 });
                 
-                console.log('🏫 School days:', schoolDayNames);
-                
+                                
                 // For each conflicting lesson, shift it forward
                 const shiftResults = [];
                 
@@ -404,8 +355,7 @@ export default function BreaksScreen() {
                   const originalDateStr = format(lessonDate, 'yyyy-MM-dd');
                   const newDateStr = format(currentPlacementDate, 'yyyy-MM-dd');
                   
-                  console.log(`  📅 ${lesson.title || lesson.subject}: ${originalDateStr} → ${newDateStr}`);
-                  
+                                    
                   // Update lesson
                   const { error } = await supabase
                     .from('lessons')
@@ -432,8 +382,7 @@ export default function BreaksScreen() {
                   }
                 }
                 
-                console.log(`✅ Shifted ${shiftResults.length} lessons`);
-                
+                                
                 // Add the break
                 await addBreakRecord(breakData);
                 
@@ -475,8 +424,7 @@ export default function BreaksScreen() {
   };
 
   const deleteBreakOnly = async (breakId: string) => {
-    console.log('🗑️ Deleting break without restoring');
-    
+        
     // Delete shift records
     await supabase
       .from('lesson_shifts')
@@ -495,8 +443,7 @@ export default function BreaksScreen() {
       return;
     }
     
-    console.log('✅ Break deleted');
-    Alert.alert('Success', 'Break deleted');
+        Alert.alert('Success', 'Break deleted');
     
     // Refresh
     await fetchBreaks();
@@ -504,8 +451,7 @@ export default function BreaksScreen() {
   };
 
   const deleteBreakAndRestore = async (breakId: string) => {
-    console.log('↩️ Deleting break and restoring lessons');
-    
+        
     // Get all shift records for this break
     const { data: shifts, error: shiftsError } = await supabase
       .from('lesson_shifts')
@@ -518,13 +464,11 @@ export default function BreaksScreen() {
       return;
     }
     
-    console.log(`📚 Found ${shifts?.length || 0} lessons to restore`);
-    
+        
     // Restore each lesson to original date
     if (shifts && shifts.length > 0) {
       for (const shift of shifts) {
-        console.log(`  ↩️ Restoring lesson ${shift.lesson_id}: ${shift.shifted_date} → ${shift.original_date}`);
-        
+                
         const { error: updateError } = await supabase
           .from('lessons')
           .update({ date: shift.original_date })
@@ -535,8 +479,7 @@ export default function BreaksScreen() {
         }
       }
       
-      console.log(`✅ Restored ${shifts.length} lessons to original dates`);
-    }
+          }
     
     // Delete shift records
     await supabase
@@ -556,8 +499,7 @@ export default function BreaksScreen() {
       return;
     }
     
-    console.log('✅ Break deleted and lessons restored');
-    
+        
     // Refresh
     await fetchBreaks();
     await lessonStore.fetchLessons(undefined, undefined, true);
@@ -570,8 +512,7 @@ export default function BreaksScreen() {
 
   const handleDeleteBreak = async (id: string, name: string) => {
     try {
-      console.log('🗑️ Deleting break:', id);
-      
+            
       // First, check if this break caused shifts
       const { data: breakData, error: breakFetchError } = await supabase
         .from('breaks')
@@ -584,8 +525,7 @@ export default function BreaksScreen() {
         throw breakFetchError;
       }
       
-      console.log('📋 Break info:', breakData);
-      
+            
       // If it caused shifts, ask user if they want to restore
       if (breakData?.caused_shifts) {
         Alert.alert(

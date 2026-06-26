@@ -191,8 +191,7 @@ export default function Dashboard() {
   useEffect(() => {
     const loadDashboardData = async () => {
       try {
-        console.log('📊 Loading dashboard data (parallel)...');
-        
+                
         // Load data in parallel - stores handle cache-first loading internally
         // This allows stores to show cached data immediately, then refresh in background
         const loadPromises = [
@@ -218,8 +217,7 @@ export default function Dashboard() {
         
         // Wait for all parallel loads to complete
         await Promise.all(loadPromises);
-        console.log('✅ Dashboard data loading complete');
-      } catch (error: any) {
+              } catch (error: any) {
         console.error('❌ Dashboard load error:', error?.message);
         setHasError(true);
         setErrorMessage(error?.message || 'Failed to load dashboard data. Check console for details.');
@@ -280,30 +278,24 @@ export default function Dashboard() {
   // Fetch subjects when students are loaded
   useEffect(() => {
     if (students.length > 0) {
-      console.log('Fetching subjects for', students.length, 'students');
-      fetchSubjects();
+            fetchSubjects();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [students.length]);
 
   // Debug: Log modal state changes
   // useEffect(() => {
-  //   console.log('Modal state changed - showEditModal:', showEditModal, 'selectedStudent:', selectedStudent?.name || 'null');
-  // }, [showEditModal, selectedStudent]);
+  //     // }, [showEditModal, selectedStudent]);
 
   // Debug: Log subjects modal state changes
   // useEffect(() => {
-  //   console.log('showSubjectsModal changed:', showSubjectsModal);
-  //   console.log('selectedStudentForSubjects:', selectedStudentForSubjects?.name || 'null');
-  // }, [showSubjectsModal, selectedStudentForSubjects]);
+  //     //     // }, [showSubjectsModal, selectedStudentForSubjects]);
 
   // Debug: Log when subjects are updated
   // useEffect(() => {
-  //   console.log('Subjects updated in store. Total subjects:', subjects.length);
-  //   students.forEach((student) => {
+  //     //   students.forEach((student) => {
   //     const count = subjects.filter((s) => s.student_id === student.id).length;
-  //     console.log(`  - ${student.name}: ${count} subjects`);
-  //   });
+  //       //   });
   // }, [subjects, students]);
 
   const handleSignOut = async () => {
@@ -312,45 +304,40 @@ export default function Dashboard() {
   };
 
   const handleEditStudent = (student: Student) => {
-    console.log('Edit button tapped for student:', student.name, student.id);
-    setSelectedStudent(student);
+        setSelectedStudent(student);
     setShowEditModal(true);
-    console.log('Modal state updated - showEditModal:', true, 'selectedStudent:', student.name);
-  };
+      };
 
   const handleCloseModal = () => {
-    console.log('Closing edit modal');
-    setShowEditModal(false);
+        setShowEditModal(false);
     setSelectedStudent(null);
   };
 
   const handleSaveStudent = async () => {
-    console.log('Saving student changes, refreshing list');
-    await fetchStudents();
+        await fetchStudents();
     await fetchSubjects();
     setShowEditModal(false);
     setSelectedStudent(null);
   };
 
   const handleEditSubjects = (student: Student) => {
-    console.log('SUBJECTS BUTTON TAPPED for:', student.name, student.id);
-    console.log('Setting showSubjectsModal to true');
-    setSelectedStudentForSubjects(student);
+            setSelectedStudentForSubjects(student);
     setShowSubjectsModal(true);
-    console.log('State updated - showSubjectsModal: true, selectedStudentForSubjects:', student.name);
-  };
+      };
 
   const handleCloseSubjectsModal = () => {
-    console.log('Closing subjects modal');
-    setShowSubjectsModal(false);
+        setShowSubjectsModal(false);
     setSelectedStudentForSubjects(null);
   };
 
   const handleSaveSubjects = async () => {
-    console.log('Saving subjects, refreshing list');
-    await fetchSubjects();
+        await fetchSubjects();
     setShowSubjectsModal(false);
     setSelectedStudentForSubjects(null);
+  };
+
+  const handleSubjectsUpdated = async () => {
+    await fetchSubjects();
   };
 
   // Helper to get subject count for a student
@@ -405,24 +392,7 @@ export default function Dashboard() {
   const selectedDateLessons = useMemo(() => {
     const filtered = lessons.filter(l => l.date === selectedDateStr);
     
-    console.log('=== TODAY LESSONS DEBUG ===');
-    console.log('Selected date:', selectedDateStr);
-    console.log('Total lessons in store:', lessons.length);
-    console.log('Filtered lessons:', filtered.length);
-    console.log('First 3 lessons:', lessons.slice(0, 3).map(l => ({
-      id: l.id,
-      date: l.date,
-      title: l.title,
-      students: l.students?.length
-    })));
-    console.log('Filtered lessons details:', filtered.map(l => ({
-      id: l.id,
-      title: l.title,
-      date: l.date,
-      students: l.students?.map((s: any) => s.name || s.id)
-    })));
-    console.log('=========================');
-    
+                                
     return filtered;
   }, [lessons, selectedDateStr]);
 
@@ -657,12 +627,10 @@ export default function Dashboard() {
               setErrorMessage('');
               // Retry loading data
               try {
-                console.log('🔄 Retrying dashboard data load...');
-                await fetchLessons();
+                                await fetchLessons();
                 await fetchStudents();
                 await loadParentData();
-                console.log('✅ Retry successful');
-              } catch (error: any) {
+                              } catch (error: any) {
                 console.error('❌ Retry failed:', error);
                 setHasError(true);
                 setErrorMessage(error?.message || 'Retry failed. Check console for details.');
@@ -1134,8 +1102,7 @@ export default function Dashboard() {
                   ]}
                   onPress={() => {
                     // Placeholder for student details
-                    console.log('Student tapped:', student.name);
-                  }}
+                                      }}
                 >
                   <View style={styles.studentCardContent}>
                     {/* Left: Avatar (NOT clickable) */}
@@ -1291,6 +1258,7 @@ export default function Dashboard() {
           student={selectedStudentForSubjects}
           onClose={handleCloseSubjectsModal}
           onSave={handleSaveSubjects}
+          onSubjectsUpdated={handleSubjectsUpdated}
         />
       </Suspense>
 

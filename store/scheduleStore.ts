@@ -188,8 +188,7 @@ export const useScheduleStore = create<ScheduleStore>((set, get) => ({
       return dateStr >= breakItem.start_date && dateStr <= breakItem.end_date;
     });
     
-    console.log(`🔍 isBreakDay(${dateStr}): ${isBreak}`);
-    
+        
     return isBreak;
   },
 }));

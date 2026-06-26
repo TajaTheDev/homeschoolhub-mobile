@@ -124,16 +124,12 @@ export default function AvatarPicker({
         throw uploadError;
       }
 
-      console.log('✅ Photo uploaded:', data.path);
-
-      // Get public URL for immediate display
+            // Get public URL for immediate display
       const { data: { publicUrl } } = supabase.storage
         .from('student-avatars')
         .getPublicUrl(data.path);
 
-      console.log('📷 Public URL:', publicUrl);
-
-      // Return the file path (and public URL for immediate display)
+            // Return the file path (and public URL for immediate display)
       onSelect('photo', fileName);
       onClose();
     } catch (error: any) {

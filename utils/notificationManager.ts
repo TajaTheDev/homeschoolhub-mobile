@@ -2,7 +2,6 @@ import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { useScheduleStore } from '@/store/scheduleStore';
 import { useBreakStore } from '@/store/breakStore';
-import { format } from 'date-fns';
 
 // Configure how notifications are handled when app is in foreground
 Notifications.setNotificationHandler({
@@ -61,7 +60,6 @@ export async function isSchoolDay(date: Date): Promise<boolean> {
       await breakStore.fetchBreaks();
     }
     
-    const dateStr = format(date, 'yyyy-MM-dd');
     const dayOfWeek = date.getDay(); // 0=Sunday, 1=Monday, ..., 6=Saturday
     
     // Convert JavaScript dayOfWeek to our format (0=Sunday, 1=Monday, etc.)
@@ -73,9 +71,7 @@ export async function isSchoolDay(date: Date): Promise<boolean> {
     const isBreak = breakStore.isBreakDay(date);
     
     const isSchoolDayResult = isConfiguredSchoolDay && !isBreak;
-    
-    console.log(`📅 School day check: ${dateStr} (${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dayOfWeek]}) is ${isSchoolDayResult ? 'SCHOOL DAY' : 'NOT school day'} (configured: ${isConfiguredSchoolDay}, break: ${isBreak})`);
-    
+
     return isSchoolDayResult;
   } catch (error: any) {
     console.error('❌ Error checking school day:', error);
@@ -98,9 +94,7 @@ export async function scheduleAttendanceReminder(time: Date) {
     
     const hour = time.getHours();
     const minute = time.getMinutes();
-    
-    console.log(`⏰ Scheduling school-day-only reminders for ${hour}:${minute}`);
-    
+
     // Get school days configuration
     const scheduleStore = useScheduleStore.getState();
     if (!scheduleStore.schedule) {
@@ -110,7 +104,6 @@ export async function scheduleAttendanceReminder(time: Date) {
     const schoolDays = scheduleStore.getSchoolDays();
     
     if (schoolDays.length === 0) {
-      console.log('⚠️ No school days configured. Defaulting to Mon-Fri.');
       // Default to Mon-Fri if no schedule
       schoolDays.push(1, 2, 3, 4, 5);
     }
@@ -142,12 +135,8 @@ export async function scheduleAttendanceReminder(time: Date) {
       });
       
       notificationIds.push(notificationId);
-      
-      const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-      console.log(`✅ Scheduled reminder for ${dayNames[day]} at ${hour}:${minute}`);
     }
-    
-    console.log(`✅ Scheduled ${notificationIds.length} school-day reminders`);
+
     return { success: true, ids: notificationIds };
     
   } catch (error: any) {
@@ -168,8 +157,7 @@ export async function cancelAttendanceReminder() {
     for (const notification of attendanceNotifications) {
       await Notifications.cancelScheduledNotificationAsync(notification.identifier);
     }
-    
-    console.log(`✅ Cancelled ${attendanceNotifications.length} attendance reminder(s)`);
+
     return { success: true };
   } catch (error: any) {
     console.error('❌ Error cancelling notifications:', error);
@@ -179,9 +167,7 @@ export async function cancelAttendanceReminder() {
 
 // Get all scheduled notifications (for debugging)
 export async function getScheduledNotifications() {
-  const notifications = await Notifications.getAllScheduledNotificationsAsync();
-  console.log('📋 Scheduled notifications:', notifications);
-  return notifications;
+  return Notifications.getAllScheduledNotificationsAsync();
 }
 
 export default {

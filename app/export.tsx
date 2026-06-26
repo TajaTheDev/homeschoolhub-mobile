@@ -247,10 +247,7 @@ export default function ExportScreen() {
         return;
       }
       
-      console.log('📄 Generating PDF report card...');
-      console.log('  Student:', student.name);
-      console.log('  Period:', range.label);
-      
+                        
       // Generate PDF
       const pdfUri = await generateReportCard({
         student,
@@ -260,8 +257,7 @@ export default function ExportScreen() {
         endDate: range.end,
       });
       
-      console.log('✅ PDF generated:', pdfUri);
-      
+            
       await sharePdf(pdfUri, `${student.name} - Report Card`);
       Alert.alert('Success!', `Report card generated for ${student.name}`);
     } catch (error: any) {
@@ -347,8 +343,7 @@ export default function ExportScreen() {
       encoding: 'utf8',
     });
     
-    console.log('✅ File saved to:', fileUri);
-    
+        
     try {
       // Share the file
       const canShare = await Sharing.isAvailableAsync();

@@ -91,27 +91,12 @@ export default function RootLayout() {
     }
   };
 
-  const logCarouselRedirect = async (
-    source: string,
-    destination: '/(auth)/onboarding' | '/onboarding/welcome'
-  ) => {
-    const hasSeenOnboarding = await AsyncStorage.getItem('hasSeenOnboarding');
-    const hasCompletedOnboarding = await AsyncStorage.getItem('hasCompletedOnboarding');
-    let hasSession = false;
-    if (supabase) {
-      const { data: { session } } = await supabase.auth.getSession();
-      hasSession = !!session;
-    }
-    console.log('[REDIRECT]', { source, destination, hasSession, hasSeenOnboarding, hasCompletedOnboarding });
-  };
-
   /** Routes unauthenticated users from initializeAuth sync paths. */
   const routeInitializeAuthNoSession = async () => {
     const hasSeenOnboarding = await AsyncStorage.getItem('hasSeenOnboarding');
     if (hasSeenOnboarding === 'true') {
       router.replace('/(auth)/login');
     } else {
-      await logCarouselRedirect('_layout:routeInitializeAuthNoSession', '/(auth)/onboarding');
       router.replace('/(auth)/onboarding');
     }
   };
@@ -177,7 +162,6 @@ export default function RootLayout() {
     }
 
     if (!supabase) {
-      await logCarouselRedirect('_layout:runDeferredAuthRedirect', '/(auth)/onboarding');
       router.replace('/(auth)/onboarding');
       return;
     }
@@ -195,11 +179,9 @@ export default function RootLayout() {
         return;
       }
 
-      await logCarouselRedirect('_layout:runDeferredAuthRedirect', '/(auth)/onboarding');
       router.replace('/(auth)/onboarding');
     } catch (error) {
       console.error('🚨 Deferred auth redirect error:', error);
-      await logCarouselRedirect('_layout:runDeferredAuthRedirect:catch', '/(auth)/onboarding');
       router.replace('/(auth)/onboarding');
     }
   };
@@ -211,7 +193,6 @@ export default function RootLayout() {
       router.replace('/(auth)/login');
       return;
     }
-    await logCarouselRedirect('_layout:routeColdStartNoSession', '/(auth)/onboarding');
     router.replace('/(auth)/onboarding');
   };
 
@@ -247,21 +228,18 @@ export default function RootLayout() {
                 console.error('Error getting user:', userError);
               } else if (user) {
                 // User is authenticated - prefetch data immediately
-                // console.log('🚀 Prefetching data for authenticated user...');
-                // try {
+                //                 // try {
                 //   await Promise.all([
                 //     useStudentStore.getState().fetchStudents(),
                 //     useLessonStore.getState().fetchLessons(),
                 //   ]);
-                //   console.log('✅ Data prefetch complete');
-                // } catch (prefetchError) {
+                //                   // } catch (prefetchError) {
                 //   console.error('Data prefetch failed (non-critical):', prefetchError);
                 // }
               }
             } else {
               // No session - this is normal during onboarding, don't log as error
-              console.log('📝 No active session (user not logged in)');
-            }
+                          }
           }
         } catch (error) {
           console.error('User check failed (non-critical):', error);
@@ -311,13 +289,11 @@ export default function RootLayout() {
             
             if (offering && offering.availablePackages) {
               const packageCount = offering.availablePackages.length;
-              console.log('📦 Offerings loaded:', packageCount, 'packages');
-              
+                            
               // Log package details for debugging
               if (packageCount > 0) {
                 offering.availablePackages.forEach(pkg => {
-                  console.log(`   - ${pkg.identifier}: ${pkg.product.priceString}`);
-                });
+                                  });
               } else {
                 console.warn('⚠️ No packages available in current offering');
               }
@@ -488,8 +464,7 @@ export default function RootLayout() {
     const subscription = Notifications.addNotificationResponseReceivedListener(response => {
       const data = response.notification.request.content.data;
       
-      console.log('Notification tapped:', data);
-      
+            
       // Navigate based on notification type
       if (data.type === 'daily-reminder') {
         router.push('/(tabs)/' as Parameters<typeof router.push>[0]);
@@ -530,8 +505,7 @@ export default function RootLayout() {
             schoolDays
           );
           
-          console.log('✅ Notifications initialized');
-        }
+                  }
       }
     } catch (error) {
       console.error('Error initializing notifications:', error);

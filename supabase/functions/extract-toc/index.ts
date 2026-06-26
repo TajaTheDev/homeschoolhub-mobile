@@ -9,11 +9,36 @@ const supabase = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
 );
 
+const DAILY_SCAN_LIMIT = Number(Deno.env.get("TOC_DAILY_SCAN_LIMIT") ?? "20");
+
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Access-Control-Allow-Headers": "authorization, content-type",
 };
+
+function jsonResponse(
+  body: Record<string, unknown>,
+  status: number
+): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...CORS, "Content-Type": "application/json" },
+  });
+}
+
+async function getAuthenticatedUserId(req: Request): Promise<string | null> {
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader?.startsWith("Bearer ")) return null;
+
+  const token = authHeader.replace("Bearer ", "");
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser(token);
+  if (error || !user) return null;
+  return user.id;
+}
 
 function toBase64(bytes: Uint8Array): string {
   let binary = "";
@@ -47,7 +72,6 @@ async function downloadImage(
 async function extractFromImages(
   images: { base64: string; mediaType: string }[]
 ): Promise<string[]> {
-  // Build content array: all images first, then the prompt
   const content: unknown[] = images.map((img) => ({
     type: "image",
     source: { type: "base64", media_type: img.mediaType, data: img.base64 },
@@ -105,15 +129,43 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
 
   try {
+    const userId = await getAuthenticatedUserId(req);
+    if (!userId) {
+      return jsonResponse({ error: "Authentication required" }, 401);
+    }
+
+    const { data: rateData, error: rateError } = await supabase.rpc(
+      "check_and_increment_toc_scan",
+      { p_user_id: userId, p_daily_limit: DAILY_SCAN_LIMIT }
+    );
+
+    if (rateError) {
+      console.error("toc rate limit check failed:", rateError);
+      return jsonResponse({ error: "Rate limit check failed" }, 500);
+    }
+
+    const rate = rateData?.[0];
+    if (!rate?.allowed) {
+      return jsonResponse(
+        {
+          error: "Daily scan limit reached",
+          message:
+            `You've used all ${rate?.daily_limit ?? DAILY_SCAN_LIMIT} TOC scans for today. ` +
+            "Please try again tomorrow.",
+          scan_count: rate?.scan_count ?? DAILY_SCAN_LIMIT,
+          daily_limit: rate?.daily_limit ?? DAILY_SCAN_LIMIT,
+        },
+        429
+      );
+    }
+
     const body = await req.json();
 
-    // Accept either storage_paths[] (multi-page) or lesson_plan_id (legacy single)
     let storagePaths: string[] = [];
 
     if (body.storage_paths && Array.isArray(body.storage_paths)) {
       storagePaths = body.storage_paths;
     } else if (body.lesson_plan_id) {
-      // Legacy: look up the single path from lesson_plans
       const { data: plan } = await supabase
         .from("lesson_plans")
         .select("toc_image_path")
@@ -123,13 +175,9 @@ Deno.serve(async (req) => {
     }
 
     if (storagePaths.length === 0) {
-      return new Response(
-        JSON.stringify({ error: "No image paths provided" }),
-        { status: 400, headers: { ...CORS, "Content-Type": "application/json" } }
-      );
+      return jsonResponse({ error: "No image paths provided" }, 400);
     }
 
-    // Download all images in parallel
     const imageResults = await Promise.all(
       storagePaths.map((p) => downloadImage(p))
     );
@@ -138,23 +186,17 @@ Deno.serve(async (req) => {
     );
 
     if (images.length === 0) {
-      return new Response(
-        JSON.stringify({ error: "Failed to download images" }),
-        { status: 500, headers: { ...CORS, "Content-Type": "application/json" } }
-      );
+      return jsonResponse({ error: "Failed to download images" }, 500);
     }
 
     const titles = await extractFromImages(images);
 
-    return new Response(
-      JSON.stringify({ titles, count: titles.length }),
-      { status: 200, headers: { ...CORS, "Content-Type": "application/json" } }
-    );
+    return jsonResponse({ titles, count: titles.length }, 200);
   } catch (err) {
     console.error("extract-toc error:", err);
-    return new Response(
-      JSON.stringify({ error: "Extraction failed", detail: String(err) }),
-      { status: 500, headers: { ...CORS, "Content-Type": "application/json" } }
+    return jsonResponse(
+      { error: "Extraction failed", detail: String(err) },
+      500
     );
   }
 });

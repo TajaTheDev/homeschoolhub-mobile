@@ -225,8 +225,7 @@ export default function ScheduleSettingsScreen() {
       if (enabled === 'true' && savedTime) {
         const time = new Date(savedTime);
         await scheduleAttendanceReminder(time);
-        console.log('✅ Rescheduled attendance reminders for new school days');
-      }
+              }
     } catch (error) {
       console.error('Error rescheduling attendance reminders:', error);
     }

@@ -53,7 +53,6 @@ async function getRevenueCatCustomerInfo() {
     const Purchases = (await import('react-native-purchases')).default;
     return Purchases.getCustomerInfo();
   } catch (error) {
-    console.log('ℹ️ RevenueCat unavailable:', error);
     return null;
   }
 }
@@ -167,11 +166,10 @@ export const useSubscriptionStore = create<SubscriptionStore>((set, get) => ({
       } = await supabase.auth.getUser();
 
       if (!user) {
+        const info = buildExpiredSubscriptionInfo('');
         set({ loading: false });
-        throw new Error('Not authenticated');
+        return info;
       }
-
-      console.log('🔍 Checking subscription for user:', user.id);
 
       // First check RevenueCat for paid subscription
       const customerInfo = await getRevenueCatCustomerInfo();
@@ -181,8 +179,6 @@ export const useSubscriptionStore = create<SubscriptionStore>((set, get) => ({
           const hasActiveEntitlement = proEntitlement !== undefined;
 
           if (hasActiveEntitlement) {
-            console.log('💎 User has active RevenueCat subscription');
-
             const plan = getPlanFromProductId(proEntitlement.productIdentifier);
             await convertUserTrial(plan);
 
@@ -190,8 +186,8 @@ export const useSubscriptionStore = create<SubscriptionStore>((set, get) => ({
             setSubscriptionInfo(set, info);
             return info;
           }
-        } catch (rcError) {
-          console.log('ℹ️ No RevenueCat subscription found, checking trial', rcError);
+        } catch {
+          // No RevenueCat subscription — fall through to trial check
         }
       }
 
@@ -206,12 +202,6 @@ export const useSubscriptionStore = create<SubscriptionStore>((set, get) => ({
       }
 
       const { trial } = trialInfo;
-
-      console.log('📊 Subscription status:', {
-        status: trial.status,
-        daysRemaining: trialInfo.daysRemaining,
-        hasAccess: trialInfo.isActive || trialInfo.isConverted,
-      });
 
       const info = buildTrialSubscriptionInfo(
         user.id,
@@ -242,8 +232,6 @@ export const useSubscriptionStore = create<SubscriptionStore>((set, get) => ({
       return;
     }
 
-    console.log('🆕 Starting trial for user:', user.id);
-
     await ensureUserTrial();
     await get().checkSubscription();
   },
@@ -251,9 +239,8 @@ export const useSubscriptionStore = create<SubscriptionStore>((set, get) => ({
   updateSubscriptionStatus: async () => {
     try {
       await get().checkSubscription();
-    } catch (error) {
+    } catch {
       // Expected when user is logged out or Supabase trial migration is pending
-      console.log('ℹ️ Subscription status update skipped:', error);
     }
   },
 }));
