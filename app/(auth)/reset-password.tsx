@@ -3,13 +3,19 @@
  */
 
 import Colors from '@/constants/Colors';
+import {
+  establishSessionFromRecoveryUrl,
+  isRecoveryDeepLink,
+} from '@/lib/recoveryDeepLink';
 import { supabase } from '@/lib/supabase/client';
 import { useRouter } from 'expo-router';
 import { ChevronLeft } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   ScrollView,
   StyleSheet,
@@ -20,6 +26,57 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+/**
+ * Waits for an existing session or establishes one from a recovery deep link.
+ */
+async function resolveRecoverySession(): Promise<boolean> {
+  if (!supabase) {
+    return false;
+  }
+
+  const hasActiveSession = async (): Promise<boolean> => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    return !!session;
+  };
+
+  if (await hasActiveSession()) {
+    console.log('[reset-password] Recovery session already active');
+    return true;
+  }
+
+  const initialUrl = await Linking.getInitialURL();
+  if (initialUrl && isRecoveryDeepLink(initialUrl)) {
+    console.log('[reset-password] Attempting session from initial URL');
+    const established = await establishSessionFromRecoveryUrl(initialUrl);
+    if (established && (await hasActiveSession())) {
+      console.log('[reset-password] Session established from initial URL');
+      return true;
+    }
+  }
+
+  // _layout may still be finishing establishSessionFromRecoveryUrl
+  await new Promise((resolve) => setTimeout(resolve, 400));
+
+  if (await hasActiveSession()) {
+    console.log('[reset-password] Session available after brief wait');
+    return true;
+  }
+
+  if (initialUrl && isRecoveryDeepLink(initialUrl)) {
+    console.log('[reset-password] Retrying session from initial URL');
+    const established = await establishSessionFromRecoveryUrl(initialUrl);
+    if (established && (await hasActiveSession())) {
+      console.log('[reset-password] Session established on retry');
+      return true;
+    }
+  }
+
+  console.log('[reset-password] No recovery session could be established');
+  return false;
+}
+
 export default function ResetPasswordScreen() {
   const router = useRouter();
   const [password, setPassword] = useState('');
@@ -28,20 +85,72 @@ export default function ResetPasswordScreen() {
   const [sessionReady, setSessionReady] = useState<boolean | null>(null);
 
   useEffect(() => {
-    const verifyRecoverySession = async () => {
-      if (!supabase) {
-        setSessionReady(false);
-        return;
-      }
+    let cancelled = false;
 
-      const { data: { session } } = await supabase.auth.getSession();
-      setSessionReady(!!session);
+    const runSessionCheck = async () => {
+      const ready = await resolveRecoverySession();
+      if (!cancelled) {
+        setSessionReady(ready);
+      }
     };
 
-    void verifyRecoverySession();
+    void runSessionCheck();
+
+    const subscription = Linking.addEventListener('url', (event) => {
+      void (async () => {
+        if (!isRecoveryDeepLink(event.url)) {
+          return;
+        }
+
+        console.log('[reset-password] Recovery URL received while on screen');
+        const established = await establishSessionFromRecoveryUrl(event.url);
+        if (!cancelled && established && supabase) {
+          const {
+            data: { session },
+          } = await supabase.auth.getSession();
+          if (session) {
+            setSessionReady(true);
+          }
+        }
+      })();
+    });
+
+    return () => {
+      cancelled = true;
+      subscription.remove();
+    };
   }, []);
 
+  const showLinkExpiredAlert = () => {
+    Alert.alert(
+      'Link expired',
+      'This reset link is invalid or has expired. Please request a new one.',
+      [
+        {
+          text: 'Request new link',
+          onPress: () => router.replace('/(auth)/forgot-password'),
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ]
+    );
+  };
+
   const handleUpdatePassword = async () => {
+    console.log('[reset-password] Update pressed', { sessionReady, isSubmitting });
+
+    if (sessionReady === null) {
+      Alert.alert(
+        'Please wait',
+        'Still verifying your reset link. Try again in a moment.'
+      );
+      return;
+    }
+
+    if (sessionReady === false) {
+      showLinkExpiredAlert();
+      return;
+    }
+
     if (!password.trim() || !confirmPassword.trim()) {
       Alert.alert('Error', 'Please fill in both password fields');
       return;
@@ -65,28 +174,30 @@ export default function ResetPasswordScreen() {
     setIsSubmitting(true);
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      console.log('[reset-password] Session before updateUser', {
+        hasSession: !!session,
+        userId: session?.user?.id ?? null,
+      });
+
       if (!session) {
-        Alert.alert(
-          'Link expired',
-          'This reset link is invalid or has expired. Please request a new one.',
-          [
-            {
-              text: 'Request new link',
-              onPress: () => router.replace('/(auth)/forgot-password'),
-            },
-          ]
-        );
+        setSessionReady(false);
+        showLinkExpiredAlert();
         return;
       }
 
       const { error } = await supabase.auth.updateUser({ password });
 
       if (error) {
-        console.error('updateUser password error:', error);
+        console.log('[reset-password] updateUser failed:', error.message);
         Alert.alert('Error', error.message || 'Failed to update password. Please try again.');
         return;
       }
+
+      console.log('[reset-password] updateUser succeeded');
 
       await supabase.auth.signOut();
 
@@ -101,12 +212,15 @@ export default function ResetPasswordScreen() {
         ]
       );
     } catch (err) {
-      console.error('Reset password exception:', err);
+      console.error('[reset-password] Reset password exception:', err);
       Alert.alert('Error', 'Something went wrong. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
   };
+
+  const isCheckingSession = sessionReady === null;
+  const isButtonDisabled = isCheckingSession || isSubmitting;
 
   if (sessionReady === false) {
     return (
@@ -160,6 +274,10 @@ export default function ResetPasswordScreen() {
           <View style={styles.form}>
             <Text style={styles.subtitle}>Choose a new password for your account.</Text>
 
+            {isCheckingSession ? (
+              <Text style={styles.checkingHint}>Verifying your reset link…</Text>
+            ) : null}
+
             <TextInput
               style={styles.input}
               placeholder="New password (min 6 characters)"
@@ -170,6 +288,7 @@ export default function ResetPasswordScreen() {
               autoCapitalize="none"
               autoComplete="password-new"
               textContentType="newPassword"
+              editable={!isButtonDisabled}
             />
 
             <TextInput
@@ -182,17 +301,27 @@ export default function ResetPasswordScreen() {
               autoCapitalize="none"
               autoComplete="password-new"
               textContentType="newPassword"
+              editable={!isButtonDisabled}
             />
 
             <TouchableOpacity
-              style={[styles.primaryButton, isSubmitting && styles.primaryButtonDisabled]}
+              style={[styles.primaryButton, isButtonDisabled && styles.primaryButtonDisabled]}
               onPress={handleUpdatePassword}
-              disabled={isSubmitting || sessionReady === null}
+              disabled={isButtonDisabled}
               activeOpacity={0.8}
             >
-              <Text style={styles.primaryButtonText}>
-                {isSubmitting ? 'Updating...' : 'Update password'}
-              </Text>
+              <View style={styles.buttonContent}>
+                {isButtonDisabled ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : null}
+                <Text style={styles.primaryButtonText}>
+                  {isCheckingSession
+                    ? 'Checking...'
+                    : isSubmitting
+                      ? 'Updating...'
+                      : 'Update password'}
+                </Text>
+              </View>
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -246,6 +375,12 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     textAlign: 'center',
   },
+  checkingHint: {
+    fontSize: 14,
+    color: Colors.brand[600],
+    textAlign: 'center',
+    marginBottom: 4,
+  },
   input: {
     backgroundColor: '#FFFFFF',
     borderWidth: 2,
@@ -268,6 +403,12 @@ const styles = StyleSheet.create({
   },
   primaryButtonDisabled: {
     opacity: 0.6,
+  },
+  buttonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
   },
   primaryButtonText: {
     color: '#FFFFFF',
