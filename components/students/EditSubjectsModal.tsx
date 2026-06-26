@@ -26,6 +26,7 @@ interface EditSubjectsModalProps {
   student: Student | null;
   onClose: () => void;
   onSave: () => void;
+  onSubjectsUpdated?: () => void;
 }
 
 export default function EditSubjectsModal({
@@ -33,6 +34,7 @@ export default function EditSubjectsModal({
   student,
   onClose,
   onSave,
+  onSubjectsUpdated,
 }: EditSubjectsModalProps) {
   const [selectedSubjects, setSelectedSubjects] = useState<string[]>([]);
   const [customSubject, setCustomSubject] = useState('');
@@ -159,14 +161,38 @@ export default function EditSubjectsModal({
     setCustomSubject('');
   };
 
-  const handleStageCurriculum = (selection: StagedCurriculumSelection) => {
-    if (!curriculumStepSubject) return;
+  const handleStageCurriculum = async (selection: StagedCurriculumSelection) => {
+    if (!curriculumStepSubject || !student) return;
+
+    const subjectKey = curriculumStepSubject;
 
     setStagedCurricula((prev) => ({
       ...prev,
-      [curriculumStepSubject]: selection,
+      [subjectKey]: selection,
     }));
     setCurriculumStepSubject(null);
+
+    if (selection.kind !== 'scan') return;
+
+    try {
+      const enrollResult = await studentStore.ensureSubjectEnrolled(student.id, subjectKey);
+      if (!enrollResult.success) {
+        throw new Error(enrollResult.error ?? 'Failed to enroll subject');
+      }
+
+      const planResult = await persistStagedCurriculum(student.id, subjectKey, selection);
+      if (!planResult.success) {
+        throw new Error(planResult.error ?? 'Failed to save curriculum metadata');
+      }
+
+      onSubjectsUpdated?.();
+    } catch (error) {
+      console.error('Auto-enroll after scan failed:', error);
+      Alert.alert(
+        'Could not enroll subject',
+        error instanceof Error ? error.message : 'Please try again.'
+      );
+    }
   };
 
   const handleSkipCurriculum = () => {
@@ -197,40 +223,50 @@ export default function EditSubjectsModal({
       const existingSubjects = studentStore.subjects.filter(
         (s) => s.student_id === student.id
       );
+      const bulkSaveOptions = { skipRefetch: true } as const;
 
       for (const subject of existingSubjects) {
-        const result = await studentStore.deleteSubject(subject.id);
+        const result = await studentStore.deleteSubject(subject.id, bulkSaveOptions);
         if (!result.success) {
           throw new Error(`Failed to delete subject: ${result.error}`);
         }
       }
 
       for (const subject of selectedSubjects) {
-        const result = await studentStore.addSubject({
-          student_id: student.id,
-          subject,
-        });
+        const result = await studentStore.addSubject(
+          {
+            student_id: student.id,
+            subject,
+          },
+          bulkSaveOptions
+        );
 
         if (!result.success) {
           throw new Error(`Failed to add subject ${subject}: ${result.error}`);
         }
       }
 
-      for (const subject of selectedSubjects) {
-        const staged = stagedCurricula[subject];
-        if (!staged) continue;
+      const stagedSubjects = selectedSubjects.filter((subject) => stagedCurricula[subject]);
+      if (stagedSubjects.length > 0) {
+        const planResults = await Promise.all(
+          stagedSubjects.map((subject) =>
+            persistStagedCurriculum(student.id, subject, stagedCurricula[subject]!)
+          )
+        );
 
-        const planResult = await persistStagedCurriculum(student.id, subject, staged);
-        if (!planResult.success) {
-          throw new Error(
-            planResult.error ?? `Failed to save curriculum for ${subject}`
-          );
+        for (let index = 0; index < planResults.length; index++) {
+          const planResult = planResults[index];
+          if (!planResult.success) {
+            throw new Error(
+              planResult.error ?? `Failed to save curriculum for ${stagedSubjects[index]}`
+            );
+          }
         }
       }
 
       setLoading(false);
       showSnackbar('Subjects updated!', 'success');
-      onSave();
+      void Promise.resolve(onSave());
     } catch (error) {
       console.error('❌ SAVE: Error during save:', error);
       setLoading(false);
@@ -279,6 +315,7 @@ export default function EditSubjectsModal({
               onStage={handleStageCurriculum}
               onSkip={handleSkipCurriculum}
               onBack={() => setCurriculumStepSubject(null)}
+              onPlanUpdated={onSubjectsUpdated}
             />
           ) : (
             <ScrollView
@@ -422,6 +459,12 @@ export default function EditSubjectsModal({
                   Tap a subject to choose curriculum. Tap the pencil to rename a custom subject.
                 </Text>
               )}
+
+              {selectedSubjects.length > 0 ? (
+                <Text style={styles.saveHint}>
+                  Tap Save Subjects to save other changes.
+                </Text>
+              ) : null}
 
               <TouchableOpacity
                 style={styles.saveButton}
@@ -613,6 +656,13 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     marginTop: 8,
     marginBottom: 4,
+  },
+  saveHint: {
+    fontSize: 12,
+    color: Colors.ui.textLight,
+    marginTop: 4,
+    marginBottom: 4,
+    textAlign: 'center',
   },
   saveButton: {
     backgroundColor: Colors.brand[500],

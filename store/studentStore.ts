@@ -27,13 +27,21 @@ interface StudentState {
   ) => Promise<{ success: boolean; error?: string }>;
   deleteStudent: (id: string) => Promise<{ success: boolean; error?: string }>;
   addSubject: (
-    subject: Omit<StudentSubject, 'id' | 'created_at'>
+    subject: Omit<StudentSubject, 'id' | 'created_at'>,
+    options?: { skipRefetch?: boolean }
+  ) => Promise<{ success: boolean; error?: string; data?: StudentSubject }>;
+  ensureSubjectEnrolled: (
+    studentId: string,
+    subject: string
   ) => Promise<{ success: boolean; error?: string }>;
   updateSubject: (
     id: string,
     updates: Partial<StudentSubject>
   ) => Promise<{ success: boolean; error?: string }>;
-  deleteSubject: (id: string) => Promise<{ success: boolean; error?: string }>;
+  deleteSubject: (
+    id: string,
+    options?: { skipRefetch?: boolean }
+  ) => Promise<{ success: boolean; error?: string }>;
 }
 
 export const useStudentStore = create<StudentState>((set, get) => ({
@@ -45,15 +53,13 @@ export const useStudentStore = create<StudentState>((set, get) => ({
     // Check in-memory cache first (instant)
     const now = Date.now();
     if (now - lastFetch < CACHE_DURATION && get().students.length > 0) {
-      console.log('📦 Using in-memory cached students');
-      return;
+            return;
     }
 
     // STEP 1: Load cached data immediately (instant UI)
     const cached = await getCachedData('students', CACHE_DURATION * 24); // Use cache up to 24 hours old
     if (cached && cached.length > 0) {
-      console.log('⚡ Loading cached students immediately:', cached.length);
-      set({ students: cached, loading: false }); // Show cached data instantly
+            set({ students: cached, loading: false }); // Show cached data instantly
     } else {
       set({ loading: true });
     }
@@ -63,8 +69,7 @@ export const useStudentStore = create<StudentState>((set, get) => ({
       const online = await isOnline();
       
       if (!online) {
-        console.log('📡 Offline - using cached data only');
-        if (!cached || cached.length === 0) {
+                if (!cached || cached.length === 0) {
           set({ loading: false });
         }
         return;
@@ -102,8 +107,7 @@ export const useStudentStore = create<StudentState>((set, get) => ({
         return;
       }
 
-      console.log('👨‍🎓 Fetched fresh students:', data?.length);
-      
+            
       // Update with fresh data
       set({ students: data || [], loading: false });
       lastFetch = now;
@@ -244,11 +248,14 @@ export const useStudentStore = create<StudentState>((set, get) => ({
     }
   },
 
-  addSubject: async (subject) => {
-    set({ loading: true });
+  addSubject: async (subject, options) => {
+    const skipRefetch = options?.skipRefetch ?? false;
+
+    if (!skipRefetch) {
+      set({ loading: true });
+    }
+
     try {
-      console.log('➕ Adding subject:', { studentId: subject.student_id, subject: subject.subject });
-      
       const { data, error } = await supabase
         .from('student_subjects')
         .insert({
@@ -261,22 +268,56 @@ export const useStudentStore = create<StudentState>((set, get) => ({
 
       if (error) {
         console.error('❌ Add subject error:', error);
-        set({ loading: false });
+        if (!skipRefetch) {
+          set({ loading: false });
+        }
         return { success: false, error: error.message };
       }
 
-      console.log('✅ Subject added:', data);
-      
-      // Refresh students to get updated subjects (this includes the join)
-      await get().fetchStudents();
-      
-      // Also refresh subjects list for compatibility
-      await get().fetchSubjects(subject.student_id);
-      
+      if (!skipRefetch) {
+        await get().fetchStudents();
+        await get().fetchSubjects(subject.student_id);
+        set({ loading: false });
+      }
+
       return { success: true, data };
     } catch (error) {
       console.error('❌ Add subject exception:', error);
-      set({ loading: false });
+      if (!skipRefetch) {
+        set({ loading: false });
+      }
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'An unexpected error occurred',
+      };
+    }
+  },
+
+  ensureSubjectEnrolled: async (studentId, subject) => {
+    try {
+      const { error } = await supabase.from('student_subjects').upsert(
+        {
+          student_id: studentId,
+          subject,
+        },
+        { onConflict: 'student_id,subject', ignoreDuplicates: true }
+      );
+
+      if (error) {
+        if (error.code === '23505') {
+          await get().fetchSubjects(studentId);
+          await get().fetchStudents();
+          return { success: true };
+        }
+        console.error('ensureSubjectEnrolled error:', error);
+        return { success: false, error: error.message };
+      }
+
+      await get().fetchSubjects(studentId);
+      await get().fetchStudents();
+      return { success: true };
+    } catch (error) {
+      console.error('ensureSubjectEnrolled exception:', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'An unexpected error occurred',
@@ -298,8 +339,7 @@ export const useStudentStore = create<StudentState>((set, get) => ({
         return { success: false, error: error.message };
       }
 
-      console.log('✅ Subject updated:', id);
-      
+            
       // Refresh students to get updated subjects
       await get().fetchStudents();
       
@@ -317,8 +357,13 @@ export const useStudentStore = create<StudentState>((set, get) => ({
     }
   },
 
-  deleteSubject: async (id) => {
-    set({ loading: true });
+  deleteSubject: async (id, options) => {
+    const skipRefetch = options?.skipRefetch ?? false;
+
+    if (!skipRefetch) {
+      set({ loading: true });
+    }
+
     try {
       const { error } = await supabase
         .from('student_subjects')
@@ -327,22 +372,24 @@ export const useStudentStore = create<StudentState>((set, get) => ({
 
       if (error) {
         console.error('❌ Delete subject error:', error);
-        set({ loading: false });
+        if (!skipRefetch) {
+          set({ loading: false });
+        }
         return { success: false, error: error.message };
       }
 
-      console.log('✅ Subject deleted:', id);
-      
-      // Refresh students to get updated subjects
-      await get().fetchStudents();
-      
-      // Also refresh subjects list for compatibility
-      await get().fetchSubjects();
-      
+      if (!skipRefetch) {
+        await get().fetchStudents();
+        await get().fetchSubjects();
+        set({ loading: false });
+      }
+
       return { success: true };
     } catch (error) {
       console.error('❌ Delete subject exception:', error);
-      set({ loading: false });
+      if (!skipRefetch) {
+        set({ loading: false });
+      }
       return {
         success: false,
         error: error instanceof Error ? error.message : 'An unexpected error occurred',
