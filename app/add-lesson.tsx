@@ -516,20 +516,11 @@ export default function AddLessonScreen() {
         );
       } else {
         // SINGLE LESSON PATH
-        
-        // Get user ID
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) {
-          Alert.alert('Error', 'Please log in');
-          setLoading(false);
-          return;
-        }
 
         const singleLesson = {
           ...baseLesson,
           date: format(selectedDate, 'yyyy-MM-dd'),
           is_recurring: false,
-          user_id: user.id, // Add user_id (also in baseLesson, but explicit for clarity)
         };
 
         // VERIFY: Check that user_id is present
@@ -539,65 +530,59 @@ export default function AddLessonScreen() {
           setLoading(false);
           return;
         }
-                const { data: lesson, error } = await supabase
+
+        const { data: lesson, error } = await supabase
           .from('lessons')
           .insert([singleLesson])
-        .select()
-        .single();
+          .select()
+          .single();
 
         if (error) {
           console.error('Error creating lesson:', error);
           Alert.alert('Error', 'Failed to create lesson');
           setLoading(false);
           return;
-      }
+        }
 
-      if (!lesson) {
+        if (!lesson) {
           Alert.alert('Error', 'No lesson returned');
           setLoading(false);
           return;
-      }
+        }
 
-            // Set the lesson ID so PhotoUpload component can be used
-      setCreatedLessonId(lesson.id);
+        setCreatedLessonId(lesson.id);
 
-        // Link ALL selected students (including the first one)
-      const lessonStudentRecords = selectedStudents.map(studentId => ({
-        lesson_id: lesson.id,
-        student_id: studentId,
-      }));
+        const lessonStudentRecords = selectedStudents.map((studentId) => ({
+          lesson_id: lesson.id,
+          student_id: studentId,
+        }));
 
-            const { data: linkedData, error: linkError } = await supabase
-        .from('lesson_students')
-        .insert(lessonStudentRecords)
-        .select();
+        const { error: linkError } = await supabase
+          .from('lesson_students')
+          .insert(lessonStudentRecords)
+          .select();
 
-      if (linkError) {
-        console.error('❌ Student linking error:', linkError);
-        Alert.alert(
-          'Warning',
-          'Lesson created but some students may not be linked. Error: ' + linkError.message
-        );
-      } else {
-              }
+        if (linkError) {
+          console.error('❌ Student linking error:', linkError);
+          Alert.alert(
+            'Error',
+            'Lesson could not be linked to students. Error: ' + linkError.message
+          );
+          setLoading(false);
+          return;
+        }
 
-        // Refresh lesson data (force fresh fetch)
-      await lessonStore.fetchLessons(undefined, undefined, true);
-            Alert.alert('Success', 'Lesson created!', [
-        {
-          text: 'OK',
-          onPress: async () => {
-            // Navigate back ONCE
-            router.back();
-            
-            // Reset loading (prevents double-tap)
-            setLoading(false);
-          }
-        },
-      ]);
+        void lessonStore.fetchLessons(undefined, undefined, true);
 
-        // Don't set loading false here - wait for user to dismiss alert
-        // This prevents double-tap creating duplicates
+        Alert.alert('Success', 'Lesson created!', [
+          {
+            text: 'OK',
+            onPress: () => {
+              router.back();
+              setLoading(false);
+            },
+          },
+        ]);
       }
     } catch (error: any) {
       console.error('Error creating lesson:', error);
