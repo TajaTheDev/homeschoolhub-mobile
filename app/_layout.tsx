@@ -6,7 +6,7 @@ import * as Notifications from 'expo-notifications';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState } from 'react';
-import { Animated, InteractionManager, Linking, Platform, View } from 'react-native';
+import { Animated, InteractionManager, Platform, View } from 'react-native';
 import 'react-native-reanimated';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
@@ -24,10 +24,6 @@ import { SubscriptionProvider } from '@/contexts/SubscriptionContext';
 import { SnackbarProvider } from '@/contexts/SnackbarContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { initializeRevenueCat } from '@/lib/revenuecat';
-import {
-  establishSessionFromRecoveryUrl,
-  isRecoveryDeepLink,
-} from '@/lib/recoveryDeepLink';
 import { supabase } from '@/lib/supabase/client';
 import * as notificationService from '@/services/notificationService';
 import { useAuthStore } from '@/store/authStore';
@@ -52,22 +48,6 @@ export default function RootLayout() {
   
   // Track auth initialization to prevent infinite loops
   const authInitializedRef = useRef(false);
-  const recoveryDeepLinkHandledRef = useRef(false);
-
-  /**
-   * Handles password-recovery deep links only. Returns true when the URL was a
-   * recovery link (handled or attempted) so cold-start auth routing is skipped.
-   */
-  const handleRecoveryDeepLinkIfNeeded = async (url: string | null): Promise<boolean> => {
-    if (!url || !isRecoveryDeepLink(url) || recoveryDeepLinkHandledRef.current) {
-      return false;
-    }
-
-    recoveryDeepLinkHandledRef.current = true;
-    await establishSessionFromRecoveryUrl(url);
-    router.replace('/(auth)/reset-password');
-    return true;
-  };
 
   const [fontsLoaded] = useFonts({
     Quicksand_400Regular,
@@ -331,11 +311,6 @@ export default function RootLayout() {
       try {
         await new Promise(resolve => InteractionManager.runAfterInteractions(() => resolve(undefined)));
 
-        const initialUrl = await Linking.getInitialURL();
-        if (await handleRecoveryDeepLinkIfNeeded(initialUrl)) {
-          return;
-        }
-
         const currentSegment = segments[0];
         if (currentSegment === '(tabs)' || currentSegment === 'setup' || currentSegment === '(auth)') {
           return;
@@ -443,21 +418,6 @@ export default function RootLayout() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fontsLoaded]); // Only depend on fontsLoaded - ref prevents re-runs
-
-  useEffect(() => {
-    const handleUrl = (url: string) => {
-      void handleRecoveryDeepLinkIfNeeded(url);
-    };
-
-    const subscription = Linking.addEventListener('url', (event) => {
-      handleUrl(event.url);
-    });
-
-    return () => {
-      subscription.remove();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   useEffect(() => {
     // Listen for notification taps

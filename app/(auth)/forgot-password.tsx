@@ -1,9 +1,8 @@
 /**
- * Request a password reset email.
+ * Request a password reset code by email.
  */
 
 import Colors from '@/constants/Colors';
-import { PASSWORD_RECOVERY_REDIRECT } from '@/lib/recoveryDeepLink';
 import { supabase } from '@/lib/supabase/client';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ChevronLeft } from 'lucide-react-native';
@@ -22,7 +21,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 const GENERIC_SUCCESS_MESSAGE =
-  'If an account exists for that email, a reset link has been sent.';
+  'If an account exists for that email, a recovery code has been sent.';
 
 function isValidEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
@@ -34,7 +33,7 @@ export default function ForgotPasswordScreen() {
   const [email, setEmail] = useState(typeof emailParam === 'string' ? emailParam : '');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSendResetLink = async () => {
+  const handleSendCode = async () => {
     const trimmedEmail = email.trim();
 
     if (!trimmedEmail) {
@@ -55,26 +54,26 @@ export default function ForgotPasswordScreen() {
         return;
       }
 
-      const { error } = await supabase.auth.resetPasswordForEmail(trimmedEmail, {
-        redirectTo: PASSWORD_RECOVERY_REDIRECT,
-      });
+      const { error } = await supabase.auth.resetPasswordForEmail(trimmedEmail);
 
       if (error) {
         console.error('resetPasswordForEmail error:', error);
       }
 
-      Alert.alert('Check your email', GENERIC_SUCCESS_MESSAGE, [
-        {
-          text: 'Back to Login',
-          onPress: () => router.replace('/(auth)/login'),
-        },
-      ]);
+      router.push({
+        pathname: '/(auth)/reset-password',
+        params: { email: trimmedEmail },
+      });
     } catch (err) {
       console.error('Forgot password exception:', err);
       Alert.alert('Check your email', GENERIC_SUCCESS_MESSAGE, [
         {
-          text: 'Back to Login',
-          onPress: () => router.replace('/(auth)/login'),
+          text: 'Continue',
+          onPress: () =>
+            router.push({
+              pathname: '/(auth)/reset-password',
+              params: { email: trimmedEmail },
+            }),
         },
       ]);
     } finally {
@@ -107,7 +106,7 @@ export default function ForgotPasswordScreen() {
 
           <View style={styles.form}>
             <Text style={styles.subtitle}>
-              Enter your email and we&apos;ll send you a link to reset your password.
+              Enter your email and we&apos;ll send you a recovery code to reset your password.
             </Text>
 
             <TextInput
@@ -120,16 +119,17 @@ export default function ForgotPasswordScreen() {
               keyboardType="email-address"
               autoComplete="email"
               textContentType="emailAddress"
+              editable={!isSubmitting}
             />
 
             <TouchableOpacity
               style={[styles.primaryButton, isSubmitting && styles.primaryButtonDisabled]}
-              onPress={handleSendResetLink}
+              onPress={handleSendCode}
               disabled={isSubmitting}
               activeOpacity={0.8}
             >
               <Text style={styles.primaryButtonText}>
-                {isSubmitting ? 'Sending...' : 'Send reset link'}
+                {isSubmitting ? 'Sending...' : 'Send code'}
               </Text>
             </TouchableOpacity>
           </View>
