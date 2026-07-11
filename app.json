@@ -2,14 +2,14 @@
   "expo": {
     "name": "HomeschoolHub",
     "slug": "homeschoolhub",
-    "version": "1.1.6",
+    "version": "1.1.9",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "splash": {
-      "image": "./assets/splash.png",
+      "image": "./assets/icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#E8DEFF"
+      "backgroundColor": "#EDE9FE"
     },
     "scheme": "homeschoolhubmobile",
     "assetBundlePatterns": [
@@ -25,7 +25,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.tajamoxey.homeschoolhub",
-      "buildNumber": "49",
+      "buildNumber": "52",
       "infoPlist": {
         "UIRequiresFullScreen": true,
         "UISupportedInterfaceOrientations": [
@@ -52,7 +52,7 @@
       },
       "icon": "./assets/icon.png",
       "package": "com.tajamoxey.homeschoolhub",
-      "versionCode": 49,
+      "versionCode": 52,
       "permissions": [
         "android.permission.RECEIVE_BOOT_COMPLETED",
         "android.permission.VIBRATE",
@@ -77,12 +77,12 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 200,
+          "image": "./assets/icon.png",
+          "imageWidth": 120,
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff",
+          "backgroundColor": "#EDE9FE",
           "dark": {
-            "backgroundColor": "#000000"
+            "backgroundColor": "#EDE9FE"
           }
         }
       ],

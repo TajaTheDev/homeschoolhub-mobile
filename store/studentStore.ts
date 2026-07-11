@@ -258,15 +258,26 @@ export const useStudentStore = create<StudentState>((set, get) => ({
     try {
       const { data, error } = await supabase
         .from('student_subjects')
-        .insert({
-          student_id: subject.student_id,
-          subject: subject.subject,
-          goal: subject.goal,
-        })
+        .upsert(
+          {
+            student_id: subject.student_id,
+            subject: subject.subject,
+            goal: subject.goal,
+          },
+          { onConflict: 'student_id,subject', ignoreDuplicates: true }
+        )
         .select()
-        .single();
+        .maybeSingle();
 
       if (error) {
+        if (error.code === '23505') {
+          if (!skipRefetch) {
+            await get().fetchStudents();
+            await get().fetchSubjects(subject.student_id);
+            set({ loading: false });
+          }
+          return { success: true };
+        }
         console.error('❌ Add subject error:', error);
         if (!skipRefetch) {
           set({ loading: false });
@@ -280,7 +291,7 @@ export const useStudentStore = create<StudentState>((set, get) => ({
         set({ loading: false });
       }
 
-      return { success: true, data };
+      return { success: true, data: data ?? undefined };
     } catch (error) {
       console.error('❌ Add subject exception:', error);
       if (!skipRefetch) {

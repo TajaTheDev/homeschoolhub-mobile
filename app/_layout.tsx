@@ -1,5 +1,6 @@
 
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import BrandLoadingScreen from '@/components/ui/BrandLoadingScreen';
 import TrialExpiringModal from '@/components/TrialExpiringModal';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import * as Notifications from 'expo-notifications';
@@ -18,6 +19,8 @@ import {
     useFonts
 } from '@expo-google-fonts/quicksand';
 import * as SplashScreen from 'expo-splash-screen';
+
+SplashScreen.preventAutoHideAsync();
 
 import Colors from '@/constants/Colors';
 import { SubscriptionProvider } from '@/contexts/SubscriptionContext';
@@ -474,12 +477,7 @@ export default function RootLayout() {
 
   // Show brand splash until fonts, app init, and auth routing are ready
   if (!fontsLoaded || !appReady) {
-    return (
-      <View style={{
-        flex: 1,
-        backgroundColor: Colors.brand[100],
-      }} />
-    );
+    return <BrandLoadingScreen />;
   }
 
   return (
@@ -562,9 +560,10 @@ export default function RootLayout() {
                 left: 0,
                 right: 0,
                 bottom: 0,
-                backgroundColor: Colors.brand[100],
               }}
-            />
+            >
+              <BrandLoadingScreen />
+            </View>
           )}
         </View>
       </SafeAreaProvider>

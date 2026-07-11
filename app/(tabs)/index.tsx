@@ -303,7 +303,7 @@ export default function Dashboard() {
 
   const handleSignOut = async () => {
     await signOut();
-    router.replace('/welcome');
+    router.replace('/(auth)/login');
   };
 
   const handleEditStudent = (student: Student) => {

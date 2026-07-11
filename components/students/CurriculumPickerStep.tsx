@@ -151,18 +151,35 @@ export default function CurriculumPickerStep({
     };
   }, [studentId]);
 
-  const isCardSelected = (curriculum: CurriculumWithItems) => {
-    if (stagedSelection?.kind === 'library') {
-      return stagedSelection.name === curriculum.name;
+  const activeSelection = useMemo((): StagedCurriculumSelection | null => {
+    if (stagedSelection) {
+      return stagedSelection;
     }
-    if (!stagedSelection && existingPlan?.source === 'library' && existingPlan.name) {
-      return existingPlan.name === curriculum.name;
+    if (existingPlan?.source === 'library' && existingPlan.name) {
+      return {
+        kind: 'library',
+        name: existingPlan.name,
+        edition: existingPlan.edition ?? null,
+        items: [],
+      };
     }
-    return false;
-  };
+    if (existingPlan?.source === 'scan' && existingPlan.name) {
+      return {
+        kind: 'scan',
+        name: existingPlan.name,
+        tocImagePath: existingPlan.toc_image_path ?? '',
+      };
+    }
+    return null;
+  }, [stagedSelection, existingPlan]);
+
+  const isCardSelected = (curriculum: CurriculumWithItems) =>
+    activeSelection?.kind === 'library' && activeSelection.name === curriculum.name;
 
   const hasPersonalScanPlan =
     existingPlan?.source === 'scan' && !!existingPlan.name;
+
+  const isPersonalScanSelected = activeSelection?.kind === 'scan';
 
   const confirmAndStageLibrary = (curriculum: CurriculumWithItems) => {
     const hasDifferentExisting =
@@ -209,7 +226,7 @@ export default function CurriculumPickerStep({
 
     return (
       <TouchableOpacity
-        style={[styles.entryCard, styles.entryCardSelected]}
+        style={[styles.entryCard, isPersonalScanSelected && styles.entryCardSelected]}
         onPress={() => setShowPersonalSheet(true)}
         activeOpacity={0.7}
       >
@@ -218,7 +235,9 @@ export default function CurriculumPickerStep({
         <Text style={styles.entryCount}>
           {existingPlanItemCount} lesson{existingPlanItemCount === 1 ? '' : 's'}
         </Text>
-        <Text style={styles.selectedBadge}>Selected</Text>
+        {isPersonalScanSelected ? (
+          <Text style={styles.selectedBadge}>Selected</Text>
+        ) : null}
       </TouchableOpacity>
     );
   };

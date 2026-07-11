@@ -6,6 +6,7 @@ import { useSnackbar } from '@/contexts/SnackbarContext';
 import { useSubscription } from '@/contexts/SubscriptionContext';
 import { restorePurchases } from '@/lib/revenuecat';
 import { supabase } from '@/lib/supabase';
+import { useAuthStore } from '@/store/authStore';
 import type { AvatarType } from '@/types';
 import { cancelAttendanceReminder, requestNotificationPermissions, scheduleAttendanceReminder } from '@/utils/notificationManager';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -43,6 +44,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function SettingsScreen() {
   const router = useRouter();
+  const { signOut } = useAuthStore();
   const { showSnackbar } = useSnackbar();
   const { hasSubscription, refreshSubscriptionStatus } = useSubscription();
   const [userEmail, setUserEmail] = useState('');
@@ -151,8 +153,8 @@ export default function SettingsScreen() {
           text: 'Sign Out',
           style: 'destructive',
           onPress: async () => {
-            await supabase.auth.signOut();
-            router.replace('/welcome');
+            await signOut();
+            router.replace('/(auth)/login');
           },
         },
       ]
@@ -216,8 +218,7 @@ export default function SettingsScreen() {
 
       await AsyncStorage.multiRemove(['hasSeenOnboarding', 'hasCompletedOnboarding']);
 
-      // Sign out the user
-      await supabase.auth.signOut();
+      await signOut();
 
       Alert.alert(
         'Account Deleted',
@@ -226,7 +227,7 @@ export default function SettingsScreen() {
           {
             text: 'OK',
             onPress: () => {
-              router.replace('/welcome');
+              router.replace('/(auth)/login');
             },
           },
         ]

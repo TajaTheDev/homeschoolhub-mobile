@@ -219,16 +219,20 @@ export default function EditSubjectsModal({
 
     setLoading(true);
 
+    const saveErrors: string[] = [];
+
     try {
       const existingSubjects = studentStore.subjects.filter(
         (s) => s.student_id === student.id
       );
       const bulkSaveOptions = { skipRefetch: true } as const;
 
-      for (const subject of existingSubjects) {
-        const result = await studentStore.deleteSubject(subject.id, bulkSaveOptions);
+      for (const existing of existingSubjects) {
+        const result = await studentStore.deleteSubject(existing.id, bulkSaveOptions);
         if (!result.success) {
-          throw new Error(`Failed to delete subject: ${result.error}`);
+          saveErrors.push(
+            `Could not remove ${existing.subject}: ${result.error ?? 'Unknown error'}`
+          );
         }
       }
 
@@ -242,29 +246,52 @@ export default function EditSubjectsModal({
         );
 
         if (!result.success) {
-          throw new Error(`Failed to add subject ${subject}: ${result.error}`);
+          saveErrors.push(
+            `Could not enroll ${subject}: ${result.error ?? 'Unknown error'}`
+          );
         }
       }
 
       const stagedSubjects = selectedSubjects.filter((subject) => stagedCurricula[subject]);
-      if (stagedSubjects.length > 0) {
-        const planResults = await Promise.all(
-          stagedSubjects.map((subject) =>
-            persistStagedCurriculum(student.id, subject, stagedCurricula[subject]!)
-          )
-        );
+      for (const subject of stagedSubjects) {
+        try {
+          const planResult = await persistStagedCurriculum(
+            student.id,
+            subject,
+            stagedCurricula[subject]!
+          );
 
-        for (let index = 0; index < planResults.length; index++) {
-          const planResult = planResults[index];
           if (!planResult.success) {
-            throw new Error(
-              planResult.error ?? `Failed to save curriculum for ${stagedSubjects[index]}`
+            saveErrors.push(
+              planResult.error ?? `Could not save curriculum for ${subject}`
             );
           }
+        } catch (error) {
+          console.error(`❌ SAVE: Curriculum persist failed for ${subject}:`, error);
+          saveErrors.push(
+            error instanceof Error
+              ? `Could not save curriculum for ${subject}: ${error.message}`
+              : `Could not save curriculum for ${subject}`
+          );
         }
       }
 
+      await studentStore.fetchSubjects(student.id);
+      await studentStore.fetchStudents();
+
       setLoading(false);
+
+      if (saveErrors.length > 0) {
+        Alert.alert(
+          'Some changes could not be saved',
+          saveErrors.join('\n\n')
+        );
+        if (stagedSubjects.length > 0 || selectedSubjects.length > 0) {
+          void Promise.resolve(onSave());
+        }
+        return;
+      }
+
       showSnackbar('Subjects updated!', 'success');
       void Promise.resolve(onSave());
     } catch (error) {
