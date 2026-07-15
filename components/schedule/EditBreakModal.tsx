@@ -20,7 +20,10 @@ interface EditBreakModalProps {
   visible: boolean;
   breakData: { name: string; start_date: string; end_date: string; emoji?: string; id?: string } | null;
   onClose: () => void;
-  onSave: (breakData: Omit<SchoolBreak, 'user_id' | 'created_at'> & { id?: string }) => Promise<void>;
+  /** Returns true only when a break was actually saved. */
+  onSave: (
+    breakData: Omit<SchoolBreak, 'user_id' | 'created_at'> & { id?: string }
+  ) => Promise<boolean>;
 }
 
 export default function EditBreakModal({
@@ -94,10 +97,12 @@ export default function EditBreakModal({
       ...(breakData?.id && { id: breakData.id }),
     };
 
-        try {
-      await onSave(breakToSave);
+    try {
+      const saved = await onSave(breakToSave);
       setLoading(false);
-      onClose();
+      if (saved) {
+        onClose();
+      }
     } catch (error) {
       setLoading(false);
       Alert.alert('Error', 'Failed to save break');

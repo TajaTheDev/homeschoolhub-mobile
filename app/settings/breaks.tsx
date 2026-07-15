@@ -57,7 +57,7 @@ export default function BreaksScreen() {
         user_id: user.id,
         start_date: breakData.start_date,
         end_date: breakData.end_date,
-        name: breakData.name.trim(),
+        reason: breakData.name.trim(),
         emoji: breakData.emoji || '🎄',
         caused_shifts: false,
         shift_days: 0,
@@ -92,7 +92,7 @@ export default function BreaksScreen() {
         user_id: user.id,
         start_date: format(new Date(breakData.start_date), 'yyyy-MM-dd'),
         end_date: format(new Date(breakData.end_date), 'yyyy-MM-dd'),
-        name: breakData.name.trim(),
+        reason: breakData.name.trim(),
         emoji: breakData.emoji || '🎄',
         caused_shifts: true,
         shift_days: 0, // We don't use uniform shift anymore
@@ -166,7 +166,7 @@ export default function BreaksScreen() {
             
       if (!breakData.name || breakData.name.trim() === '') {
         Alert.alert('Error', 'Please enter a name for this break');
-        return;
+        throw new Error('Please enter a name for this break');
       }
       
       if (breakData.id) {
@@ -177,7 +177,7 @@ export default function BreaksScreen() {
           .update({
             start_date: breakData.start_date,
             end_date: breakData.end_date,
-            name: breakData.name.trim(),
+            reason: breakData.name.trim(),
             emoji: breakData.emoji || '🎄',
           })
           .eq('id', breakData.id);
@@ -195,11 +195,11 @@ export default function BreaksScreen() {
         const result = await addBreak({
           start_date: breakData.start_date,
           end_date: breakData.end_date,
-          name: breakData.name.trim(),
+          reason: breakData.name.trim(),
           emoji: breakData.emoji || '🎄',
           caused_shifts: false,
           shift_days: 0,
-        } as any);
+        });
         
         if (!result.success) {
           throw new Error(result.error || 'Failed to create break');
@@ -218,16 +218,20 @@ export default function BreaksScreen() {
       if (error?.code === '42703') {
         Alert.alert(
           'Database Error',
-          `Column doesn't exist: ${error.message}\n\nPlease check the school_breaks table schema.`
+          `Column doesn't exist: ${error.message}\n\nPlease check the breaks table schema.`
         );
-      } else {
+      } else if (error?.message !== 'Please enter a name for this break') {
         Alert.alert('Error', `Could not ${breakData.id ? 'update' : 'add'} break: ${error?.message || 'Unknown error'}`);
       }
       throw error; // Re-throw to prevent continuing
     }
   };
 
-  const handleSaveBreak = async (breakData: { name: string; start_date: string; end_date: string; emoji?: string; id?: string }) => {
+  /**
+   * Saves a break, resolving conflicts first when needed.
+   * @returns true only when a break was actually persisted
+   */
+  const handleSaveBreak = async (breakData: { name: string; start_date: string; end_date: string; emoji?: string; id?: string }): Promise<boolean> => {
     try {
       // STEP 1: Check if any lessons exist during this break period
       let conflictingLessons: any[] = [];
@@ -236,13 +240,13 @@ export default function BreaksScreen() {
       } catch (error: any) {
         // Error already logged and alerted in checkConflicts
         if (error?.code === '42703') {
-          return; // Already shown alert
+          return false;
         }
         Alert.alert('Error', `Failed to check for conflicting lessons: ${error?.message || 'Unknown error'}`);
-        return;
+        return false;
       }
 
-      // STEP 2: If conflicts found, ask user what to do
+      // STEP 2: If conflicts found, ask user what to do — keep modal open until they choose
       if (conflictingLessons && conflictingLessons.length > 0) {
         const lessonCount = conflictingLessons.length;
         const dateRange = `${format(new Date(breakData.start_date), 'MMM d')} - ${format(new Date(breakData.end_date), 'MMM d, yyyy')}`;
@@ -255,166 +259,171 @@ export default function BreaksScreen() {
         
         const moreText = lessonCount > 5 ? `\n...and ${lessonCount - 5} more` : '';
 
-        Alert.alert(
-          '⚠️ Conflicting Lessons Found',
-          `There are ${lessonCount} lesson(s) scheduled during "${breakData.name}" (${dateRange}):\n\n${lessonList}${moreText}\n\nWhat would you like to do?`,
-          [
-            {
-              text: 'Cancel',
-              style: 'cancel',
-              onPress: () => {
-                              }
-            },
-            {
-              text: 'Delete Lessons',
-              style: 'destructive',
-              onPress: async () => {
-                // Delete conflicting lessons
-                const lessonIds = conflictingLessons.map(l => l.id);
-                                
-                const { error: deleteError } = await supabase
-                  .from('lessons')
-                  .delete()
-                  .in('id', lessonIds);
-
-                if (deleteError) {
-                  console.error('❌ Error deleting lessons:', {
-                    code: deleteError.code,
-                    message: deleteError.message,
-                    details: deleteError.details
-                  });
-                  
-                  if (deleteError.code === '42703') {
-                    Alert.alert(
-                      'Database Error',
-                      `Column doesn't exist: ${deleteError.message}\n\nPlease check the lessons table schema.`
-                    );
-                  } else {
-                    Alert.alert('Error', `Failed to delete conflicting lessons: ${deleteError.message}`);
-                  }
-                  return;
+        return await new Promise<boolean>((resolve) => {
+          Alert.alert(
+            '⚠️ Conflicting Lessons Found',
+            `There are ${lessonCount} lesson(s) scheduled during "${breakData.name}" (${dateRange}):\n\n${lessonList}${moreText}\n\nWhat would you like to do?`,
+            [
+              {
+                text: 'Cancel',
+                style: 'cancel',
+                onPress: () => {
+                  resolve(false);
                 }
-                
-                                // Now save the break
-                await saveBreakToDatabase(breakData);
-                
-                // Refresh lessons and breaks
-                await lessonStore.fetchLessons(undefined, undefined, true);
-                await fetchBreaks();
-                
-                Alert.alert(
-                  'Success! ✅',
-                  `Deleted ${lessonCount} lesson(s) and added "${breakData.name}"`
-                );
-              }
-            },
-            {
-              text: 'Shift Lessons',
-              onPress: async () => {
-                                
-                const breakStart = new Date(breakData.start_date);
-                const breakEnd = new Date(breakData.end_date);
-                
-                // Calculate how many CALENDAR days the break spans
-                const breakDuration = Math.ceil(
-                  (breakEnd.getTime() - breakStart.getTime()) / (1000 * 60 * 60 * 24)
-                ) + 1;
-                
-                                                                
-                // Get school days configuration
-                const schoolDayNumbers = getSchoolDayNumbers(); // [1,2,3,4,5] for Mon-Fri
-                const schoolDayNames = schoolDayNumbers.map(n => {
-                  const days = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
-                  return days[n];
-                });
-                
-                                
-                // For each conflicting lesson, shift it forward
-                const shiftResults = [];
-                
-                // Start placing lessons the day after break ends
-                let currentPlacementDate = new Date(breakEnd);
-                currentPlacementDate.setDate(currentPlacementDate.getDate() + 1);
-                
-                for (const lesson of conflictingLessons) {
-                  const lessonDate = new Date(lesson.date);
-                  
-                  // Find next school day starting from day after break
-                  while (true) {
-                    const dayOfWeek = currentPlacementDate.getDay();
-                    
-                    if (schoolDayNumbers.includes(dayOfWeek)) {
-                      // This is a school day, use it!
-                      break;
+              },
+              {
+                text: 'Delete Lessons',
+                style: 'destructive',
+                onPress: async () => {
+                  try {
+                    // Delete conflicting lessons
+                    const lessonIds = conflictingLessons.map(l => l.id);
+                                    
+                    const { error: deleteError } = await supabase
+                      .from('lessons')
+                      .delete()
+                      .in('id', lessonIds);
+
+                    if (deleteError) {
+                      console.error('❌ Error deleting lessons:', {
+                        code: deleteError.code,
+                        message: deleteError.message,
+                        details: deleteError.details
+                      });
+                      
+                      if (deleteError.code === '42703') {
+                        Alert.alert(
+                          'Database Error',
+                          `Column doesn't exist: ${deleteError.message}\n\nPlease check the lessons table schema.`
+                        );
+                      } else {
+                        Alert.alert('Error', `Failed to delete conflicting lessons: ${deleteError.message}`);
+                      }
+                      resolve(false);
+                      return;
                     }
                     
-                    // Not a school day, try next day
-                    currentPlacementDate.setDate(currentPlacementDate.getDate() + 1);
-                  }
-                  
-                  const originalDateStr = format(lessonDate, 'yyyy-MM-dd');
-                  const newDateStr = format(currentPlacementDate, 'yyyy-MM-dd');
-                  
-                                    
-                  // Update lesson
-                  const { error } = await supabase
-                    .from('lessons')
-                    .update({ date: newDateStr })
-                    .eq('id', lesson.id);
-                  
-                  if (error) {
-                    console.error('Error updating lesson:', error);
-                    continue;
-                  }
-                  
-                  shiftResults.push({
-                    lessonId: lesson.id,
-                    original: originalDateStr,
-                    shifted: newDateStr,
-                  });
-                  
-                  // Important: Move to next day for next lesson
-                  currentPlacementDate.setDate(currentPlacementDate.getDate() + 1);
-                  
-                  // Skip to next school day for next lesson
-                  while (!schoolDayNumbers.includes(currentPlacementDate.getDay())) {
-                    currentPlacementDate.setDate(currentPlacementDate.getDate() + 1);
+                                    // Now save the break
+                    await saveBreakToDatabase(breakData);
+                    
+                    // Refresh lessons and breaks
+                    await lessonStore.fetchLessons(undefined, undefined, true);
+                    await fetchBreaks();
+                    
+                    Alert.alert(
+                      'Success! ✅',
+                      `Deleted ${lessonCount} lesson(s) and added "${breakData.name}"`
+                    );
+                    resolve(true);
+                  } catch (error) {
+                    console.error('Error in Delete Lessons path:', error);
+                    resolve(false);
                   }
                 }
-                
-                                
-                // Add the break
-                await addBreakRecord(breakData);
-                
-                // Refresh lessons
-                await lessonStore.fetchLessons(undefined, undefined, true);
-                await fetchBreaks();
-                
-                Alert.alert(
-                  'Success! 🎉',
-                  `Break added and ${shiftResults.length} lessons shifted to the next available school days`
-                );
+              },
+              {
+                text: 'Shift Lessons',
+                onPress: async () => {
+                  try {
+                    const breakEnd = new Date(breakData.end_date);
+                    
+                    // Get school days configuration
+                    const schoolDayNumbers = getSchoolDayNumbers(); // [1,2,3,4,5] for Mon-Fri
+                                    
+                    // For each conflicting lesson, shift it forward
+                    const shiftResults = [];
+                    
+                    // Start placing lessons the day after break ends
+                    let currentPlacementDate = new Date(breakEnd);
+                    currentPlacementDate.setDate(currentPlacementDate.getDate() + 1);
+                    
+                    for (const lesson of conflictingLessons) {
+                      const lessonDate = new Date(lesson.date);
+                      
+                      // Find next school day starting from day after break
+                      while (true) {
+                        const dayOfWeek = currentPlacementDate.getDay();
+                        
+                        if (schoolDayNumbers.includes(dayOfWeek)) {
+                          // This is a school day, use it!
+                          break;
+                        }
+                        
+                        // Not a school day, try next day
+                        currentPlacementDate.setDate(currentPlacementDate.getDate() + 1);
+                      }
+                      
+                      const originalDateStr = format(lessonDate, 'yyyy-MM-dd');
+                      const newDateStr = format(currentPlacementDate, 'yyyy-MM-dd');
+                      
+                                        
+                      // Update lesson
+                      const { error } = await supabase
+                        .from('lessons')
+                        .update({ date: newDateStr })
+                        .eq('id', lesson.id);
+                      
+                      if (error) {
+                        console.error('Error updating lesson:', error);
+                        continue;
+                      }
+                      
+                      shiftResults.push({
+                        lessonId: lesson.id,
+                        original: originalDateStr,
+                        shifted: newDateStr,
+                      });
+                      
+                      // Important: Move to next day for next lesson
+                      currentPlacementDate.setDate(currentPlacementDate.getDate() + 1);
+                      
+                      // Skip to next school day for next lesson
+                      while (!schoolDayNumbers.includes(currentPlacementDate.getDay())) {
+                        currentPlacementDate.setDate(currentPlacementDate.getDate() + 1);
+                      }
+                    }
+                    
+                                    
+                    // Add the break
+                    await addBreakRecord(breakData);
+                    
+                    // Refresh lessons
+                    await lessonStore.fetchLessons(undefined, undefined, true);
+                    await fetchBreaks();
+                    
+                    Alert.alert(
+                      'Success! 🎉',
+                      `Break added and ${shiftResults.length} lessons shifted to the next available school days`
+                    );
+                    resolve(true);
+                  } catch (error) {
+                    console.error('Error in Shift Lessons path:', error);
+                    resolve(false);
+                  }
+                }
               }
-            }
-          ]
-        );
-      } else {
-        // No conflicts - just save the break
-        await saveBreakToDatabase(breakData);
-        Alert.alert('Success! ✅', `Added "${breakData.name}"`);
-        
-        // Refresh breaks
-        fetchBreaks();
+            ]
+          );
+        });
       }
+
+      // No conflicts - just save the break
+      await saveBreakToDatabase(breakData);
+      Alert.alert('Success! ✅', `Added "${breakData.name}"`);
+      
+      // Refresh breaks
+      fetchBreaks();
+      return true;
     } catch (error) {
       console.error('Error in handleSaveBreak:', error);
       Alert.alert('Error', 'Something went wrong');
+      return false;
     }
   };
 
   const handleEditBreak = (breakItem: typeof breaks[0]) => {
     setEditBreakData({
-      name: breakItem.name,
+      name: breakItem.reason || breakItem.name || '',
       start_date: breakItem.start_date,
       end_date: breakItem.end_date,
       emoji: breakItem.emoji,

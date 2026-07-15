@@ -7,8 +7,10 @@ type Break = {
   user_id: string;
   start_date: string;
   end_date: string;
-  name?: string;
+  /** Live DB column for break title */
   reason?: string;
+  /** Legacy UI field; mapped to reason on write */
+  name?: string;
   emoji?: string;
   caused_shifts: boolean;
   shift_days: number;
@@ -16,13 +18,15 @@ type Break = {
   updated_at: string;
 };
 
+type BreakInput = Omit<Break, 'id' | 'user_id' | 'created_at' | 'updated_at'>;
+
 type BreakStore = {
   breaks: Break[];
   loading: boolean;
   error: string | null;
   
   fetchBreaks: () => Promise<void>;
-  addBreak: (breakData: Omit<Break, 'id' | 'user_id' | 'created_at' | 'updated_at'>) => Promise<{ success: boolean; data?: Break; error?: string }>;
+  addBreak: (breakData: BreakInput) => Promise<{ success: boolean; data?: Break; error?: string }>;
   deleteBreak: (breakId: string) => Promise<{ success: boolean; error?: string }>;
   isBreakDay: (date: Date) => boolean;
 };
@@ -68,11 +72,16 @@ export const useBreakStore = create<BreakStore>((set, get) => ({
       if (!user) {
         return { success: false, error: 'Not authenticated' };
       }
+
+      // Live schema uses `reason` (not `name`) for the break title
+      const { name: _legacyName, reason, ...rest } = breakData;
+      const title = reason ?? _legacyName;
       
       const { data, error } = await supabase
         .from('breaks')
         .insert({
-          ...breakData,
+          ...rest,
+          reason: title,
           user_id: user.id,
         })
         .select()
