@@ -1,16 +1,16 @@
 import Colors from '@/constants/Colors';
 import Typography from '@/constants/Typography';
+import ReminderTimePicker from '@/components/ui/ReminderTimePicker';
 import * as notificationService from '@/services/notificationService';
 import { useScheduleStore } from '@/store/scheduleStore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import * as Notifications from 'expo-notifications';
 import { useRouter } from 'expo-router';
 import { Bell, ChevronLeft } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
 import {
   Alert,
   Linking,
-  Platform,
   ScrollView,
   StyleSheet,
   Switch,
@@ -26,9 +26,11 @@ export default function NotificationsScreen() {
   
   const [enabled, setEnabled] = useState(false);
   const [dailyReminder, setDailyReminder] = useState(true);
-  const [streakReminder, setStreakReminder] = useState(true);
+  const [streakReminder, setStreakReminder] = useState(false);
   const [goalCelebrations, setGoalCelebrations] = useState(true);
-  const [reminderTime, setReminderTime] = useState(new Date());
+  const [reminderTime, setReminderTime] = useState(() =>
+    notificationService.parseStoredReminderTime(null)
+  );
   const [showTimePicker, setShowTimePicker] = useState(false);
 
   useEffect(() => {
@@ -42,11 +44,12 @@ export default function NotificationsScreen() {
         const parsed = JSON.parse(settings);
         setEnabled(parsed.enabled ?? false);
         setDailyReminder(parsed.dailyReminder ?? true);
-        setStreakReminder(parsed.streakReminder ?? true);
+        // Streak reminders are not shipped yet — keep display/state/storage aligned.
+        setStreakReminder(false);
         setGoalCelebrations(parsed.goalCelebrations ?? true);
-        if (parsed.reminderTime) {
-          setReminderTime(new Date(parsed.reminderTime));
-        }
+        setReminderTime(
+          notificationService.parseStoredReminderTime(parsed.reminderTime)
+        );
       }
     } catch (error) {
       console.error('Error loading notification settings:', error);
@@ -97,12 +100,17 @@ export default function NotificationsScreen() {
     await saveSettings({ enabled: value });
   };
 
-  const scheduleNotifications = async () => {
+  const scheduleNotifications = async (
+    override?: Date,
+    options?: { dailyReminder?: boolean }
+  ) => {
     const schoolDays = getSchoolDays();
-    const hour = reminderTime.getHours();
-    const minute = reminderTime.getMinutes();
+    const time = override ?? reminderTime;
+    const hour = time.getHours();
+    const minute = time.getMinutes();
+    const useDailyReminder = options?.dailyReminder ?? dailyReminder;
 
-    if (dailyReminder) {
+    if (useDailyReminder) {
       await notificationService.scheduleDailyReminder(hour, minute, schoolDays);
     }
 
@@ -112,20 +120,28 @@ export default function NotificationsScreen() {
     }
   };
 
-  const handleTimeChange = async (event: any, selectedDate?: Date) => {
-    if (Platform.OS === 'android') {
-      setShowTimePicker(false);
+  /** Cancel lesson daily (and streak) schedules without touching attendance/trial. */
+  const cancelLessonReminderSchedules = async () => {
+    const all = await Notifications.getAllScheduledNotificationsAsync();
+    const toCancel = all.filter(
+      (n) =>
+        n.identifier.startsWith('daily-reminder') ||
+        n.identifier === 'streak-reminder'
+    );
+    for (const notification of toCancel) {
+      await Notifications.cancelScheduledNotificationAsync(notification.identifier);
     }
-    if (selectedDate) {
-      setReminderTime(selectedDate);
-      await saveSettings({ reminderTime: selectedDate.toISOString() });
-      
-      if (enabled && dailyReminder) {
-        await scheduleNotifications();
-      }
-    }
-    if (Platform.OS === 'ios') {
-      setShowTimePicker(false);
+  };
+
+  const persistAndScheduleLessonTime = (selectedDate: Date) => {
+    setReminderTime(selectedDate);
+    void saveSettings({ reminderTime: selectedDate.toISOString() }).catch((error) => {
+      console.error('Error saving reminder time:', error);
+    });
+    if (enabled && dailyReminder) {
+      void scheduleNotifications(selectedDate).catch((error) => {
+        console.error('Error scheduling notifications:', error);
+      });
     }
   };
 
@@ -169,7 +185,7 @@ export default function NotificationsScreen() {
             <View style={styles.settingLeft}>
               <Text style={styles.settingLabel}>Lesson Reminder</Text>
               <Text style={styles.settingDescription}>
-                Reminds you to log lessons (school days only)
+                A nudge to log lessons on your school weekdays
               </Text>
             </View>
             <Switch
@@ -177,7 +193,14 @@ export default function NotificationsScreen() {
               onValueChange={async (value) => {
                 setDailyReminder(value);
                 await saveSettings({ dailyReminder: value });
-                if (enabled) await scheduleNotifications();
+                if (!enabled) {
+                  return;
+                }
+                if (value) {
+                  await scheduleNotifications(undefined, { dailyReminder: true });
+                } else {
+                  await cancelLessonReminderSchedules();
+                }
               }}
               disabled={!enabled}
               trackColor={{ false: Colors.ui.border, true: Colors.brand[300] }}
@@ -201,15 +224,15 @@ export default function NotificationsScreen() {
             </TouchableOpacity>
           )}
 
-          {showTimePicker && (
-            <DateTimePicker
-              value={reminderTime}
-              mode="time"
-              is24Hour={false}
-              onChange={handleTimeChange}
-              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-            />
-          )}
+          <ReminderTimePicker
+            visible={showTimePicker}
+            value={reminderTime}
+            onConfirm={(selectedDate) => {
+              persistAndScheduleLessonTime(selectedDate);
+              setShowTimePicker(false);
+            }}
+            onCancel={() => setShowTimePicker(false)}
+          />
         </View>
 
         {/* Other Notifications */}
@@ -220,19 +243,14 @@ export default function NotificationsScreen() {
             <View style={styles.settingLeft}>
               <Text style={styles.settingLabel}>Streak Reminders</Text>
               <Text style={styles.settingDescription}>
-                Keep your learning streak alive
+                Coming soon
               </Text>
             </View>
             <Switch
-              value={streakReminder}
-              onValueChange={async (value) => {
-                setStreakReminder(value);
-                await saveSettings({ streakReminder: value });
-                if (enabled) await scheduleNotifications();
-              }}
-              disabled={!enabled}
+              value={false}
+              disabled
               trackColor={{ false: Colors.ui.border, true: Colors.brand[300] }}
-              thumbColor={streakReminder ? Colors.brand[500] : '#f4f3f4'}
+              thumbColor="#f4f3f4"
             />
           </View>
 
@@ -259,11 +277,9 @@ export default function NotificationsScreen() {
         {/* Info */}
         <View style={styles.infoCard}>
           <Text style={styles.infoText}>
-            💡 Notifications respect your school schedule. Reminders only appear on school days!
+            Reminders follow your school weekdays. Holidays and breaks aren't skipped yet — that's coming.
           </Text>
         </View>
-
-        {/* Test button removed - notifications working */}
       </ScrollView>
     </SafeAreaView>
   );

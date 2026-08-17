@@ -30,8 +30,8 @@ import { initializeRevenueCat } from '@/lib/revenuecat';
 import { supabase } from '@/lib/supabase/client';
 import * as notificationService from '@/services/notificationService';
 import { useAuthStore } from '@/store/authStore';
-import { useScheduleStore } from '@/store/scheduleStore';
 import { useSubscriptionStore } from '@/store/subscriptionStore';
+import { cancelOrphanAttendanceNotifications } from '@/utils/notificationManager';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export const unstable_settings = {
@@ -51,6 +51,7 @@ export default function RootLayout() {
   
   // Track auth initialization to prevent infinite loops
   const authInitializedRef = useRef(false);
+  const handledNotificationResponseKeysRef = useRef(new Set<string>());
 
   const [fontsLoaded] = useFonts({
     Quicksand_400Regular,
@@ -68,7 +69,8 @@ export default function RootLayout() {
       if (!session) {
         return;
       }
-      await useSubscriptionStore.getState().checkSubscription();
+      const info = await useSubscriptionStore.getState().checkSubscription();
+      await notificationService.syncTrialRemindersFromSubscription(info);
     } catch (error) {
       console.error('Error initializing trial:', error);
     }
@@ -423,53 +425,72 @@ export default function RootLayout() {
   }, [fontsLoaded]); // Only depend on fontsLoaded - ref prevents re-runs
 
   useEffect(() => {
-    // Listen for notification taps
-    const subscription = Notifications.addNotificationResponseReceivedListener(response => {
-      const data = response.notification.request.content.data;
-      
-            
-      // Navigate based on notification type
-      if (data.type === 'daily-reminder') {
-        router.push('/(tabs)/' as Parameters<typeof router.push>[0]);
-      } else if (data.type === 'goal-celebration') {
-        router.push('/(tabs)/progress');
-      } else if (data.type === 'streak-reminder') {
-        router.push('/(tabs)/calendar');
-      }
-    });
+    if (!fontsLoaded || !appReady || !authRoutingReady) {
+      return;
+    }
 
-    return () => subscription.remove();
+    const handleNotificationResponse = (response: Notifications.NotificationResponse) => {
+      const key = `${response.notification.request.identifier}:${String(response.notification.date)}:${response.actionIdentifier}`;
+      if (handledNotificationResponseKeysRef.current.has(key)) {
+        return;
+      }
+      handledNotificationResponseKeysRef.current.add(key);
+
+      const data = response.notification.request.content.data as { type?: string } | undefined;
+      const type = data?.type;
+
+      if (type === 'daily-reminder') {
+        router.push('/(tabs)/' as Parameters<typeof router.push>[0]);
+      } else if (type === 'goal-celebration') {
+        router.push('/(tabs)/progress');
+      } else if (type === 'streak-reminder') {
+        router.push('/(tabs)/calendar');
+      } else if (type === 'attendance') {
+        router.push({
+          pathname: '/(tabs)/',
+          params: { openAttendance: '1' },
+        } as Parameters<typeof router.push>[0]);
+      } else if (type === 'trial-reminder') {
+        router.push('/settings/subscription' as Parameters<typeof router.push>[0]);
+      }
+    };
+
+    // Register the listener first so a late emission of the launch tap is still caught.
+    const subscription = Notifications.addNotificationResponseReceivedListener(
+      handleNotificationResponse
+    );
+
+    let cancelled = false;
+    const consumeLaunchResponse = async () => {
+      try {
+        const lastResponse = await Notifications.getLastNotificationResponseAsync();
+        if (cancelled || !lastResponse) {
+          return;
+        }
+        handleNotificationResponse(lastResponse);
+        await Notifications.clearLastNotificationResponseAsync();
+      } catch (error) {
+        console.error('Error handling last notification response:', error);
+      }
+    };
+    void consumeLaunchResponse();
+
+    return () => {
+      cancelled = true;
+      subscription.remove();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fontsLoaded]);
+  }, [fontsLoaded, appReady, authRoutingReady]);
 
   const initializeNotifications = async () => {
+    // Must run first: users with attendance reminders OFF never hit schedule/cancel again.
+    // void + .catch — do not await; nothing above this can return early.
+    void cancelOrphanAttendanceNotifications().catch((error) => {
+      console.error('[orphan attendance cleanup] failed:', error);
+    });
+
     try {
-      // Load notification settings
-      const settings = await AsyncStorage.getItem('notification-settings');
-      
-      if (settings) {
-        const parsed = JSON.parse(settings);
-        
-        if (parsed.enabled && parsed.dailyReminder) {
-          // Fetch schedule first to ensure it's loaded
-          const scheduleStore = useScheduleStore.getState();
-          await scheduleStore.fetchSchedule();
-          
-          // Get school days from schedule store
-          const schoolDays = scheduleStore.getSchoolDays();
-          
-          // Schedule daily reminders
-          const reminderTime = parsed.reminderTime 
-            ? new Date(parsed.reminderTime) 
-            : new Date();
-          await notificationService.scheduleDailyReminder(
-            reminderTime.getHours(),
-            reminderTime.getMinutes(),
-            schoolDays
-          );
-          
-                  }
-      }
+      await notificationService.restoreScheduledRemindersFromPrefs();
     } catch (error) {
       console.error('Error initializing notifications:', error);
     }

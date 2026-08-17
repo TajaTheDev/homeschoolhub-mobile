@@ -4,6 +4,7 @@
  */
 
 import { supabase } from '@/lib/supabase/client';
+import { cancelEveryScheduledNotification, restoreScheduledRemindersFromPrefs } from '@/services/notificationService';
 import type { Session, User } from '@supabase/supabase-js';
 import { create } from 'zustand';
 
@@ -82,6 +83,9 @@ export const useAuthStore = create<AuthState>((set) => ({
 
       if (data.user) {
         set({ user: data.session?.user ?? data.user, loading: false });
+        void restoreScheduledRemindersFromPrefs().catch((error) => {
+          console.error('Error restoring reminders after sign-in:', error);
+        });
         return { success: true, session: data.session ?? null };
       }
 
@@ -99,6 +103,12 @@ export const useAuthStore = create<AuthState>((set) => ({
   signOut: async () => {
     set({ loading: true });
     try {
+      try {
+        await cancelEveryScheduledNotification();
+      } catch (cancelError) {
+        console.error('Error cancelling scheduled notifications on sign-out:', cancelError);
+      }
+
       if (!supabase) {
         console.error('Supabase client not initialized');
         set({ user: null, loading: false });

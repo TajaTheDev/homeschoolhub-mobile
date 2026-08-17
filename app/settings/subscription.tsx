@@ -4,7 +4,6 @@ import Typography from '@/constants/Typography';
 import { useSubscription } from '@/contexts/SubscriptionContext';
 import { presentPaywall as presentRevenueCatPaywall, PAYWALL_RESULT, restorePurchases } from '@/lib/revenuecat';
 import { format } from 'date-fns';
-import * as Notifications from 'expo-notifications';
 import { useRouter } from 'expo-router';
 import { Check, ChevronLeft, Crown } from 'lucide-react-native';
 import React, { useCallback, useEffect, useState } from 'react';
@@ -18,6 +17,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSubscriptionStore } from '@/store/subscriptionStore';
+import { syncTrialRemindersFromSubscription } from '@/services/notificationService';
 
 export default function SubscriptionScreen() {
   const router = useRouter();
@@ -35,70 +35,6 @@ export default function SubscriptionScreen() {
     ? new Date(subscriptionInfo.trialEndDate)
     : null;
 
-  const scheduleTrialReminders = async (endDate: Date) => {
-    try {
-      const existing = await Notifications.getAllScheduledNotificationsAsync();
-      const trialReminders = existing.filter((n) =>
-        n.identifier.startsWith('trial-reminder')
-      );
-      for (const reminder of trialReminders) {
-        await Notifications.cancelScheduledNotificationAsync(reminder.identifier);
-      }
-
-      const now = new Date();
-
-      const sevenDaysBefore = new Date(endDate.getTime() - 7 * 24 * 60 * 60 * 1000);
-      if (sevenDaysBefore > now) {
-        await Notifications.scheduleNotificationAsync({
-          identifier: 'trial-reminder-7',
-          content: {
-            title: '7 Days Left in Your Trial',
-            body: 'Keep tracking your homeschool journey - subscribe to continue!',
-            sound: true,
-          },
-          trigger: {
-            type: Notifications.SchedulableTriggerInputTypes.DATE,
-            date: sevenDaysBefore,
-          },
-        });
-      }
-
-      const threeDaysBefore = new Date(endDate.getTime() - 3 * 24 * 60 * 60 * 1000);
-      if (threeDaysBefore > now) {
-        await Notifications.scheduleNotificationAsync({
-          identifier: 'trial-reminder-3',
-          content: {
-            title: '3 Days Left in Your Trial',
-            body: "Don't lose access! Subscribe today for just $4.99/month",
-            sound: true,
-          },
-          trigger: {
-            type: Notifications.SchedulableTriggerInputTypes.DATE,
-            date: threeDaysBefore,
-          },
-        });
-      }
-
-      const oneDayBefore = new Date(endDate.getTime() - 1 * 24 * 60 * 60 * 1000);
-      if (oneDayBefore > now) {
-        await Notifications.scheduleNotificationAsync({
-          identifier: 'trial-reminder-1',
-          content: {
-            title: 'Last Day of Your Trial!',
-            body: 'Subscribe now to keep all your homeschool data and memories',
-            sound: true,
-          },
-          trigger: {
-            type: Notifications.SchedulableTriggerInputTypes.DATE,
-            date: oneDayBefore,
-          },
-        });
-      }
-    } catch (error) {
-      console.error('Error scheduling trial reminders:', error);
-    }
-  };
-
   const loadSubscriptionStatus = useCallback(async () => {
     try {
       setStatusLoading(true);
@@ -115,10 +51,11 @@ export default function SubscriptionScreen() {
   }, [loadSubscriptionStatus]);
 
   useEffect(() => {
-    if (trialEndDate && !isSubscribed && daysRemaining > 0) {
-      scheduleTrialReminders(trialEndDate);
+    if (!subscriptionInfo) {
+      return;
     }
-  }, [trialEndDate, isSubscribed, daysRemaining]);
+    void syncTrialRemindersFromSubscription(subscriptionInfo);
+  }, [subscriptionInfo]);
 
   const handleSubscribeSuccess = async () => {
     await refreshSubscriptionStatus();

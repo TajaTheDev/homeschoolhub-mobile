@@ -1,5 +1,6 @@
 import { presentCustomerCenter } from '@/components/subscription/CustomerCenter';
 import Avatar from '@/components/ui/Avatar';
+import ReminderTimePicker from '@/components/ui/ReminderTimePicker';
 import Colors from '@/constants/Colors';
 import Typography from '@/constants/Typography';
 import { useSnackbar } from '@/contexts/SnackbarContext';
@@ -10,13 +11,13 @@ import { useAuthStore } from '@/store/authStore';
 import type { AvatarType } from '@/types';
 import { cancelAttendanceReminder, requestNotificationPermissions, scheduleAttendanceReminder } from '@/utils/notificationManager';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import { format } from 'date-fns';
 import { useRouter } from 'expo-router';
 import {
   Bell,
   Calendar,
   ChevronRight,
+  Clock,
   CreditCard,
   Image as ImageIcon,
   Info,
@@ -57,6 +58,7 @@ export default function SettingsScreen() {
     defaultTime.setHours(9, 0, 0, 0); // Default 9:00 AM
     return defaultTime;
   });
+  const [showAttendanceTimePicker, setShowAttendanceTimePicker] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
@@ -82,21 +84,31 @@ export default function SettingsScreen() {
     }
   };
 
-  const handleTimeChange = async (event: any, selectedTime?: Date) => {
-    if (selectedTime) {
-      setReminderTime(selectedTime);
-      await AsyncStorage.setItem('reminderTime', selectedTime.toISOString());
-      
-      // If reminders are enabled, reschedule with new time
-      if (attendanceReminders) {
-        const result = await scheduleAttendanceReminder(selectedTime);
-        if (result.success) {
-          // Silent update - no alert for inline picker
-                  } else {
-          Alert.alert('Error', result.error || 'Failed to schedule reminder');
+  /**
+   * Persist time and reschedule without blocking the picker handler.
+   * Failures surface via snackbar (including AsyncStorage write failures).
+   */
+  const persistAndScheduleAttendanceTime = (time: Date) => {
+    setReminderTime(time);
+    void AsyncStorage.setItem('reminderTime', time.toISOString()).catch(() => {
+      showSnackbar('Could not save reminder time', 'error');
+    });
+    void scheduleAttendanceReminder(time)
+      .then((result) => {
+        if (!result.success) {
+          showSnackbar(result.error || 'Failed to schedule reminder', 'error');
         }
-      }
-    }
+      })
+      .catch((error) => {
+        showSnackbar(
+          error instanceof Error ? error.message : 'Failed to schedule reminder',
+          'error'
+        );
+      });
+  };
+
+  const openAttendanceTimePicker = () => {
+    setShowAttendanceTimePicker(true);
   };
 
   const handleToggleReminders = async (value: boolean) => {
@@ -376,28 +388,12 @@ export default function SettingsScreen() {
             </View>
             
             {attendanceReminders && (
-              <View style={styles.timePickerContainer}>
-                <Text style={styles.timePickerLabel}>Reminder Time</Text>
-                
-                <DateTimePicker
-                  value={reminderTime}
-                  mode="time"
-                  is24Hour={false}
-                  display="spinner"  // Always visible spinner style
-                  themeVariant="light"
-                  textColor="#000000"
-                  onChange={(event, selectedTime) => {
-                    if (selectedTime) {
-                      handleTimeChange(event, selectedTime);
-                    }
-                  }}
-                  style={styles.timePicker}
-                />
-                
-                <Text style={styles.selectedTimeText}>
-                  Daily reminder at {format(reminderTime, 'h:mm a')}
-                </Text>
-              </View>
+              <SettingsItem
+                icon={Clock}
+                title="Reminder Time"
+                subtitle={format(reminderTime, 'h:mm a')}
+                onPress={openAttendanceTimePicker}
+              />
             )}
           </View>
         </View>
@@ -574,6 +570,16 @@ export default function SettingsScreen() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      <ReminderTimePicker
+        visible={showAttendanceTimePicker}
+        value={reminderTime}
+        onConfirm={(time) => {
+          persistAndScheduleAttendanceTime(time);
+          setShowAttendanceTimePicker(false);
+        }}
+        onCancel={() => setShowAttendanceTimePicker(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -782,33 +788,39 @@ const styles = StyleSheet.create({
     color: Colors.ui.textLight,
     marginLeft: 28,
   },
-  timePickerContainer: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
-    marginHorizontal: 20,
-    marginTop: 12,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: Colors.ui.border,
+  iosTimePickerOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
   },
-  timePickerLabel: {
+  iosTimePickerSheet: {
+    backgroundColor: 'white',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingBottom: 20,
+  },
+  iosTimePickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.ui.border,
+  },
+  iosTimePickerTitle: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: Colors.ui.text,
+  },
+  iosTimePickerCancel: {
+    fontSize: 16,
+    color: Colors.ui.error,
+  },
+  iosTimePickerDone: {
     fontSize: 16,
     fontWeight: '600',
-    color: Colors.brand[900],
-    marginBottom: 12,
-  },
-  timePicker: {
-    backgroundColor: '#FFFFFF',
-    width: '100%',
-    height: 120,
-  },
-  selectedTimeText: {
-    fontSize: 14,
     color: Colors.brand[600],
-    textAlign: 'center',
-    marginTop: 8,
-    fontWeight: '500',
   },
   dangerZone: {
     marginTop: 32,

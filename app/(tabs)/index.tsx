@@ -26,7 +26,7 @@ import PhotoGalleryModal from '@/components/lessons/PhotoGalleryModal';
 import { useFocusEffect } from '@react-navigation/native';
 import { addDays, format, isSameDay, subDays } from 'date-fns';
 import { Image } from 'expo-image';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BookOpen, Edit2, Plus, Settings, TrendingUp, Users } from 'lucide-react-native';
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -149,6 +149,7 @@ const AnimatedCard = ({ children, onPress, style }: any) => {
 
 export default function Dashboard() {
   const router = useRouter();
+  const { openAttendance } = useLocalSearchParams<{ openAttendance?: string }>();
   const { hasSubscription, isLoading } = useSubscription();
   const { students, fetchStudents, deleteStudent, subjects, fetchSubjects, loading: studentsLoading } = useStudentStore();
   const lessonStore = useLessonStore();
@@ -186,6 +187,17 @@ export default function Dashboard() {
   const { hasAttendanceForDate, fetchAttendance } = useAttendanceStore();
   const [hasError, setHasError] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
+
+  useEffect(() => {
+    const shouldOpenAttendance = Array.isArray(openAttendance)
+      ? openAttendance.includes('1')
+      : openAttendance === '1';
+    if (!shouldOpenAttendance) {
+      return;
+    }
+    setShowAttendanceModal(true);
+    router.setParams({ openAttendance: undefined });
+  }, [openAttendance, router]);
 
   // Load dashboard data - stores will load cached data first, then refresh in background
   useEffect(() => {

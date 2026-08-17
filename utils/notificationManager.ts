@@ -3,15 +3,6 @@ import { Platform } from 'react-native';
 import { useScheduleStore } from '@/store/scheduleStore';
 import { useBreakStore } from '@/store/breakStore';
 
-// Configure how notifications are handled when app is in foreground
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-});
-
 // Request notification permissions
 export async function requestNotificationPermissions() {
   const { status: existingStatus } = await Notifications.getPermissionsAsync();
@@ -145,6 +136,35 @@ export async function scheduleAttendanceReminder(time: Date) {
   }
 }
 
+/**
+ * Cancel legacy attendance notifications that lack the attendance-reminder- prefix
+ * (e.g. UUID-identified daily schedules from older builds). Idempotent and safe
+ * to run on every launch; does nothing when no orphans exist. Never cancelAll.
+ */
+export async function cancelOrphanAttendanceNotifications() {
+  const allNotifications = await Notifications.getAllScheduledNotificationsAsync();
+  const orphans = allNotifications.filter((n) => {
+    const data = n.content.data as { type?: string } | undefined;
+    return (
+      data?.type === 'attendance' &&
+      !n.identifier.startsWith('attendance-reminder-')
+    );
+  });
+
+  for (const notification of orphans) {
+    await Notifications.cancelScheduledNotificationAsync(notification.identifier);
+  }
+
+  if (orphans.length > 0) {
+    console.log(
+      '[orphan attendance cleanup] cancelled',
+      orphans.length,
+      'identifier(s):',
+      orphans.map((n) => n.identifier)
+    );
+  }
+}
+
 // Cancel attendance reminders
 export async function cancelAttendanceReminder() {
   try {
@@ -157,6 +177,8 @@ export async function cancelAttendanceReminder() {
     for (const notification of attendanceNotifications) {
       await Notifications.cancelScheduledNotificationAsync(notification.identifier);
     }
+
+    await cancelOrphanAttendanceNotifications();
 
     return { success: true };
   } catch (error: any) {
@@ -174,6 +196,7 @@ export default {
   requestNotificationPermissions,
   scheduleAttendanceReminder,
   cancelAttendanceReminder,
+  cancelOrphanAttendanceNotifications,
   getScheduledNotifications,
   isSchoolDay,
 };
