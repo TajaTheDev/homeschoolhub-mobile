@@ -1,5 +1,5 @@
-# Deploy: supabase functions deploy revenuecat-webhook --no-verify-jwt
-# JWT verification must be off — RevenueCat does not send a Supabase JWT.
+// Deploy: supabase functions deploy revenuecat-webhook --no-verify-jwt
+// JWT verification must be off — RevenueCat does not send a Supabase JWT.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
