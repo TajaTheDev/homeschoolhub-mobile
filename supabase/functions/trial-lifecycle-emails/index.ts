@@ -1,5 +1,5 @@
-# Deploy: supabase functions deploy trial-lifecycle-emails --no-verify-jwt
-# Secrets: RESEND_API_KEY, TRIAL_EMAIL_CRON_SECRET, TRIAL_EMAIL_LAUNCH_AT (ISO UTC)
+// Deploy: supabase functions deploy trial-lifecycle-emails --no-verify-jwt
+// Secrets: RESEND_API_KEY, TRIAL_EMAIL_CRON_SECRET, TRIAL_EMAIL_LAUNCH_AT (ISO UTC)
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
