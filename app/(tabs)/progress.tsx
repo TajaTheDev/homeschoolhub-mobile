@@ -3,7 +3,9 @@
  * Shows lesson completion rates, subject breakdown, goals, and recent activity
  */
 
+import SubscribeToEditNudge from '@/components/SubscribeToEditNudge';
 import Avatar from '@/components/ui/Avatar';
+import { useSubscriptionAccess } from '@/hooks/useSubscriptionAccess';
 import EmptyState from '@/components/ui/EmptyState';
 import Skeleton from '@/components/ui/Skeleton';
 import Colors from '@/constants/Colors';
@@ -319,6 +321,7 @@ const isGoalCelebrationsEnabled = async () => {
 export default function ProgressScreen() {
   const router = useRouter();
   const { showSnackbar } = useSnackbar();
+  const { requireEdit, subscribeNudgeProps } = useSubscriptionAccess();
   const { students, fetchStudents, subjects, fetchSubjects, updateSubject } = useStudentStore();
   const { lessons, fetchLessons } = useLessonStore();
   const { schedule, getSchoolDays, fetchSchedule } = useScheduleStore();
@@ -484,6 +487,10 @@ export default function ProgressScreen() {
   }) => {
     if (!selectedStudentId) return;
 
+    if (!requireEdit('archive school years')) {
+      return;
+    }
+
     setArchivingSchoolYear(true);
     try {
       const summary = await buildArchiveSummary(
@@ -529,6 +536,10 @@ export default function ProgressScreen() {
   const handleSaveGoal = async () => {
     if (!goalSubject || !selectedStudentId) return;
 
+    if (!requireEdit('edit subject goals')) {
+      return;
+    }
+
     const goal = parseInt(goalValue || '0');
     if (goal <= 0) {
       Alert.alert('Error', 'Please enter a valid goal number greater than 0');
@@ -565,6 +576,10 @@ export default function ProgressScreen() {
 
   const handleSaveEditGoal = async (newGoal: number | null) => {
     if (!selectedStudentId || !editGoalSubject) return;
+
+    if (!requireEdit('edit subject goals')) {
+      return;
+    }
 
     const subjectRecord = subjects.find(
       (s) => s.student_id === selectedStudentId && s.subject === editGoalSubject
@@ -1208,6 +1223,7 @@ export default function ProgressScreen() {
           onConfirm={handleEndSchoolYearConfirm}
         />
       </Suspense>
+      <SubscribeToEditNudge {...subscribeNudgeProps} />
     </SafeAreaView>
   );
 }

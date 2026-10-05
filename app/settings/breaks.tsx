@@ -1,4 +1,6 @@
+import SubscribeToEditNudge from '@/components/SubscribeToEditNudge';
 import EditBreakModal from '@/components/schedule/EditBreakModal';
+import { useSubscriptionAccess } from '@/hooks/useSubscriptionAccess';
 import Colors from '@/constants/Colors';
 import Typography from '@/constants/Typography';
 import { requestReviewAtWinMoment } from '@/lib/reviewPrompt';
@@ -22,6 +24,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function BreaksScreen() {
   const router = useRouter();
+  const { requireEdit, subscribeNudgeProps } = useSubscriptionAccess();
   const { breaks, fetchBreaks, addBreak, deleteBreak } = useBreakStore();
   const lessonStore = useLessonStore();
   const { getSchoolDays: getSchoolDayNumbers } = useScheduleStore();
@@ -41,6 +44,10 @@ export default function BreaksScreen() {
   
   // Helper function to add break without shifts
   const addBreakOnly = async (breakData: { name: string; start_date: string; end_date: string; emoji?: string }) => {
+    if (!requireEdit('manage breaks')) {
+      throw new Error('Subscribe to edit');
+    }
+
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
       throw new Error('User not authenticated');
@@ -76,6 +83,10 @@ export default function BreaksScreen() {
   
   // Helper function to add break record (used in shift logic)
   const addBreakRecord = async (breakData: { name: string; start_date: string; end_date: string; emoji?: string }) => {
+    if (!requireEdit('manage breaks')) {
+      throw new Error('Subscribe to edit');
+    }
+
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
       throw new Error('User not authenticated');
@@ -157,6 +168,10 @@ export default function BreaksScreen() {
   };
 
   const saveBreakToDatabase = async (breakData: { name: string; start_date: string; end_date: string; emoji?: string; id?: string }) => {
+    if (!requireEdit('manage breaks')) {
+      return false;
+    }
+
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
@@ -232,6 +247,10 @@ export default function BreaksScreen() {
    * @returns true only when a break was actually persisted
    */
   const handleSaveBreak = async (breakData: { name: string; start_date: string; end_date: string; emoji?: string; id?: string }): Promise<boolean> => {
+    if (!requireEdit('manage breaks')) {
+      return false;
+    }
+
     try {
       // STEP 1: Check if any lessons exist during this break period
       let conflictingLessons: any[] = [];
@@ -433,7 +452,10 @@ export default function BreaksScreen() {
   };
 
   const deleteBreakOnly = async (breakId: string) => {
-        
+    if (!requireEdit('manage breaks')) {
+      return;
+    }
+
     // Delete shift records
     await supabase
       .from('lesson_shifts')
@@ -460,7 +482,10 @@ export default function BreaksScreen() {
   };
 
   const deleteBreakAndRestore = async (breakId: string) => {
-        
+    if (!requireEdit('manage breaks')) {
+      return;
+    }
+
     // Get all shift records for this break
     const { data: shifts, error: shiftsError } = await supabase
       .from('lesson_shifts')
@@ -767,6 +792,7 @@ export default function BreaksScreen() {
         }}
         onSave={handleSaveBreak}
       />
+      <SubscribeToEditNudge {...subscribeNudgeProps} />
     </SafeAreaView>
   );
 }

@@ -2,20 +2,19 @@
  * Helpers for building lesson plan item lists in the UI.
  */
 
+import { canonicalizeLibrarySubject } from '@/constants/Subjects';
+
 export type WorkingItem = {
   id: string;
   title: string;
 };
 
-export const LIBRARY_CATEGORIES = [
-  { key: 'math', label: 'Math' },
-  { key: 'language_arts', label: 'Language Arts' },
-  { key: 'handwriting_writing', label: 'Handwriting & Writing' },
-] as const;
-
-export type LibraryCategoryKey = (typeof LIBRARY_CATEGORIES)[number]['key'];
-
-export type CurriculumCategoryKey = LibraryCategoryKey | 'other';
+/** Old bucket keys still stored until the post-adoption backfill. */
+const LEGACY_CATEGORY_SHIM: Record<string, string> = {
+  Math: 'math',
+  Reading: 'language_arts',
+  Writing: 'handwriting_writing',
+};
 
 /**
  * Creates a stable local id for list keys before items are saved.
@@ -69,26 +68,31 @@ export function replaceWorkingItems(titles: string[]): WorkingItem[] {
 }
 
 /**
- * Returns a human-readable category label for a library category key.
+ * Returns a human-readable label for a stored library category.
  */
 export function getCategoryLabel(category: string): string {
   if (category === 'other') return 'Other';
-  const match = LIBRARY_CATEGORIES.find((entry) => entry.key === category);
-  return match?.label ?? category;
+  if (category === 'math') return 'Math';
+  if (category === 'language_arts') return 'Reading';
+  if (category === 'handwriting_writing') return 'Writing';
+  return category;
 }
 
-const SUBJECT_CATEGORY_MAP: Record<string, LibraryCategoryKey> = {
-  Math: 'math',
-  Reading: 'language_arts',
-  Writing: 'handwriting_writing',
-};
+/**
+ * Maps a display subject to the canonical library category (preset name or title-cased custom).
+ */
+export function getCurriculumCategoryForSubject(subject: string): string {
+  return canonicalizeLibrarySubject(subject);
+}
 
 /**
- * Maps a display subject name to a curriculum category key.
- * Unmapped subjects return 'other' so the curriculum step still appears.
+ * Category values to query during the read-shim window.
+ * Math/Reading/Writing include the legacy key; every other subject is canonical only.
  */
-export function getCurriculumCategoryForSubject(subject: string): CurriculumCategoryKey {
-  return SUBJECT_CATEGORY_MAP[subject] ?? 'other';
+export function libraryCategoryKeysForSubject(subject: string): string[] {
+  const canonical = canonicalizeLibrarySubject(subject);
+  const legacy = LEGACY_CATEGORY_SHIM[canonical];
+  return legacy ? [canonical, legacy] : [canonical];
 }
 
 export type StagedLibraryCurriculum = {

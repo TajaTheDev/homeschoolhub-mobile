@@ -8,7 +8,7 @@ import { differenceInDays } from 'date-fns';
 import { supabase } from '@/lib/supabase/client';
 import type { SubscriptionPlan, TrialStatus, UserTrial } from '@/types/database';
 
-export const TRIAL_DURATION_DAYS = 30;
+export const TRIAL_DURATION_DAYS = 7;
 const LEGACY_TRIAL_STORAGE_KEY = 'trial_start_date';
 const LOCAL_TRIAL_KEY_PREFIX = 'local_user_trial_';
 

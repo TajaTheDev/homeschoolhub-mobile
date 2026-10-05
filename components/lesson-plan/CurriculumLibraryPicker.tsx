@@ -1,10 +1,6 @@
 import Colors from '@/constants/Colors';
 import Typography from '@/constants/Typography';
-import {
-  getCategoryLabel,
-  LIBRARY_CATEGORIES,
-  type LibraryCategoryKey,
-} from '@/lib/lessonPlanUtils';
+import { getCategoryLabel, libraryCategoryKeysForSubject } from '@/lib/lessonPlanUtils';
 import type { CurriculumWithItems } from '@/store/lessonPlanStore';
 import { BookOpen, Search } from 'lucide-react-native';
 import React, { useMemo, useState } from 'react';
@@ -20,42 +16,37 @@ import {
 type CurriculumLibraryPickerProps = {
   curricula: CurriculumWithItems[];
   loading: boolean;
+  subject: string;
   onSelect: (curriculum: CurriculumWithItems) => void;
 };
 
 export default function CurriculumLibraryPicker({
   curricula,
   loading,
+  subject,
   onSelect,
 }: CurriculumLibraryPickerProps) {
   const [searchQuery, setSearchQuery] = useState('');
 
-  const filteredByCategory = useMemo(() => {
+  const filteredEntries = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
+    const categoryKeys = libraryCategoryKeysForSubject(subject);
 
-    return LIBRARY_CATEGORIES.map((category) => {
-      const entries = curricula
-        .filter((entry) => entry.category === category.key)
-        .filter((entry) => {
-          if (!query) return true;
-          const haystack = [
-            entry.name,
-            entry.publisher ?? '',
-            entry.edition ?? '',
-            entry.level ?? '',
-          ]
-            .join(' ')
-            .toLowerCase();
-          return haystack.includes(query);
-        });
-
-      return {
-        key: category.key as LibraryCategoryKey,
-        label: category.label,
-        entries,
-      };
-    }).filter((group) => group.entries.length > 0 || !query);
-  }, [curricula, searchQuery]);
+    return curricula
+      .filter((entry) => categoryKeys.includes(entry.category))
+      .filter((entry) => {
+        if (!query) return true;
+        const haystack = [
+          entry.name,
+          entry.publisher ?? '',
+          entry.edition ?? '',
+          entry.level ?? '',
+        ]
+          .join(' ')
+          .toLowerCase();
+        return haystack.includes(query);
+      });
+  }, [curricula, searchQuery, subject]);
 
   if (loading) {
     return (
@@ -66,7 +57,7 @@ export default function CurriculumLibraryPicker({
     );
   }
 
-  if (curricula.length === 0) {
+  if (filteredEntries.length === 0 && !searchQuery.trim()) {
     return (
       <View style={styles.emptyContainer}>
         <BookOpen size={28} color={Colors.ui.textLight} />
@@ -77,7 +68,7 @@ export default function CurriculumLibraryPicker({
     );
   }
 
-  const hasVisibleResults = filteredByCategory.some((group) => group.entries.length > 0);
+  const hasVisibleResults = filteredEntries.length > 0;
 
   return (
     <View>
@@ -99,13 +90,7 @@ export default function CurriculumLibraryPicker({
           <Text style={styles.emptyText}>No curricula match your search.</Text>
         </View>
       ) : (
-        filteredByCategory.map((group) => {
-          if (group.entries.length === 0) return null;
-
-          return (
-            <View key={group.key} style={styles.categorySection}>
-              <Text style={styles.categoryTitle}>{group.label}</Text>
-              {group.entries.map((entry) => (
+        filteredEntries.map((entry) => (
                 <TouchableOpacity
                   key={entry.id}
                   style={styles.entryCard}
@@ -130,10 +115,7 @@ export default function CurriculumLibraryPicker({
                     {(entry.itemCount ?? entry.items.length) === 1 ? '' : 's'}
                   </Text>
                 </TouchableOpacity>
-              ))}
-            </View>
-          );
-        })
+              ))
       )}
     </View>
   );

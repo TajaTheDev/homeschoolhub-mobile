@@ -1,13 +1,20 @@
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import Colors from '@/constants/Colors';
 import Typography from '@/constants/Typography';
-import { ChevronLeft } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
-import { TouchableOpacity } from 'react-native';
+import { ChevronLeft } from 'lucide-react-native';
+import React, { useEffect } from 'react';
+import { Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+export const PRIVACY_POLICY_URL =
+  'https://tajathedev.github.io/homeschoolhub-support/privacy.html';
 
 export default function PrivacyPolicy() {
   const router = useRouter();
+
+  useEffect(() => {
+    void Linking.openURL(PRIVACY_POLICY_URL);
+  }, []);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -18,48 +25,12 @@ export default function PrivacyPolicy() {
         <Text style={styles.headerTitle}>Privacy Policy</Text>
         <View style={{ width: 24 }} />
       </View>
-
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-        <Text style={styles.title}>Privacy Policy</Text>
-        <Text style={styles.updated}>Last updated: January 3, 2026</Text>
-        
-        <Text style={styles.section}>1. Information We Collect</Text>
-        <Text style={styles.text}>
-          We collect information you provide directly to us, including your name, 
-          email address, and student information you choose to add to the app.
-        </Text>
-        
-        <Text style={styles.section}>2. How We Use Your Information</Text>
-        <Text style={styles.text}>
-          We use your information to provide, maintain, and improve our services, 
-          including tracking your homeschool progress and generating reports.
-        </Text>
-        
-        <Text style={styles.section}>3. Data Security</Text>
-        <Text style={styles.text}>
-          We use industry-standard encryption and security measures to protect 
-          your data. Your information is stored securely on Supabase servers.
-        </Text>
-        
-        <Text style={styles.section}>4. Your Rights</Text>
-        <Text style={styles.text}>
-          You have the right to access, update, or delete your personal information 
-          at any time through the app settings.
-        </Text>
-        
-        <Text style={styles.section}>5. Children's Privacy (COPPA Compliance)</Text>
-        <Text style={styles.text}>
-          HomeschoolHub is designed for parents to manage their children's education. 
-          We do not knowingly collect personal information directly from children under 13. 
-          All data is collected and managed by parents or guardians.
-        </Text>
-        
-        <Text style={styles.section}>6. Contact Us</Text>
-        <Text style={styles.text}>
-          If you have questions about this Privacy Policy, contact us at:{'\n'}
-          support@homeschoolhub.com
-        </Text>
-      </ScrollView>
+      <View style={styles.body}>
+        <Text style={styles.hint}>Opening the Privacy Policy in your browser…</Text>
+        <TouchableOpacity onPress={() => void Linking.openURL(PRIVACY_POLICY_URL)} activeOpacity={0.7}>
+          <Text style={styles.link}>Open Privacy Policy</Text>
+        </TouchableOpacity>
+      </View>
     </SafeAreaView>
   );
 }
@@ -86,36 +57,16 @@ const styles = StyleSheet.create({
     ...Typography.h3,
     fontSize: 18,
   },
-  scrollView: {
-    flex: 1,
+  body: {
+    padding: 24,
+    gap: 12,
   },
-  scrollContent: {
-    padding: 20,
-    paddingBottom: 40,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    marginBottom: 8,
-    color: Colors.ui.text,
-  },
-  updated: {
-    fontSize: 14,
+  hint: {
+    ...Typography.body,
     color: Colors.ui.textLight,
-    marginBottom: 32,
   },
-  section: {
-    fontSize: 20,
-    fontWeight: '600',
-    marginTop: 24,
-    marginBottom: 12,
-    color: Colors.ui.text,
-  },
-  text: {
-    fontSize: 16,
-    lineHeight: 24,
-    color: Colors.ui.textLight,
-    marginBottom: 16,
+  link: {
+    ...Typography.label,
+    color: Colors.brand[600],
   },
 });
-

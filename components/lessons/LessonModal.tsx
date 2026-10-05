@@ -1,4 +1,6 @@
+import SubscribeToEditNudge from '@/components/SubscribeToEditNudge';
 import PhotoUpload from '@/components/lessons/PhotoUpload';
+import { useSubscriptionAccess } from '@/hooks/useSubscriptionAccess';
 import PhotoGallery from '@/components/lessons/PhotoGallery';
 import Colors from '@/constants/Colors';
 import { useSnackbar } from '@/contexts/SnackbarContext';
@@ -76,6 +78,7 @@ export default function LessonModal({ visible, lesson, onClose, onSave }: Lesson
 
   const lessonStore = useLessonStore();
   const { students, subjects, fetchSubjects } = useStudentStore();
+  const { requireEdit, subscribeNudgeProps } = useSubscriptionAccess();
 
   const loadLessonPhotos = useCallback(async (lessonId: string) => {
     try {
@@ -193,6 +196,10 @@ export default function LessonModal({ visible, lesson, onClose, onSave }: Lesson
     .map((s) => s.subject);
 
   const handleSave = async () => {
+    if (!requireEdit('edit lessons')) {
+      return;
+    }
+
     if (!subject.trim()) {
       Alert.alert('Error', 'Please select a subject');
       return;
@@ -277,6 +284,10 @@ export default function LessonModal({ visible, lesson, onClose, onSave }: Lesson
   };
 
   const handleDelete = () => {
+    if (!requireEdit('delete lessons')) {
+      return;
+    }
+
     Alert.alert(
       'Delete Lesson?',
       `Are you sure you want to delete "${lesson.title}"?`,
@@ -303,6 +314,10 @@ export default function LessonModal({ visible, lesson, onClose, onSave }: Lesson
   };
 
   const handleToggleComplete = async () => {
+    if (!requireEdit('complete lessons')) {
+      return;
+    }
+
     const wasCompleted = completed;
     setLoading(true);
     const result = await lessonStore.toggleComplete(lesson.id);
@@ -353,6 +368,10 @@ export default function LessonModal({ visible, lesson, onClose, onSave }: Lesson
   };
 
   const handleDeletePhoto = async (photoUrl: string) => {
+    if (!requireEdit('delete lesson photos')) {
+      return;
+    }
+
     try {
             
       // Remove from local state
@@ -939,6 +958,7 @@ Examples:
         onClose={() => setShowPhotoGallery(false)}
         onDelete={lesson?.id ? handleDeletePhoto : undefined}
       />
+      <SubscribeToEditNudge {...subscribeNudgeProps} />
     </Modal>
   );
 }

@@ -50,7 +50,6 @@ function WeeklySummaryCard({
           </View>
           <Text style={styles.statValue}>{streak}</Text>
           <Text style={styles.statLabel}>Day Streak</Text>
-          <Text style={styles.helperText}>(Mon-Fri)</Text>
         </View>
       </View>
       
@@ -104,11 +103,6 @@ const styles = StyleSheet.create({
   statLabel: {
     ...Typography.caption,
     color: Colors.ui.textLight,
-  },
-  helperText: {
-    fontSize: 9,
-    color: Colors.ui.textLight,
-    marginTop: 2,
   },
   tapHint: {
     marginTop: 8,

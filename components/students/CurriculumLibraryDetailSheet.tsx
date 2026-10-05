@@ -1,9 +1,12 @@
+import SubscribeToEditNudge from '@/components/SubscribeToEditNudge';
 import Button from '@/components/ui/Button';
+import { useSubscriptionAccess } from '@/hooks/useSubscriptionAccess';
 import ManualItemList from '@/components/lesson-plan/ManualItemList';
 import Colors from '@/constants/Colors';
 import Typography from '@/constants/Typography';
 import { createWorkingItem, parsePasteLines, type WorkingItem } from '@/lib/lessonPlanUtils';
 import { supabase } from '@/lib/supabase/client';
+import { useAuthStore } from '@/store/authStore';
 import type { CurriculumLibraryItem, CurriculumWithItems } from '@/store/lessonPlanStore';
 import { fetchLibraryItemsForCurriculum } from '@/store/lessonPlanStore';
 import { Image } from 'expo-image';
@@ -140,6 +143,29 @@ async function saveTitlesToLibrary(
   curriculumId: string,
   titles: string[]
 ): Promise<CurriculumLibraryItem[]> {
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    throw new Error('Not authenticated');
+  }
+
+  const { data: row, error: ownerError } = await supabase
+    .from('curriculum_library')
+    .select('created_by')
+    .eq('id', curriculumId)
+    .single();
+
+  if (ownerError) {
+    throw new Error(ownerError.message);
+  }
+
+  if (!row?.created_by || row.created_by !== user.id) {
+    throw new Error('Only the contributor can edit this library entry.');
+  }
+
   const { error: deleteError } = await supabase
     .from('curriculum_library_items')
     .delete()
@@ -185,6 +211,9 @@ export default function CurriculumLibraryDetailSheet({
   onSelect,
   onLibraryUpdated,
 }: CurriculumLibraryDetailSheetProps) {
+  const userId = useAuthStore((state) => state.user?.id);
+  const isOwner = Boolean(userId && curriculum.created_by && curriculum.created_by === userId);
+
   const [mode, setMode] = useState<SheetMode>('detail');
   const [items, setItems] = useState<CurriculumLibraryItem[]>([]);
   const [loadingItems, setLoadingItems] = useState(false);
@@ -197,6 +226,7 @@ export default function CurriculumLibraryDetailSheet({
   const [editingTitle, setEditingTitle] = useState('');
   const [editItems, setEditItems] = useState<WorkingItem[]>([]);
   const [saving, setSaving] = useState(false);
+  const { requireEdit, subscribeNudgeProps } = useSubscriptionAccess();
 
   const isBusy = saving || uploadingPage || mode === 'scan_extracting';
 
@@ -264,6 +294,13 @@ export default function CurriculumLibraryDetailSheet({
   });
 
   const handleLibrarySaved = async (titles: string[]) => {
+    if (!requireEdit('edit curriculum library')) {
+      return;
+    }
+
+    if (!isOwner) {
+      return;
+    }
     setSaving(true);
     try {
       const updatedItems = await saveTitlesToLibrary(curriculum.id, titles);
@@ -330,11 +367,19 @@ export default function CurriculumLibraryDetailSheet({
   };
 
   const handleExtractPages = async () => {
+    if (!requireEdit('edit curriculum library')) {
+      return;
+    }
+
     if (tocPages.length === 0) return;
     await runExtraction(tocPages.map((page) => page.storagePath));
   };
 
   const handleScanPage = async (type: 'camera' | 'library') => {
+    if (!requireEdit('edit curriculum library')) {
+      return;
+    }
+
     if (tocPages.length >= MAX_TOC_PAGES) {
       Alert.alert('Page limit reached', `You can scan up to ${MAX_TOC_PAGES} TOC pages.`);
       return;
@@ -402,6 +447,10 @@ export default function CurriculumLibraryDetailSheet({
   };
 
   const handleSaveReviewToLibrary = async () => {
+    if (!requireEdit('edit curriculum library')) {
+      return;
+    }
+
     const titles = reviewItems.map((item) => item.title.trim()).filter(Boolean);
     if (titles.length === 0) {
       Alert.alert('No lessons', 'Add at least one lesson before saving.');
@@ -411,6 +460,10 @@ export default function CurriculumLibraryDetailSheet({
   };
 
   const handleSavePasteToLibrary = async () => {
+    if (!requireEdit('edit curriculum library')) {
+      return;
+    }
+
     const titles = parsePasteLines(pasteText);
     if (titles.length === 0) {
       Alert.alert('Nothing to save', 'Paste one lesson title per line.');
@@ -420,6 +473,7 @@ export default function CurriculumLibraryDetailSheet({
   };
 
   const handleOpenEdit = () => {
+    if (!isOwner) return;
     setEditItems(sortedItems.map((item) => createWorkingItem(item.title)));
     setMode('edit');
   };
@@ -431,6 +485,10 @@ export default function CurriculumLibraryDetailSheet({
   };
 
   const handleSaveEditToLibrary = async () => {
+    if (!requireEdit('edit curriculum library')) {
+      return;
+    }
+
     const titles = editItems.map((item) => item.title.trim()).filter(Boolean);
     if (titles.length === 0) {
       Alert.alert('No lessons', 'Add at least one lesson before saving.');
@@ -554,33 +612,41 @@ export default function CurriculumLibraryDetailSheet({
         </View>
       ) : null}
 
-      <Text style={styles.sectionHeading}>Manage lessons</Text>
-      <Button
-        title="📷 Scan TOC"
-        onPress={() => {
-          resetScanState();
-          setMode('scan_capture');
-        }}
-        disabled={isBusy}
-        style={styles.actionButton}
-      />
-      <Button
-        title="Paste lessons"
-        variant="outline"
-        onPress={() => setMode('paste')}
-        disabled={isBusy}
-        style={styles.actionButton}
-      />
-      {!loadingItems && sortedItems.length > 0 ? (
-        <TouchableOpacity
-          style={styles.editLessonsButton}
-          onPress={handleOpenEdit}
-          disabled={isBusy}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.editLessonsButtonText}>Edit lessons</Text>
-        </TouchableOpacity>
-      ) : null}
+      {isOwner ? (
+        <>
+          <Text style={styles.sectionHeading}>Manage lessons</Text>
+          <Button
+            title="📷 Scan TOC"
+            onPress={() => {
+              resetScanState();
+              setMode('scan_capture');
+            }}
+            disabled={isBusy}
+            style={styles.actionButton}
+          />
+          <Button
+            title="Paste lessons"
+            variant="outline"
+            onPress={() => setMode('paste')}
+            disabled={isBusy}
+            style={styles.actionButton}
+          />
+          {!loadingItems && sortedItems.length > 0 ? (
+            <TouchableOpacity
+              style={styles.editLessonsButton}
+              onPress={handleOpenEdit}
+              disabled={isBusy}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.editLessonsButtonText}>Edit lessons</Text>
+            </TouchableOpacity>
+          ) : null}
+        </>
+      ) : (
+        <Text style={styles.readOnlyHint}>
+          This library entry is read-only. Only the original contributor can edit or re-scan it.
+        </Text>
+      )}
 
       <Text style={styles.sectionHeading}>Use this curriculum</Text>
       <Button
@@ -872,6 +938,7 @@ export default function CurriculumLibraryDetailSheet({
           )}
         </View>
       </KeyboardAvoidingView>
+      <SubscribeToEditNudge {...subscribeNudgeProps} />
     </Modal>
   );
 }
@@ -977,6 +1044,13 @@ const styles = StyleSheet.create({
     ...Typography.bodySmall,
     color: Colors.ui.textLight,
     marginBottom: 10,
+    lineHeight: 18,
+  },
+  readOnlyHint: {
+    ...Typography.bodySmall,
+    color: Colors.ui.textLight,
+    marginTop: 8,
+    marginBottom: 8,
     lineHeight: 18,
   },
   instructionCard: {

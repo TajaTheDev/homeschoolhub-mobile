@@ -2,7 +2,9 @@
  * Add Student Screen
  */
 
+import SubscribeToEditNudge from '@/components/SubscribeToEditNudge';
 import Colors from '@/constants/Colors';
+import { useSubscriptionAccess } from '@/hooks/useSubscriptionAccess';
 import { useStudentStore } from '@/store/studentStore';
 import type { GradeLevel, StudentColor } from '@/types';
 import { useRouter } from 'expo-router';
@@ -42,11 +44,16 @@ const STUDENT_COLORS: StudentColor[] = ['purple', 'blue', 'green', 'pink', 'oran
 export default function AddStudentScreen() {
   const router = useRouter();
   const { addStudent, fetchStudents, loading } = useStudentStore();
+  const { canEdit, requireEdit, subscribeNudgeProps } = useSubscriptionAccess();
   const [name, setName] = useState('');
   const [grade, setGrade] = useState<GradeLevel | null>(null);
   const [color, setColor] = useState<StudentColor>('purple');
 
   const handleAddStudent = async () => {
+    if (!requireEdit('add students')) {
+      return;
+    }
+
     if (!name.trim() || !grade) {
       Alert.alert('Error', 'Please enter a name and select a grade');
       return;
@@ -180,7 +187,10 @@ export default function AddStudentScreen() {
         </View>
 
         <TouchableOpacity
-          style={[styles.addButton, (!canAdd || loading) && styles.addButtonDisabled]}
+          style={[
+            styles.addButton,
+            (!canAdd || loading || !canEdit) && styles.addButtonDisabled,
+          ]}
           onPress={handleAddStudent}
           disabled={!canAdd || loading}
           activeOpacity={0.8}
@@ -190,6 +200,7 @@ export default function AddStudentScreen() {
           </Text>
         </TouchableOpacity>
       </ScrollView>
+      <SubscribeToEditNudge {...subscribeNudgeProps} />
     </KeyboardAvoidingView>
   );
 }

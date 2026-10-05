@@ -2,7 +2,9 @@
  * Recurring Plan Screen — schedule curriculum lessons across school days
  */
 
+import SubscribeToEditNudge from '@/components/SubscribeToEditNudge';
 import Colors from '@/constants/Colors';
+import { useSubscriptionAccess } from '@/hooks/useSubscriptionAccess';
 import Typography from '@/constants/Typography';
 import { requestReviewAtWinMoment } from '@/lib/reviewPrompt';
 import { supabase } from '@/lib/supabase/client';
@@ -86,6 +88,7 @@ export default function RecurringPlanScreen() {
   const { fetchPlan, fetchNextLesson } = useLessonPlanStore();
   const { fetchLessons } = useLessonStore();
   const { fetchBreaks, isBreakDay } = useBreakStore();
+  const { requireEdit, subscribeNudgeProps } = useSubscriptionAccess();
 
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -234,6 +237,10 @@ export default function RecurringPlanScreen() {
   };
 
   const runGenerate = async (count: number) => {
+    if (!requireEdit('add lessons')) {
+      return;
+    }
+
     if (!studentId || !subject || !startItem || !endItem || !plan) return;
 
     setGenerating(true);
@@ -603,6 +610,7 @@ export default function RecurringPlanScreen() {
           <Text style={styles.generatingText}>Creating lessons…</Text>
         </View>
       ) : null}
+      <SubscribeToEditNudge {...subscribeNudgeProps} />
     </SafeAreaView>
   );
 }

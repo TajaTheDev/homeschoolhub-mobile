@@ -1,4 +1,6 @@
+import SubscribeToEditNudge from '@/components/SubscribeToEditNudge';
 import ManualItemList from '@/components/lesson-plan/ManualItemList';
+import { useSubscriptionAccess } from '@/hooks/useSubscriptionAccess';
 import Button from '@/components/ui/Button';
 import Colors from '@/constants/Colors';
 import Typography from '@/constants/Typography';
@@ -80,6 +82,7 @@ export default function PersonalCurriculumSheet({
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const { requireEdit, subscribeNudgeProps } = useSubscriptionAccess();
 
   const loadPlanItems = useCallback(async () => {
     setLoading(true);
@@ -133,6 +136,10 @@ export default function PersonalCurriculumSheet({
   };
 
   const handleSaveEdit = async () => {
+    if (!requireEdit('edit curriculum')) {
+      return;
+    }
+
     if (!planId) {
       Alert.alert('Save failed', 'No lesson plan found for this subject.');
       return;
@@ -325,6 +332,7 @@ export default function PersonalCurriculumSheet({
           )}
         </View>
       </KeyboardAvoidingView>
+      <SubscribeToEditNudge {...subscribeNudgeProps} />
     </Modal>
   );
 }

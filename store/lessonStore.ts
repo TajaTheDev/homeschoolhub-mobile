@@ -3,6 +3,7 @@
  * Manages lesson data with Supabase operations
  */
 
+import { canMutateSubscriptionData, subscriptionEditBlockedResult } from '@/lib/subscriptionEditGuard';
 import { supabase } from '@/lib/supabase/client';
 import { cacheData, getCachedData, isOnline, clearAllCache } from '@/lib/offline';
 import type { Lesson } from '@/types';
@@ -318,7 +319,10 @@ export const useLessonStore = create<LessonState>((set, get) => ({
   },
 
   addLesson: async (lessonData) => {
-        
+    if (!canMutateSubscriptionData()) {
+      return subscriptionEditBlockedResult();
+    }
+
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
       return { success: false, error: 'Not authenticated' };
@@ -384,6 +388,10 @@ export const useLessonStore = create<LessonState>((set, get) => ({
   },
 
   updateLesson: async (id, updates) => {
+    if (!canMutateSubscriptionData()) {
+      return subscriptionEditBlockedResult();
+    }
+
     // Find the lesson to update
     const lesson = get().lessons.find((l) => l.id === id);
     if (!lesson) {
@@ -433,7 +441,10 @@ export const useLessonStore = create<LessonState>((set, get) => ({
   },
 
   deleteLesson: async (id) => {
-        
+    if (!canMutateSubscriptionData()) {
+      return subscriptionEditBlockedResult();
+    }
+
     // Store the lesson for potential rollback
     const lessonToDelete = get().lessons.find((l) => l.id === id);
     if (!lessonToDelete) {
@@ -479,6 +490,10 @@ export const useLessonStore = create<LessonState>((set, get) => ({
   },
 
   deleteLessons: async (ids) => {
+    if (!canMutateSubscriptionData()) {
+      return subscriptionEditBlockedResult();
+    }
+
         // Only log IDs if there are few lessons
     if (ids.length < 10) {
           }
@@ -532,6 +547,10 @@ export const useLessonStore = create<LessonState>((set, get) => ({
   },
 
   toggleComplete: async (id) => {
+    if (!canMutateSubscriptionData()) {
+      return subscriptionEditBlockedResult();
+    }
+
     set({ loading: true });
     try {
       // Find the lesson in current state
@@ -566,6 +585,10 @@ export const useLessonStore = create<LessonState>((set, get) => ({
   },
 
   toggleCompleteOptimistic: (id) => {
+    if (!canMutateSubscriptionData()) {
+      return;
+    }
+
     const lesson = get().lessons.find((l) => l.id === id);
     if (!lesson) return;
 
@@ -598,6 +621,10 @@ export const useLessonStore = create<LessonState>((set, get) => ({
   },
 
   updateLessonOptimistic: (id, updates) => {
+    if (!canMutateSubscriptionData()) {
+      return;
+    }
+
     set((state) => ({
       lessons: state.lessons.map((lesson) =>
         lesson.id === id ? { ...lesson, ...updates } : lesson

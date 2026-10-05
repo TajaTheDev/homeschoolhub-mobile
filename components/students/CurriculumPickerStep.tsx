@@ -60,26 +60,18 @@ export default function CurriculumPickerStep({
   const [searchQuery, setSearchQuery] = useState('');
 
   const category = getCurriculumCategoryForSubject(subject);
-  const isLibraryCategory = category !== 'other';
 
   const loadData = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
     try {
-      if (isLibraryCategory) {
-        const [libraryEntries, planResult] = await Promise.all([
-          fetchVerifiedLibrary(category),
-          fetchPlan(studentId, subject),
-        ]);
-        setCurricula(libraryEntries);
-        setExistingPlan(planResult.plan);
-        setExistingPlanItemCount(planResult.items.length);
-      } else {
-        const planResult = await fetchPlan(studentId, subject);
-        setCurricula([]);
-        setExistingPlan(planResult.plan);
-        setExistingPlanItemCount(planResult.items.length);
-      }
+      const [libraryEntries, planResult] = await Promise.all([
+        fetchVerifiedLibrary(subject),
+        fetchPlan(studentId, subject),
+      ]);
+      setCurricula(libraryEntries);
+      setExistingPlan(planResult.plan);
+      setExistingPlanItemCount(planResult.items.length);
     } catch (error) {
       console.error('Failed to load curriculum picker:', error);
       setCurricula([]);
@@ -91,7 +83,7 @@ export default function CurriculumPickerStep({
     } finally {
       setLoading(false);
     }
-  }, [category, fetchPlan, fetchVerifiedLibrary, isLibraryCategory, studentId, subject]);
+  }, [fetchPlan, fetchVerifiedLibrary, studentId, subject]);
 
   useEffect(() => {
     loadData();
@@ -285,32 +277,16 @@ export default function CurriculumPickerStep({
       </View>
 
       <Text style={styles.title}>Choose curriculum</Text>
-      {isLibraryCategory ? (
-        <Text style={styles.subtitle}>
-          {subject} · {getCategoryLabel(category)}
-        </Text>
-      ) : (
-        <>
-          <Text style={styles.subtitle}>{subject}</Text>
-          <Text style={styles.otherSubtitle}>
-            Scan or import your table of contents to get started.
-          </Text>
-        </>
-      )}
+      <Text style={styles.subtitle}>{subject}</Text>
 
       {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator color={Colors.brand[500]} />
-          <Text style={styles.loadingText}>
-            {isLibraryCategory ? 'Loading curricula…' : 'Loading…'}
-          </Text>
+          <Text style={styles.loadingText}>Loading curricula…</Text>
         </View>
       ) : (
         <>
-          {!isLibraryCategory ? renderPersonalCurriculumCard() : null}
-
-          {isLibraryCategory ? (
-            <ScrollView
+          <ScrollView
               style={styles.listScroll}
               contentContainerStyle={styles.listContent}
               showsVerticalScrollIndicator={false}
@@ -391,7 +367,6 @@ export default function CurriculumPickerStep({
                 </>
               )}
             </ScrollView>
-          ) : null}
 
           <View style={styles.footer}>
             <TouchableOpacity

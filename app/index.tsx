@@ -43,11 +43,7 @@ export default function Index() {
       setStatusMessage('Checking subscription...');
       const subscriptionInfo = await checkSubscription();
 
-      const redirectToSubscribe =
-        !subscriptionInfo.hasAccess ||
-        subscriptionInfo.subscriptionStatus === 'expired';
-
-      if (!redirectToSubscribe) {
+      if (subscriptionInfo.canEnterApp) {
         router.replace('/(tabs)');
         return;
       }

@@ -116,6 +116,11 @@ export default function TrialExpiringModal() {
       return null;
     }
 
+    // Read-only expired trial: banner only — no entry wall modal
+    if (subscriptionInfo.accessLevel === 'readonly') {
+      return null;
+    }
+
     const isExpired = subscriptionInfo.subscriptionStatus === 'expired';
     const daysRemaining = subscriptionInfo.daysRemaining;
     const milestone = getModalMilestone(daysRemaining, isExpired);

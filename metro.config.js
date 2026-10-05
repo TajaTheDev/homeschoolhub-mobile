@@ -11,7 +11,7 @@ config.resetCache = true;
 config.watchFolders = [__dirname];
 
 // Ignore large directories
-config.resolver.blacklistRE = /#current-cloud-backend\/.*/;
+config.resolver.blockList = /#current-cloud-backend\/.*/;
 
 // Reduce transformer workers
 config.transformer = {

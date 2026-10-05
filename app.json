@@ -2,7 +2,7 @@
   "expo": {
     "name": "HomeschoolHub",
     "slug": "homeschoolhub",
-    "version": "1.1.11",
+    "version": "1.1.12",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -25,7 +25,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.tajamoxey.homeschoolhub",
-      "buildNumber": "54",
+      "buildNumber": "55",
       "infoPlist": {
         "UIRequiresFullScreen": true,
         "UISupportedInterfaceOrientations": [
@@ -52,7 +52,7 @@
       },
       "icon": "./assets/icon.png",
       "package": "com.tajamoxey.homeschoolhub",
-      "versionCode": 54,
+      "versionCode": 55,
       "permissions": [
         "android.permission.RECEIVE_BOOT_COMPLETED",
         "android.permission.VIBRATE",
@@ -62,11 +62,7 @@
         "WRITE_EXTERNAL_STORAGE"
       ],
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false,
-      "navigationBar": {
-        "visible": "leanback",
-        "backgroundColor": "#ffffff"
-      }
+      "predictiveBackGestureEnabled": false
     },
     "web": {
       "output": "static",
@@ -106,6 +102,9 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "androidNavigationBar": {
+      "backgroundColor": "#ffffff"
     },
     "extra": {
       "router": {

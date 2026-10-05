@@ -146,8 +146,7 @@ async function ensurePreferences(userId: string): Promise<string> {
 }
 
 function unsubscribeUrl(token: string): string {
-  const base = Deno.env.get("SUPABASE_URL")!.replace(/\/$/, "");
-  return `${base}/functions/v1/email-unsubscribe?token=${encodeURIComponent(token)}`;
+  return `https://thehomeschoolhub.app/unsubscribe?token=${encodeURIComponent(token)}`;
 }
 
 function wrapEmailHtml(subject: string, bodyHtml: string, unsubUrl: string): string {
@@ -263,6 +262,7 @@ function renderHtmlBody(
   paragraphs: string[],
   ctaLabel: string,
   ctaHref: string,
+  unsubUrl: string,
   signoff = "— Taja"
 ): string {
   const htmlParagraphs = paragraphs
@@ -291,10 +291,16 @@ ${cta}
   );
 }
 
-function buildEmail(template: TemplateKey, subject: string, paragraphs: string[], ctaLabel: string): EmailContent {
+function buildEmail(
+  template: TemplateKey,
+  subject: string,
+  paragraphs: string[],
+  ctaLabel: string,
+  unsubUrl: string
+): EmailContent {
   const href = ctaUrl(template);
   const text = `${renderTextBody(paragraphs, ctaLabel, href)}\n\nUnsubscribe: ${unsubUrl}`;
-  const html = renderHtmlBody(subject, paragraphs, ctaLabel, href);
+  const html = renderHtmlBody(subject, paragraphs, ctaLabel, href, unsubUrl);
   return { subject, text, html, listUnsubscribe: unsubUrl };
 }
 
@@ -311,7 +317,8 @@ function buildPlaceholderEmail(template: TemplateKey, unsubUrl: string, metrics?
           "Over the next few weeks I'll show you the parts that save the most time — scanning a curriculum's contents page, tracking attendance, and the reports that come out at the end of it all.",
           "No rush. The app doesn't mind if you fall behind.",
         ],
-        "Add your first student"
+        "Add your first student",
+        unsubUrl
       );
     case "feature_curriculum":
       return buildEmail(
@@ -322,7 +329,8 @@ function buildPlaceholderEmail(template: TemplateKey, unsubUrl: string, metrics?
           "Open any curriculum you're using. Photograph the table of contents. The app reads it and turns every chapter into a lesson you can schedule — the whole term in one go, instead of typing lessons one evening at a time.",
           "It works with anything: Saxon, Apologia, Story of the World, the workbook you found at a used-book sale.",
         ],
-        "Scan a curriculum"
+        "Scan a curriculum",
+        unsubUrl
       );
     case "feature_attendance":
       return buildEmail(
@@ -333,7 +341,8 @@ function buildPlaceholderEmail(template: TemplateKey, unsubUrl: string, metrics?
           "In the app it's one tap from the home screen. Present or absent, per child, done. Forgot yesterday? You can go back and fix it.",
           "Most states require a minimum number of instructional days. Reconstructing them in June from memory is miserable. Five seconds a day means you never have to.",
         ],
-        "Mark today's attendance"
+        "Mark today's attendance",
+        unsubUrl
       );
     case "feature_reports":
       return buildEmail(
@@ -345,7 +354,8 @@ function buildPlaceholderEmail(template: TemplateKey, unsubUrl: string, metrics?
           "**A year in review** — a warmer thing entirely. Lessons completed, books read, school days logged, photos from the year. Something worth printing.",
           "Both are one tap in Settings → Export Data. They pull from everything you've already logged, so there's nothing extra to fill in.",
         ],
-        "See your reports"
+        "See your reports",
+        unsubUrl
       );
     case "progress_recap":
       return buildEmail(
@@ -356,7 +366,8 @@ function buildPlaceholderEmail(template: TemplateKey, unsubUrl: string, metrics?
           ...recapLines,
           "That's three weeks of school, written down. If someone asked you today what you'd covered, you could show them.",
         ],
-        "Open your progress"
+        "Open your progress",
+        unsubUrl
       );
     case "reengage":
       return buildEmail(
@@ -368,7 +379,8 @@ function buildPlaceholderEmail(template: TemplateKey, unsubUrl: string, metrics?
           "And if it's not the right tool for your family, that's genuinely fine — you can ignore this and nothing will chase you.",
           "If something specific got in the way, hit reply and tell me. I read every one.",
         ],
-        "Log one lesson"
+        "Log one lesson",
+        unsubUrl
       );
     case "converting":
       return buildEmail(
@@ -380,7 +392,8 @@ function buildPlaceholderEmail(template: TemplateKey, unsubUrl: string, metrics?
           "Everything you've logged stays yours either way. Nothing gets deleted if you don't subscribe — it just goes read-only until you do.",
           "No countdown, no scarcity. If it's earning its place, keep it. If it isn't, you'll know.",
         ],
-        "See your options"
+        "See your options",
+        unsubUrl
       );
     case "winback":
       return buildEmail(
@@ -391,7 +404,8 @@ function buildPlaceholderEmail(template: TemplateKey, unsubUrl: string, metrics?
           "If you want it back, subscribing picks up exactly where you left off. And if the timing's wrong, it'll keep. Come back in September when the term starts and it'll be waiting.",
           "Either way — thank you for trying it. If there was a specific reason it didn't fit, I'd genuinely like to know. Just reply.",
         ],
-        "Pick up where you left off"
+        "Pick up where you left off",
+        unsubUrl
       );
   }
 }

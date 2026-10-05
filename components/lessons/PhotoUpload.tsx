@@ -1,4 +1,6 @@
+import SubscribeToEditNudge from '@/components/SubscribeToEditNudge';
 import Colors from '@/constants/Colors';
+import { useSubscriptionAccess } from '@/hooks/useSubscriptionAccess';
 import Typography from '@/constants/Typography';
 import { supabase } from '@/lib/supabase/client';
 import type { LessonPhoto } from '@/types';
@@ -33,6 +35,7 @@ interface OptimisticPhoto extends LessonPhoto {
 }
 
 export default function PhotoUpload({ lessonId, photos, onPhotosChange }: PhotoUploadProps) {
+  const { requireEdit, subscribeNudgeProps } = useSubscriptionAccess();
   const [uploading, setUploading] = useState(false);
   const [showGallery, setShowGallery] = useState(false);
   const [galleryStartIndex, setGalleryStartIndex] = useState(0);
@@ -87,6 +90,10 @@ export default function PhotoUpload({ lessonId, photos, onPhotosChange }: PhotoU
   };
 
   const uploadPhoto = async (uri: string) => {
+    if (!requireEdit('upload lesson photos')) {
+      return;
+    }
+
     const tempId = `temp-${Date.now()}`;
     
     try {
@@ -219,6 +226,10 @@ export default function PhotoUpload({ lessonId, photos, onPhotosChange }: PhotoU
   };
 
   const deletePhoto = async (photo: LessonPhoto) => {
+    if (!requireEdit('delete lesson photos')) {
+      return;
+    }
+
     Alert.alert(
       'Delete Photo',
       'Are you sure you want to delete this photo?',
@@ -419,6 +430,7 @@ export default function PhotoUpload({ lessonId, photos, onPhotosChange }: PhotoU
         photos={photos}
         initialIndex={galleryStartIndex}
       />
+      <SubscribeToEditNudge {...subscribeNudgeProps} />
     </View>
   );
 }

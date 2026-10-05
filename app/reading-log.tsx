@@ -2,7 +2,9 @@
  * Reading Log Screen — track books per student
  */
 
+import SubscribeToEditNudge from '@/components/SubscribeToEditNudge';
 import Button from '@/components/ui/Button';
+import { useSubscriptionAccess } from '@/hooks/useSubscriptionAccess';
 import BookPhotoUpload from '@/components/reading-log/BookPhotoUpload';
 import Colors from '@/constants/Colors';
 import Typography from '@/constants/Typography';
@@ -69,6 +71,7 @@ export default function ReadingLogScreen() {
   const { books, loading, fetchReadingLog, addBook, updateBook, deleteBook } =
     useReadingLogStore();
   const { showSnackbar } = useSnackbar();
+  const { canEdit, requireEdit, subscribeNudgeProps } = useSubscriptionAccess();
 
   const [sheetVisible, setSheetVisible] = useState(false);
   const [sheetMode, setSheetMode] = useState<SheetMode>('add');
@@ -141,6 +144,10 @@ export default function ReadingLogScreen() {
   };
 
   const openAddSheet = () => {
+    if (!requireEdit('update reading log')) {
+      return;
+    }
+
     resetSheet();
     setSheetMode('add');
     setCommittedPhotoPath(null);
@@ -148,6 +155,10 @@ export default function ReadingLogScreen() {
   };
 
   const openEditSheet = (book: ReadingLogEntry) => {
+    if (!requireEdit('update reading log')) {
+      return;
+    }
+
     setEditingBook(book);
     setSheetMode('edit');
     setTitle(book.title);
@@ -197,6 +208,10 @@ export default function ReadingLogScreen() {
 
   const handleSave = async () => {
     if (!canSave || !studentId) return;
+
+    if (!requireEdit('update reading log')) {
+      return;
+    }
 
     setSaving(true);
 
@@ -260,6 +275,10 @@ export default function ReadingLogScreen() {
   const handleMarkFinished = async () => {
     if (!editingBook || saving) return;
 
+    if (!requireEdit('update reading log')) {
+      return;
+    }
+
     setSaving(true);
 
     try {
@@ -285,6 +304,10 @@ export default function ReadingLogScreen() {
 
   const handleDelete = () => {
     if (!editingBook) return;
+
+    if (!requireEdit('delete reading log entries')) {
+      return;
+    }
 
     Alert.alert(
       'Delete book?',
@@ -437,7 +460,7 @@ export default function ReadingLogScreen() {
           </Text>
         </View>
         <TouchableOpacity
-          style={styles.addButton}
+          style={[styles.addButton, !canEdit && { opacity: 0.55 }]}
           onPress={openAddSheet}
           activeOpacity={0.7}
           accessibilityLabel="Add book"
@@ -694,6 +717,7 @@ export default function ReadingLogScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+      <SubscribeToEditNudge {...subscribeNudgeProps} />
     </SafeAreaView>
   );
 }

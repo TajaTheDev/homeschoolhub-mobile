@@ -1,4 +1,6 @@
+import SubscribeToEditNudge from '@/components/SubscribeToEditNudge';
 import Skeleton from '@/components/ui/Skeleton';
+import { useSubscriptionAccess } from '@/hooks/useSubscriptionAccess';
 import Colors from '@/constants/Colors';
 import Typography from '@/constants/Typography';
 import { useScheduleStore } from '@/store/scheduleStore';
@@ -114,6 +116,7 @@ const detectActivePreset = (schedule: SchoolSchedule | null): string | null => {
 
 export default function ScheduleSettingsScreen() {
   const router = useRouter();
+  const { requireEdit, subscribeNudgeProps } = useSubscriptionAccess();
   const scheduleStore = useScheduleStore();
   const { schedule, updateSchedule, fetchSchedule } = scheduleStore;
   const [localSchedule, setLocalSchedule] = useState(schedule);
@@ -147,6 +150,10 @@ export default function ScheduleSettingsScreen() {
   const toggleDay = async (day: string) => {
     if (!localSchedule) return;
 
+    if (!requireEdit('change your schedule')) {
+      return;
+    }
+
     const newSchedule = {
       ...localSchedule,
       [day]: !localSchedule[day as keyof typeof localSchedule],
@@ -165,6 +172,10 @@ export default function ScheduleSettingsScreen() {
 
   const applyPreset = async (preset: 'traditional' | 'yearRound' | 'fourDay') => {
     if (!localSchedule) return;
+
+    if (!requireEdit('change your schedule')) {
+      return;
+    }
     
     let newSchedule: Partial<SchoolSchedule>;
     
@@ -388,6 +399,7 @@ export default function ScheduleSettingsScreen() {
           </Text>
         </View>
       </ScrollView>
+      <SubscribeToEditNudge {...subscribeNudgeProps} />
     </SafeAreaView>
   );
 }

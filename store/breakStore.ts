@@ -1,3 +1,4 @@
+import { canMutateSubscriptionData, subscriptionEditBlockedResult } from '@/lib/subscriptionEditGuard';
 import { create } from 'zustand';
 import { supabase } from '@/lib/supabase/client';
 import { format } from 'date-fns';
@@ -67,6 +68,10 @@ export const useBreakStore = create<BreakStore>((set, get) => ({
   },
   
   addBreak: async (breakData) => {
+    if (!canMutateSubscriptionData()) {
+      return subscriptionEditBlockedResult();
+    }
+
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
@@ -107,6 +112,10 @@ export const useBreakStore = create<BreakStore>((set, get) => ({
   },
   
   deleteBreak: async (breakId) => {
+    if (!canMutateSubscriptionData()) {
+      return subscriptionEditBlockedResult();
+    }
+
     try {
       const { error } = await supabase
         .from('breaks')

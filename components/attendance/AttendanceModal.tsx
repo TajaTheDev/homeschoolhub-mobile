@@ -16,7 +16,9 @@ import {
 import { X, Check } from 'lucide-react-native';
 import { format } from 'date-fns';
 import Colors from '@/constants/Colors';
+import SubscribeToEditNudge from '@/components/SubscribeToEditNudge';
 import { useSnackbar } from '@/contexts/SnackbarContext';
+import { useSubscriptionAccess } from '@/hooks/useSubscriptionAccess';
 import { useStudentStore } from '@/store/studentStore';
 import { useAttendanceStore } from '@/store/attendanceStore';
 
@@ -36,6 +38,7 @@ export default function AttendanceModal({
   const { students } = useStudentStore();
   const { getAttendanceForDate, markAttendance } = useAttendanceStore();
   const { showSnackbar } = useSnackbar();
+  const { requireEdit, subscribeNudgeProps } = useSubscriptionAccess();
   
   const dateString = format(date, 'yyyy-MM-dd');
   
@@ -83,6 +86,10 @@ export default function AttendanceModal({
   
   // Save attendance
   const handleSave = async () => {
+    if (!requireEdit('record attendance')) {
+      return;
+    }
+
     try {
       setLoading(true);
 
@@ -258,6 +265,7 @@ export default function AttendanceModal({
           </View>
         </TouchableWithoutFeedback>
       </KeyboardAvoidingView>
+      <SubscribeToEditNudge {...subscribeNudgeProps} />
     </Modal>
   );
 }

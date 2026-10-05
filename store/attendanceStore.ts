@@ -1,3 +1,4 @@
+import { canMutateSubscriptionData, subscriptionEditBlockedResult } from '@/lib/subscriptionEditGuard';
 import { create } from 'zustand';
 import { supabase } from '@/lib/supabase/client';
 import type { AttendanceRecord, DailyAttendance, AttendanceStats } from '@/types';
@@ -104,6 +105,10 @@ export const useAttendanceStore = create<AttendanceStore>((set, get) => ({
   },
 
   markAttendance: async (date, presentStudentIds, notes, options) => {
+    if (!canMutateSubscriptionData()) {
+      return subscriptionEditBlockedResult();
+    }
+
     const previousAttendance = get().attendance;
 
     const persistToServer = async (
@@ -233,6 +238,10 @@ export const useAttendanceStore = create<AttendanceStore>((set, get) => ({
   },
 
   updateAttendance: async (studentId: string, date: string, present: boolean, notes?: string) => {
+    if (!canMutateSubscriptionData()) {
+      return subscriptionEditBlockedResult();
+    }
+
     const previousAttendance = get().attendance;
     
     try {
@@ -310,6 +319,10 @@ export const useAttendanceStore = create<AttendanceStore>((set, get) => ({
   },
 
   deleteAttendanceForDate: async (date: string) => {
+    if (!canMutateSubscriptionData()) {
+      return subscriptionEditBlockedResult();
+    }
+
     const previousAttendance = get().attendance;
     
     try {

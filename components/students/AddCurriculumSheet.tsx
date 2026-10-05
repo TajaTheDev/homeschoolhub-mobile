@@ -1,4 +1,6 @@
+import SubscribeToEditNudge from '@/components/SubscribeToEditNudge';
 import ManualItemList from '@/components/lesson-plan/ManualItemList';
+import { useSubscriptionAccess } from '@/hooks/useSubscriptionAccess';
 import Button from '@/components/ui/Button';
 import Colors from '@/constants/Colors';
 import Typography from '@/constants/Typography';
@@ -217,6 +219,52 @@ async function saveLessonPlanItems(lessonPlanId: string, titles: string[]): Prom
   }
 }
 
+function promptUpdateOwnLibrary(name: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    Alert.alert(
+      'Update your library entry?',
+      `"${name}" is already in the library as your contribution. Replace its lessons with this sequence?`,
+      [
+        { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+        { text: 'Update', onPress: () => resolve(true) },
+      ]
+    );
+  });
+}
+
+function promptNameAlreadyTaken(name: string): Promise<'use_existing' | 'copy' | 'cancel'> {
+  return new Promise((resolve) => {
+    Alert.alert(
+      'Name already in the library',
+      `"${name}" already exists. You can use that entry, save yours under a new name, or cancel sharing.`,
+      [
+        { text: 'Cancel', style: 'cancel', onPress: () => resolve('cancel') },
+        { text: 'Save as copy', onPress: () => resolve('copy') },
+        { text: 'Use existing', onPress: () => resolve('use_existing') },
+      ]
+    );
+  });
+}
+
+async function nextCopyName(baseName: string): Promise<string> {
+  for (let n = 2; n < 100; n += 1) {
+    const candidate = `${baseName} (${n})`;
+    const { data, error } = await supabase
+      .from('curriculum_library')
+      .select('id')
+      .eq('name', candidate)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(error.message);
+    }
+    if (!data) {
+      return candidate;
+    }
+  }
+  throw new Error('Could not find an unused copy name.');
+}
+
 async function replaceLibraryItems(
   curriculumId: string,
   titles: string[]
@@ -227,8 +275,7 @@ async function replaceLibraryItems(
     .eq('curriculum_id', curriculumId);
 
   if (deleteError) {
-    console.error('Failed to clear community library items:', deleteError);
-    return;
+    throw new Error(deleteError.message);
   }
 
   const { error: insertError } = await supabase.from('curriculum_library_items').insert(
@@ -240,7 +287,7 @@ async function replaceLibraryItems(
   );
 
   if (insertError) {
-    console.error('Failed to share lessons to community library:', insertError);
+    throw new Error(insertError.message);
   }
 }
 
@@ -270,54 +317,81 @@ async function searchLibraryByName(trimmedName: string): Promise<CurriculumWithI
   return (data ?? []).map((row) => mapLibraryRowToCurriculum(row));
 }
 
+async function insertLibraryCurriculum(
+  name: string,
+  subject: string,
+  userId: string,
+  titles: string[]
+): Promise<void> {
+  const category = getCurriculumCategoryForSubject(subject);
+
+  const { data: newEntry, error: createError } = await supabase
+    .from('curriculum_library')
+    .insert({
+      name,
+      category,
+      publisher: null,
+      edition: null,
+      level: null,
+      verified: true,
+      created_by: userId,
+    })
+    .select('id')
+    .single();
+
+  if (createError || !newEntry) {
+    throw new Error(createError?.message ?? 'Could not create library entry.');
+  }
+
+  await replaceLibraryItems(newEntry.id, titles);
+}
+
 async function shareToCommunityLibrary(
   curriculumName: string,
   subject: string,
   titles: string[]
 ): Promise<void> {
-  try {
-    const trimmedName = curriculumName.trim();
+  const trimmedName = curriculumName.trim();
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
 
-    const { data: libraryEntry, error: libraryError } = await supabase
-      .from('curriculum_library')
-      .select('id')
-      .eq('name', trimmedName)
-      .maybeSingle();
-
-    if (libraryError) {
-      console.error('Failed to look up community library entry:', libraryError);
-      return;
-    }
-
-    if (libraryEntry) {
-      await replaceLibraryItems(libraryEntry.id, titles);
-      return;
-    }
-
-    const category = getCurriculumCategoryForSubject(subject);
-
-    const { data: newEntry, error: createError } = await supabase
-      .from('curriculum_library')
-      .insert({
-        name: trimmedName,
-        category,
-        publisher: null,
-        edition: null,
-        level: null,
-        verified: true,
-      })
-      .select('id')
-      .single();
-
-    if (createError || !newEntry) {
-      console.error('Failed to create community library entry:', createError);
-      return;
-    }
-
-    await replaceLibraryItems(newEntry.id, titles);
-  } catch (error) {
-    console.error('Community library share failed:', error);
+  if (userError || !user) {
+    throw new Error('Not authenticated');
   }
+
+  const { data: libraryEntry, error: libraryError } = await supabase
+    .from('curriculum_library')
+    .select('id, created_by')
+    .eq('name', trimmedName)
+    .maybeSingle();
+
+  if (libraryError) {
+    throw new Error(libraryError.message);
+  }
+
+  if (!libraryEntry) {
+    await insertLibraryCurriculum(trimmedName, subject, user.id, titles);
+    return;
+  }
+
+  if (libraryEntry.created_by === user.id) {
+    const shouldUpdate = await promptUpdateOwnLibrary(trimmedName);
+    if (!shouldUpdate) {
+      return;
+    }
+    await replaceLibraryItems(libraryEntry.id, titles);
+    return;
+  }
+
+  const conflictChoice = await promptNameAlreadyTaken(trimmedName);
+  if (conflictChoice === 'cancel' || conflictChoice === 'use_existing') {
+    return;
+  }
+
+  const copyName = await nextCopyName(trimmedName);
+  await insertLibraryCurriculum(copyName, subject, user.id, titles);
 }
 
 export default function AddCurriculumSheet({
@@ -344,6 +418,7 @@ export default function AddCurriculumSheet({
   const [partialMatches, setPartialMatches] = useState<CurriculumWithItems[]>([]);
   const [checkingDuplicate, setCheckingDuplicate] = useState(false);
   const [personalPlanOnly, setPersonalPlanOnly] = useState(false);
+  const { requireEdit, subscribeNudgeProps } = useSubscriptionAccess();
 
   const isBusy = saving || uploadingPage || step === 'extracting';
 
@@ -419,6 +494,10 @@ export default function AddCurriculumSheet({
   };
 
   const handleSaveLessons = async () => {
+    if (!requireEdit('save curriculum')) {
+      return;
+    }
+
     const titles = getActiveTitles();
     if (titles.length === 0) {
       Alert.alert('No lessons', 'Add at least one lesson before saving.');
@@ -438,7 +517,17 @@ export default function AddCurriculumSheet({
       if (!personalPlanOnly) {
         const shouldShare = await promptCommunityShare(titles);
         if (shouldShare) {
-          await shareToCommunityLibrary(curriculumName.trim(), subject, titles);
+          try {
+            await shareToCommunityLibrary(curriculumName.trim(), subject, titles);
+          } catch (shareError) {
+            console.error('Community library share failed:', shareError);
+            Alert.alert(
+              'Could not share to library',
+              shareError instanceof Error
+                ? shareError.message
+                : 'Your sequence was saved. Sharing to the community library failed.'
+            );
+          }
         }
       }
 
@@ -546,6 +635,10 @@ export default function AddCurriculumSheet({
   };
 
   const handleExtractPages = async () => {
+    if (!requireEdit('scan curriculum')) {
+      return;
+    }
+
     if (tocPages.length === 0) return;
 
     const trimmedName = curriculumName.trim();
@@ -567,6 +660,10 @@ export default function AddCurriculumSheet({
   };
 
   const handleScanPage = async (type: 'camera' | 'library') => {
+    if (!requireEdit('scan curriculum')) {
+      return;
+    }
+
     const trimmedName = curriculumName.trim();
     if (!trimmedName) {
       Alert.alert('Curriculum name required', 'Enter a curriculum name before taking a photo.');
@@ -622,6 +719,10 @@ export default function AddCurriculumSheet({
   };
 
   const handleRemovePage = async (index: number) => {
+    if (!requireEdit('edit curriculum')) {
+      return;
+    }
+
     if (uploadingPage || saving) return;
 
     const nextPages = tocPages.filter((_, i) => i !== index);
@@ -1058,6 +1159,7 @@ export default function AddCurriculumSheet({
           </ScrollView>
         </View>
       </KeyboardAvoidingView>
+      <SubscribeToEditNudge {...subscribeNudgeProps} />
     </Modal>
   );
 }

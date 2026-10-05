@@ -102,11 +102,7 @@ export default function RootLayout() {
 
     try {
       const subscriptionInfo = await useSubscriptionStore.getState().checkSubscription();
-      const redirectToSubscribe =
-        !subscriptionInfo.hasAccess ||
-        subscriptionInfo.subscriptionStatus === 'expired';
-
-      if (redirectToSubscribe) {
+      if (!subscriptionInfo.canEnterApp) {
         if (currentSegment !== 'subscribe') {
           router.replace('/subscribe');
         }

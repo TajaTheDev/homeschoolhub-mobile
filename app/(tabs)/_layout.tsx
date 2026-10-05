@@ -1,7 +1,8 @@
+import ReadonlyModeBanner from '@/components/ReadonlyModeBanner';
 import { Tabs } from 'expo-router';
 import { BarChart3, BookOpen, Calendar, Home } from 'lucide-react-native';
 import React from 'react';
-import { Platform } from 'react-native';
+import { Platform, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import Colors from '@/constants/Colors';
@@ -16,7 +17,9 @@ export default function TabLayout() {
   const tabBarHeight = baseHeight + (Platform.OS === 'android' ? insets.bottom : 0);
   
   return (
-    <Tabs
+    <View style={{ flex: 1, backgroundColor: Colors.ui.background }}>
+      <ReadonlyModeBanner />
+      <Tabs
       screenOptions={{
         tabBarActiveTintColor: Colors.brand[400],
         tabBarInactiveTintColor: Colors.ui.textLight,
@@ -70,5 +73,6 @@ export default function TabLayout() {
         }}
       />
     </Tabs>
+    </View>
   );
 }

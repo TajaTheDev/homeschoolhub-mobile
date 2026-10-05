@@ -24,6 +24,8 @@ interface AvatarPickerProps {
   currentType: 'initial' | 'photo' | 'illustration';
   currentValue?: string | null;
   studentName: string;
+  /** When set, photo pick/upload runs only if this returns true (e.g. subscription gate). */
+  beforePhotoUpload?: () => boolean;
 }
 
 export default function AvatarPicker({
@@ -33,6 +35,7 @@ export default function AvatarPicker({
   currentType,
   currentValue,
   studentName,
+  beforePhotoUpload,
 }: AvatarPickerProps) {
   const [uploading, setUploading] = useState(false);
   const slideAnim = useRef(new Animated.Value(300)).current;
@@ -90,6 +93,10 @@ export default function AvatarPicker({
   };
 
   const uploadPhoto = async (uri: string) => {
+    if (beforePhotoUpload && !beforePhotoUpload()) {
+      return;
+    }
+
     try {
       setUploading(true);
 

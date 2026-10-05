@@ -33,3 +33,44 @@ export function getSubjectColor(subjectName: string): string {
 export function isPresetSubject(subjectName: string): boolean {
   return PRESET_SUBJECTS.some(s => s.name === subjectName);
 }
+
+const SUBJECT_ALIASES: Record<string, string> = {
+  sciences: 'Science',
+};
+
+/**
+ * Title-cases a custom subject so latin / LATIN / Latin share one library bucket.
+ */
+export function toTitleCaseSubject(value: string): string {
+  return value
+    .trim()
+    .replace(/\s+/g, ' ')
+    .split(' ')
+    .map((word) =>
+      word
+        .split('/')
+        .map((part) =>
+          part ? part.charAt(0).toUpperCase() + part.slice(1).toLowerCase() : part
+        )
+        .join('/')
+    )
+    .join(' ');
+}
+
+/**
+ * Canonical library category for a subject. Presets keep their exact names;
+ * custom names are title-cased. Use on both write and read before `.eq()`.
+ */
+export function canonicalizeLibrarySubject(raw: string): string {
+  const trimmed = raw.trim().replace(/\s+/g, ' ');
+  if (!trimmed) return trimmed;
+
+  const lower = trimmed.toLowerCase();
+  const preset = PRESET_SUBJECTS.find((subject) => subject.name.toLowerCase() === lower);
+  if (preset) return preset.name;
+
+  const alias = SUBJECT_ALIASES[lower];
+  if (alias) return alias;
+
+  return toTitleCaseSubject(trimmed);
+}

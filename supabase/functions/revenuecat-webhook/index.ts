@@ -234,10 +234,12 @@ async function handleBillingIssue(event: WebhookEvent): Promise<Response> {
   const existing = await loadEventRow(eventId);
 
   if (existing?.status === "sent") {
+    console.log(JSON.stringify({ event: "skipped", reason: "already_sent", event_id: eventId }));
     return jsonResponse({ ok: true, skipped: "already_sent" }, 200);
   }
 
   if (existing?.status === "pending" && !isPendingStale(existing.created_at)) {
+    console.log(JSON.stringify({ event: "skipped", reason: "in_flight", event_id: eventId }));
     return jsonResponse({ ok: true, skipped: "in_flight" }, 200);
   }
 
@@ -246,9 +248,11 @@ async function handleBillingIssue(event: WebhookEvent): Promise<Response> {
     if (insertError) {
       const raced = await loadEventRow(eventId);
       if (raced?.status === "sent") {
+        console.log(JSON.stringify({ event: "skipped", reason: "already_sent", event_id: eventId }));
         return jsonResponse({ ok: true, skipped: "already_sent" }, 200);
       }
       if (raced?.status === "pending" && !isPendingStale(raced.created_at)) {
+        console.log(JSON.stringify({ event: "skipped", reason: "in_flight", event_id: eventId }));
         return jsonResponse({ ok: true, skipped: "in_flight" }, 200);
       }
       if (!raced) {
@@ -259,11 +263,7 @@ async function handleBillingIssue(event: WebhookEvent): Promise<Response> {
 
   const userId = resolveUserId(event);
   if (!userId) {
-    console.warn("revenuecat-webhook: no UUID in app_user_id or aliases", {
-      eventId,
-      app_user_id: event.app_user_id,
-      aliases: event.aliases,
-    });
+    console.log(JSON.stringify({ event: "skipped", reason: "no_user", event_id: eventId }));
     await markSent(eventId, null);
     return jsonResponse({ ok: true, skipped: "no_user" }, 200);
   }
@@ -271,23 +271,22 @@ async function handleBillingIssue(event: WebhookEvent): Promise<Response> {
   const email = await lookupEmail(userId);
 
   if (!email) {
+    console.log(JSON.stringify({ event: "skipped", reason: "no_email", user_id: userId, event_id: eventId }));
     await markSent(eventId, userId);
     return jsonResponse({ ok: true, skipped: "no_email" }, 200);
   }
 
   await sendResendEmail(email, event.store);
   await markSent(eventId, userId);
+  console.log(JSON.stringify({ event: "emailed", user_id: userId, event_id: eventId, template: "billing_issue" }));
   return jsonResponse({ ok: true, emailed: true }, 200);
 }
 
 async function handleSubscriptionConversion(event: WebhookEvent): Promise<Response> {
+  const eventId = event.id?.trim() ?? null;
   const userId = resolveUserId(event);
   if (!userId) {
-    console.warn("revenuecat-webhook: subscription event with no UUID", {
-      type: event.type,
-      app_user_id: event.app_user_id,
-      aliases: event.aliases,
-    });
+    console.log(JSON.stringify({ event: "skipped", reason: "no_user", event_id: eventId }));
     return jsonResponse({ ok: true, skipped: "no_user" }, 200);
   }
 
@@ -299,12 +298,13 @@ async function handleSubscriptionConversion(event: WebhookEvent): Promise<Respon
 
   if (error) {
     if (error.message.includes("No trial record found")) {
-      console.warn("revenuecat-webhook: no trial row to convert", { userId, type: event.type });
+      console.log(JSON.stringify({ event: "skipped", reason: "no_trial", user_id: userId, event_id: eventId }));
       return jsonResponse({ ok: true, skipped: "no_trial" }, 200);
     }
     throw new Error(error.message);
   }
 
+  console.log(JSON.stringify({ event: "converted", user_id: userId, event_id: eventId }));
   return jsonResponse({ ok: true, converted: true }, 200);
 }
 
@@ -343,8 +343,10 @@ Deno.serve(async (req) => {
         return await handleSubscriptionConversion(event);
       case "EXPIRATION":
       case "CANCELLATION":
+        console.log(JSON.stringify({ event: "skipped", reason: event.type, event_id: event.id?.trim() ?? null }));
         return jsonResponse({ ok: true, skipped: event.type }, 200);
       default:
+        console.log(JSON.stringify({ event: "skipped", reason: "ignored", event_id: event.id?.trim() ?? null }));
         return jsonResponse({ ok: true, ignored: event.type }, 200);
     }
   } catch (error) {

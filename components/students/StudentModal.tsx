@@ -1,4 +1,6 @@
+import SubscribeToEditNudge from '@/components/SubscribeToEditNudge';
 import AvatarPicker from '@/components/students/AvatarPicker';
+import { useSubscriptionAccess } from '@/hooks/useSubscriptionAccess';
 import Avatar from '@/components/ui/Avatar';
 import Colors from '@/constants/Colors';
 import { useStudentStore } from '@/store/studentStore';
@@ -46,6 +48,7 @@ export default function StudentModal({ visible, student, onClose, onSave }: Stud
   const [loading, setLoading] = useState(false);
   
   const studentStore = useStudentStore();
+  const { requireEdit, subscribeNudgeProps } = useSubscriptionAccess();
   const slideAnim = useRef(new Animated.Value(300)).current;
 
   useEffect(() => {
@@ -87,6 +90,12 @@ export default function StudentModal({ visible, student, onClose, onSave }: Stud
   }
 
   const handleAvatarSelect = async (type: 'initial' | 'photo' | 'illustration', value?: string) => {
+    if (student && type === 'photo' && value) {
+      if (!requireEdit('edit students')) {
+        return;
+      }
+    }
+
     setAvatarType(type);
     setAvatarValue(value || null);
     
@@ -112,6 +121,10 @@ export default function StudentModal({ visible, student, onClose, onSave }: Stud
   };
 
   const handleSave = async () => {
+    if (!requireEdit(student ? 'edit students' : 'add students')) {
+      return;
+    }
+
     if (!name.trim()) {
       Alert.alert('Error', 'Please enter a name');
       return;
@@ -151,6 +164,10 @@ export default function StudentModal({ visible, student, onClose, onSave }: Stud
   };
 
   const handleDelete = () => {
+    if (!requireEdit('delete students')) {
+      return;
+    }
+
     Alert.alert(
       'Delete Student?',
       `Are you sure you want to delete ${student.name}? This will delete all their lessons.`,
@@ -306,10 +323,12 @@ export default function StudentModal({ visible, student, onClose, onSave }: Stud
       </KeyboardAvoidingView>
 
       {/* Avatar Picker Modal */}
+      <SubscribeToEditNudge {...subscribeNudgeProps} />
       <AvatarPicker
         visible={showAvatarPicker}
         onClose={() => setShowAvatarPicker(false)}
         onSelect={handleAvatarSelect}
+        beforePhotoUpload={() => requireEdit('edit students')}
         currentType={avatarType}
         currentValue={avatarValue}
         studentName={name || 'Student'}

@@ -3,8 +3,10 @@
  */
 
 import PhotoUpload from '@/components/lessons/PhotoUpload';
+import SubscribeToEditNudge from '@/components/SubscribeToEditNudge';
 import Avatar from '@/components/ui/Avatar';
 import Skeleton from '@/components/ui/Skeleton';
+import { useSubscriptionAccess } from '@/hooks/useSubscriptionAccess';
 import Colors from '@/constants/Colors';
 import Typography from '@/constants/Typography';
 import { supabase } from '@/lib/supabase/client';
@@ -92,6 +94,7 @@ function hasUsableCurriculumPlan(
 
 export default function AddLessonScreen() {
   const router = useRouter();
+  const { requireEdit, subscribeNudgeProps } = useSubscriptionAccess();
   const params = useLocalSearchParams();
   const studentId = params.id as string | undefined;
   const { students, fetchStudents, subjects, fetchSubjects } = useStudentStore();
@@ -324,6 +327,10 @@ export default function AddLessonScreen() {
     // Prevent double-tap
     if (loading) {
             return;
+    }
+
+    if (!requireEdit('add lessons')) {
+      return;
     }
 
     // Validate required fields
@@ -1230,6 +1237,8 @@ export default function AddLessonScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      <SubscribeToEditNudge {...subscribeNudgeProps} />
     </KeyboardAvoidingView>
   );
 }

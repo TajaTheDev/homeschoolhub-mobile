@@ -12,6 +12,7 @@ import type { AvatarType } from '@/types';
 import { cancelAttendanceReminder, requestNotificationPermissions, scheduleAttendanceReminder } from '@/utils/notificationManager';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { format } from 'date-fns';
+import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
 import {
   Bell,
@@ -34,6 +35,7 @@ import {
 import React, { useEffect, useState } from 'react';
 import {
   Alert,
+  Linking,
   ScrollView,
   StyleSheet,
   Switch,
@@ -42,6 +44,11 @@ import {
   View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+const PRIVACY_POLICY_URL =
+  'https://tajathedev.github.io/homeschoolhub-support/privacy.html';
+const TERMS_OF_SERVICE_URL =
+  'https://tajathedev.github.io/homeschoolhub-support/terms.html';
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -249,8 +256,8 @@ export default function SettingsScreen() {
       Alert.alert(
         'Deletion Failed',
         error?.message?.includes('permission') || error?.message?.includes('policy')
-          ? 'Unable to delete account. Please contact support at support@thehomeschoolhub.com for assistance.'
-          : 'We couldn\'t delete your account. Please try again or contact support at support@thehomeschoolhub.com',
+          ? 'Unable to delete account. Please contact support at support@thehomeschoolhub.app for assistance.'
+          : 'We couldn\'t delete your account. Please try again or contact support at support@thehomeschoolhub.app',
         [{ text: 'OK' }]
       );
     } finally {
@@ -443,7 +450,7 @@ export default function SettingsScreen() {
                 <Text style={styles.settingsOptionDescription}>
                   {hasSubscription 
                     ? 'View plans and manage billing' 
-                    : 'Start your 14-day free trial'}
+                    : 'Start your 7-day free trial'}
                 </Text>
               </View>
               <ChevronRight size={20} color={Colors.ui.textLight} />
@@ -508,7 +515,7 @@ export default function SettingsScreen() {
             <SettingsItem
               icon={Shield}
               title="Privacy Policy"
-              onPress={() => router.push('/settings/privacy' as any)}
+              onPress={() => void Linking.openURL(PRIVACY_POLICY_URL)}
             />
           </View>
         </View>
@@ -520,13 +527,13 @@ export default function SettingsScreen() {
             <SettingsItem
               icon={Info}
               title="App Version"
-              subtitle="1.0.0"
+              subtitle={Constants.expoConfig?.version || '1.0.0'}
               onPress={() => router.push('/settings/about' as any)}
             />
             <SettingsItem
               icon={Info}
               title="Terms of Service"
-              onPress={() => router.push('/settings/terms' as any)}
+              onPress={() => void Linking.openURL(TERMS_OF_SERVICE_URL)}
             />
           </View>
         </View>
@@ -564,7 +571,9 @@ export default function SettingsScreen() {
 
         {/* Version Section */}
         <View style={styles.versionSection}>
-          <Text style={styles.versionText}>Version 1.0.0</Text>
+          <Text style={styles.versionText}>
+            Version {Constants.expoConfig?.version || '1.0.0'}
+          </Text>
           <Text style={styles.versionSubtext}>Made with ❤️ for homeschool families</Text>
         </View>
 

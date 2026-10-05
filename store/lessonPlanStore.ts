@@ -2,9 +2,9 @@
  * Lesson plan and curriculum library store.
  */
 
-import type { StagedCurriculumSelection } from '@/lib/lessonPlanUtils';
+import { libraryCategoryKeysForSubject, type StagedCurriculumSelection } from '@/lib/lessonPlanUtils';
+import { canMutateSubscriptionData, subscriptionEditBlockedResult } from '@/lib/subscriptionEditGuard';
 import { supabase } from '@/lib/supabase/client';
-import { type LibraryCategoryKey } from '@/lib/lessonPlanUtils';
 import type { Tables } from '@/types/database.generated';
 import { create } from 'zustand';
 
@@ -54,7 +54,7 @@ type LessonPlanStore = {
     subject: string
   ) => Promise<{ plan: LessonPlan | null; items: LessonPlanItem[] }>;
   fetchLibrary: () => Promise<CurriculumWithItems[]>;
-  fetchVerifiedLibrary: (category: LibraryCategoryKey) => Promise<CurriculumWithItems[]>;
+  fetchVerifiedLibrary: (subject: string) => Promise<CurriculumWithItems[]>;
   fetchLibraryItems: (curriculumId: string) => Promise<CurriculumLibraryItem[]>;
   savePlan: (params: SavePlanParams) => Promise<{ success: boolean; error?: string }>;
   persistStagedCurriculum: (
@@ -77,6 +77,10 @@ async function persistLessonPlan({
   tocImagePath,
   items,
 }: PersistLessonPlanParams): Promise<{ success: boolean; error?: string }> {
+  if (!canMutateSubscriptionData()) {
+    return subscriptionEditBlockedResult();
+  }
+
   const normalizedSubject = subject.trim();
 
   const { data: existingPlan, error: existingPlanError } = await supabase
@@ -308,13 +312,20 @@ export const useLessonPlanStore = create<LessonPlanStore>(() => ({
     return attachLibraryItemCounts(curricula as CurriculumLibrary[]);
   },
 
-  fetchVerifiedLibrary: async (category) => {
-    const { data: curricula, error: curriculaError } = await supabase
+  fetchVerifiedLibrary: async (subject) => {
+    const categoryKeys = libraryCategoryKeysForSubject(subject);
+    let query = supabase
       .from('curriculum_library')
       .select(LIBRARY_LIST_SELECT)
-      .eq('category', category)
       .eq('verified', true)
       .order('name', { ascending: true });
+
+    query =
+      categoryKeys.length === 1
+        ? query.eq('category', categoryKeys[0])
+        : query.in('category', categoryKeys);
+
+    const { data: curricula, error: curriculaError } = await query;
 
     if (curriculaError) {
       throw new Error(curriculaError.message);
@@ -330,6 +341,10 @@ export const useLessonPlanStore = create<LessonPlanStore>(() => ({
   fetchLibraryItems: async (curriculumId) => fetchLibraryItemsForCurriculum(curriculumId),
 
   savePlan: async ({ studentId, subject, items, source, edition, name }) => {
+    if (!canMutateSubscriptionData()) {
+      return subscriptionEditBlockedResult();
+    }
+
     if (items.length === 0) {
       return { success: false, error: 'Add at least one lesson to save.' };
     }
@@ -351,6 +366,10 @@ export const useLessonPlanStore = create<LessonPlanStore>(() => ({
   },
 
   persistStagedCurriculum: async (studentId, subject, staged) => {
+    if (!canMutateSubscriptionData()) {
+      return subscriptionEditBlockedResult();
+    }
+
     if (staged.kind === 'library') {
       return persistLessonPlan({
         studentId,

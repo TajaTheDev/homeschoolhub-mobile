@@ -1,6 +1,8 @@
 /**
  * Subscription store using Zustand
  * Manages trial and paid subscription status via Supabase and RevenueCat
+ *
+ * Access model: see docs/subscription-access.md
  */
 
 import { create } from 'zustand';
@@ -17,13 +19,19 @@ const PRO_ENTITLEMENT_ID = 'pro';
 
 export type SubscriptionStatus = 'trial' | 'active' | 'expired' | 'cancelled';
 
+export type AccessLevel = 'full' | 'readonly' | 'locked';
+
 export type SubscriptionInfo = {
   userId: string;
   trialStartDate: string | null;
   trialEndDate: string | null;
   subscriptionStatus: SubscriptionStatus;
   daysRemaining: number;
-  hasAccess: boolean;
+  accessLevel: AccessLevel;
+  /** May open main app (tabs), including read-only expired trial */
+  canEnterApp: boolean;
+  /** May create or mutate homeschool data */
+  canEdit: boolean;
 };
 
 type SubscriptionStore = {
@@ -33,6 +41,17 @@ type SubscriptionStore = {
   startTrial: () => Promise<void>;
   updateSubscriptionStatus: () => Promise<void>;
 };
+
+function accessFromLevel(level: AccessLevel): Pick<SubscriptionInfo, 'accessLevel' | 'canEnterApp' | 'canEdit'> {
+  switch (level) {
+    case 'full':
+      return { accessLevel: 'full', canEnterApp: true, canEdit: true };
+    case 'readonly':
+      return { accessLevel: 'readonly', canEnterApp: true, canEdit: false };
+    case 'locked':
+      return { accessLevel: 'locked', canEnterApp: false, canEdit: false };
+  }
+}
 
 /**
  * Returns true when running in Expo Go (RevenueCat unavailable).
@@ -69,7 +88,9 @@ function setSubscriptionInfo(
     if (
       current?.subscriptionStatus === info.subscriptionStatus &&
       current?.daysRemaining === info.daysRemaining &&
-      current?.hasAccess === info.hasAccess &&
+      current?.accessLevel === info.accessLevel &&
+      current?.canEnterApp === info.canEnterApp &&
+      current?.canEdit === info.canEdit &&
       current?.trialEndDate === info.trialEndDate
     ) {
       return { loading: false };
@@ -80,16 +101,16 @@ function setSubscriptionInfo(
 }
 
 /**
- * Returns expired subscription info when trial status cannot be resolved.
+ * Trial could not be resolved or user is not authenticated — no app entry.
  */
-function buildExpiredSubscriptionInfo(userId: string): SubscriptionInfo {
+function buildLockedSubscriptionInfo(userId: string): SubscriptionInfo {
   return {
     userId,
     trialStartDate: null,
     trialEndDate: null,
     subscriptionStatus: 'expired',
     daysRemaining: 0,
-    hasAccess: false,
+    ...accessFromLevel('locked'),
   };
 }
 
@@ -113,7 +134,7 @@ function buildActiveSubscriptionInfo(userId: string): SubscriptionInfo {
     trialEndDate: null,
     subscriptionStatus: 'active',
     daysRemaining: 999,
-    hasAccess: true,
+    ...accessFromLevel('full'),
   };
 }
 
@@ -137,7 +158,7 @@ function buildTrialSubscriptionInfo(
     subscriptionStatus = 'active';
   }
 
-  const hasAccess = !isExpired && (daysRemaining > 0 || isConverted);
+  const accessLevel: AccessLevel = isConverted ? 'full' : isExpired ? 'readonly' : 'full';
 
   return {
     userId,
@@ -145,7 +166,7 @@ function buildTrialSubscriptionInfo(
     trialEndDate: expiresAt,
     subscriptionStatus,
     daysRemaining: Math.max(0, daysRemaining),
-    hasAccess,
+    ...accessFromLevel(accessLevel),
   };
 }
 
@@ -166,7 +187,7 @@ export const useSubscriptionStore = create<SubscriptionStore>((set, get) => ({
       } = await supabase.auth.getUser();
 
       if (!user) {
-        const info = buildExpiredSubscriptionInfo('');
+        const info = buildLockedSubscriptionInfo('');
         set({ loading: false });
         return info;
       }
@@ -195,8 +216,8 @@ export const useSubscriptionStore = create<SubscriptionStore>((set, get) => ({
       const trialInfo = await ensureUserTrial();
 
       if (!trialInfo) {
-        console.warn('⚠️ Trial status unavailable — denying access');
-        const info = buildExpiredSubscriptionInfo(user.id);
+        console.warn('⚠️ Trial status unavailable — denying app entry');
+        const info = buildLockedSubscriptionInfo(user.id);
         setSubscriptionInfo(set, info);
         return info;
       }

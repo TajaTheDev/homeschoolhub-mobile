@@ -1,4 +1,6 @@
+import SubscribeToEditNudge from '@/components/SubscribeToEditNudge';
 import CurriculumPickerStep from '@/components/students/CurriculumPickerStep';
+import { useSubscriptionAccess } from '@/hooks/useSubscriptionAccess';
 import Colors from '@/constants/Colors';
 import { PRESET_SUBJECTS } from '@/constants/Subjects';
 import type { StagedCurriculumSelection } from '@/lib/lessonPlanUtils';
@@ -48,6 +50,7 @@ export default function EditSubjectsModal({
   const studentStore = useStudentStore();
   const { persistStagedCurriculum } = useLessonPlanStore();
   const { showSnackbar } = useSnackbar();
+  const { requireEdit, subscribeNudgeProps } = useSubscriptionAccess();
 
   useEffect(() => {
     if (visible && student) {
@@ -164,6 +167,10 @@ export default function EditSubjectsModal({
   const handleStageCurriculum = async (selection: StagedCurriculumSelection) => {
     if (!curriculumStepSubject || !student) return;
 
+    if (!requireEdit('edit subjects')) {
+      return;
+    }
+
     const subjectKey = curriculumStepSubject;
 
     setStagedCurricula((prev) => ({
@@ -211,6 +218,10 @@ export default function EditSubjectsModal({
 
   const handleSave = async () => {
     if (!student) return;
+
+    if (!requireEdit('edit subjects')) {
+      return;
+    }
 
     if (selectedSubjects.length === 0) {
       Alert.alert('No Subjects', 'Please select at least one subject');
@@ -507,6 +518,7 @@ export default function EditSubjectsModal({
           )}
         </View>
       </KeyboardAvoidingView>
+      <SubscribeToEditNudge {...subscribeNudgeProps} />
     </Modal>
   );
 }

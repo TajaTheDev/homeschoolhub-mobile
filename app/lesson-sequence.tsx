@@ -1,4 +1,6 @@
+import SubscribeToEditNudge from '@/components/SubscribeToEditNudge';
 import Button from '@/components/ui/Button';
+import { useSubscriptionAccess } from '@/hooks/useSubscriptionAccess';
 import CurriculumLibraryPicker from '@/components/lesson-plan/CurriculumLibraryPicker';
 import ManualItemList from '@/components/lesson-plan/ManualItemList';
 import Skeleton from '@/components/ui/Skeleton';
@@ -42,6 +44,7 @@ export default function LessonSequenceScreen() {
 
   const { students } = useStudentStore();
   const { fetchPlan, fetchLibrary, fetchLibraryItems, savePlan, saving } = useLessonPlanStore();
+  const { requireEdit, subscribeNudgeProps } = useSubscriptionAccess();
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -180,6 +183,10 @@ export default function LessonSequenceScreen() {
   };
 
   const handleSave = async () => {
+    if (!requireEdit('save lesson plans')) {
+      return;
+    }
+
     if (workingItems.length === 0) {
       Alert.alert('Add lessons', 'Add at least one lesson before saving.');
       return;
@@ -329,6 +336,7 @@ export default function LessonSequenceScreen() {
               <CurriculumLibraryPicker
                 curricula={curricula}
                 loading={libraryLoading}
+                subject={subject}
                 onSelect={handleLibrarySelect}
               />
             </View>
@@ -354,6 +362,7 @@ export default function LessonSequenceScreen() {
           </ScrollView>
         </KeyboardAvoidingView>
       )}
+      <SubscribeToEditNudge {...subscribeNudgeProps} />
     </SafeAreaView>
   );
 }

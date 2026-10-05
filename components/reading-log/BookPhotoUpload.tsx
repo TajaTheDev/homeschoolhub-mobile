@@ -1,4 +1,6 @@
+import SubscribeToEditNudge from '@/components/SubscribeToEditNudge';
 import Colors from '@/constants/Colors';
+import { useSubscriptionAccess } from '@/hooks/useSubscriptionAccess';
 import Typography from '@/constants/Typography';
 import {
   LESSON_PHOTOS_BUCKET,
@@ -43,6 +45,7 @@ export default function BookPhotoUpload({
   onPhotoPathChange,
   disabled = false,
 }: BookPhotoUploadProps) {
+  const { requireEdit, subscribeNudgeProps } = useSubscriptionAccess();
   const [uploading, setUploading] = useState(false);
   const [localPreviewUri, setLocalPreviewUri] = useState<string | null>(null);
 
@@ -51,6 +54,10 @@ export default function BookPhotoUpload({
     (photoPath ? getStoragePublicUrl(LESSON_PHOTOS_BUCKET, photoPath) : '');
 
   const uploadPhoto = async (uri: string) => {
+    if (!requireEdit('upload book photos')) {
+      return;
+    }
+
     try {
       setLocalPreviewUri(uri);
       setUploading(true);
@@ -113,6 +120,10 @@ export default function BookPhotoUpload({
   };
 
   const handleRemove = () => {
+    if (!requireEdit('delete book photos')) {
+      return;
+    }
+
     Alert.alert('Remove photo', 'Remove the book photo from this entry?', [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -188,6 +199,7 @@ export default function BookPhotoUpload({
           )}
         </TouchableOpacity>
       </View>
+      <SubscribeToEditNudge {...subscribeNudgeProps} />
     </View>
   );
 }

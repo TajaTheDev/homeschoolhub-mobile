@@ -102,8 +102,18 @@ export default function TrialBanner() {
       return null;
     }
 
+    if (subscriptionInfo.accessLevel === 'readonly') {
+      return null;
+    }
+
     const isExpired = subscriptionInfo.subscriptionStatus === 'expired';
-    return getBannerConfig(subscriptionInfo.daysRemaining, isExpired);
+    const { daysRemaining } = subscriptionInfo;
+
+    if (!isExpired && daysRemaining > 3) {
+      return null;
+    }
+
+    return getBannerConfig(daysRemaining, isExpired);
   }, [subscriptionInfo]);
 
   if (!bannerConfig) {

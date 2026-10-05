@@ -2,7 +2,9 @@
  * Main Dashboard Screen
  */
 
+import SubscribeToEditNudge from '@/components/SubscribeToEditNudge';
 import TrialBanner from '@/components/TrialBanner';
+import { useSubscriptionAccess } from '@/hooks/useSubscriptionAccess';
 import WeeklySummaryCard from '@/components/dashboard/WeeklySummaryCard';
 import Avatar from '@/components/ui/Avatar';
 import DatePicker from '@/components/ui/DatePicker';
@@ -155,6 +157,7 @@ export default function Dashboard() {
   const lessonStore = useLessonStore();
   const { lessons, fetchLessons, toggleCompleteOptimistic } = lessonStore;
   const { user, signOut } = useAuthStore();
+  const { canEdit, requireEdit, subscribeNudgeProps } = useSubscriptionAccess();
 
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -482,6 +485,9 @@ export default function Dashboard() {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
+            if (!requireEdit('delete students')) {
+              return;
+            }
             const result = await deleteStudent(student.id);
             if (result.success) {
               await fetchStudents();
@@ -511,6 +517,10 @@ export default function Dashboard() {
   };
 
   const handleLessonComplete = (lessonId: string, isCurrentlyComplete: boolean) => {
+    if (!requireEdit('complete lessons')) {
+      return;
+    }
+
     const newStatus = !isCurrentlyComplete;
 
     if (newStatus) {
@@ -828,6 +838,9 @@ export default function Dashboard() {
                 }
                 actionText={lessons.length === 0 ? "+ Add Your First Lesson" : "+ Add Lesson for This Day"}
                 onAction={() => {
+                  if (!requireEdit('add lessons')) {
+                    return;
+                  }
                   if (students.length === 0) {
                     Alert.alert(
                       'Add a Student First',
@@ -836,7 +849,12 @@ export default function Dashboard() {
                         { text: 'Cancel', style: 'cancel' },
                         { 
                           text: 'Add Student', 
-                          onPress: () => setShowStudentForm(true)
+                          onPress: () => {
+                            if (!requireEdit('add students')) {
+                              return;
+                            }
+                            setShowStudentForm(true);
+                          },
                         }
                       ]
                     );
@@ -1040,8 +1058,11 @@ export default function Dashboard() {
         {/* Add Lesson Button */}
         <View style={styles.addLessonSection}>
           <TouchableOpacity
-            style={styles.addLessonButton}
+            style={[styles.addLessonButton, !canEdit && styles.ctaDimmed]}
             onPress={() => {
+              if (!requireEdit('add lessons')) {
+                return;
+              }
               if (students.length === 0) {
                 Alert.alert('No Students', 'Add a student first!');
                 return;
@@ -1073,8 +1094,13 @@ export default function Dashboard() {
           <View style={styles.sectionHeader}>
             <Text style={[Typography.h3, { marginBottom: 16 }]}>Your Students</Text>
             <TouchableOpacity
-              style={styles.addButton}
-              onPress={() => router.push('/add-student' as any)}
+              style={[styles.addButton, !canEdit && styles.ctaDimmed]}
+              onPress={() => {
+                if (!requireEdit('add students')) {
+                  return;
+                }
+                router.push('/add-student' as any);
+              }}
               activeOpacity={0.7}
             >
               <Plus size={20} color={Colors.brand[600]} />
@@ -1097,7 +1123,12 @@ export default function Dashboard() {
                 title="No Students Yet"
                 description="Add your first student to start tracking their homeschool progress!"
                 actionText="Add Student"
-                onAction={() => setShowStudentForm(true)}
+                onAction={() => {
+                  if (!requireEdit('add students')) {
+                    return;
+                  }
+                  setShowStudentForm(true);
+                }}
               />
             </Animated.View>
           ) : (
@@ -1336,6 +1367,7 @@ export default function Dashboard() {
         photos={galleryPhotos}
         initialIndex={galleryIndex}
       /> */}
+      <SubscribeToEditNudge {...subscribeNudgeProps} />
     </>
   );
 }
@@ -1886,6 +1918,9 @@ const styles = StyleSheet.create({
   addLessonSection: {
     paddingHorizontal: 20,
     marginBottom: 24,
+  },
+  ctaDimmed: {
+    opacity: 0.55,
   },
   addLessonButton: {
     backgroundColor: Colors.brand[500],

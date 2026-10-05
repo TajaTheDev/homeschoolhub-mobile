@@ -16,6 +16,8 @@ import { supabase } from '@/lib/supabase/client';
 import { useStudentStore } from '@/store/studentStore';
 import { useScheduleStore } from '@/store/scheduleStore';
 import { useSubscriptionStore } from '@/store/subscriptionStore';
+import SubscribeToEditNudge from '@/components/SubscribeToEditNudge';
+import { useSubscriptionAccess } from '@/hooks/useSubscriptionAccess';
 import StudentModal from '@/components/students/StudentModal';
 import EditSubjectsModal from '@/components/students/EditSubjectsModal';
 
@@ -39,6 +41,7 @@ export default function OnboardingScreen() {
 
   const { students, subjects, fetchSubjects } = useStudentStore();
   const { updateSchedule, fetchSchedule } = useScheduleStore();
+  const { requireEdit, subscribeNudgeProps } = useSubscriptionAccess();
 
   const activeStudent = useMemo(
     () => students.find((s) => s.id === activeStudentId) ?? students[0] ?? null,
@@ -81,6 +84,10 @@ export default function OnboardingScreen() {
   };
   
   const handleScheduleSave = async () => {
+    if (!requireEdit('change your schedule')) {
+      return;
+    }
+
     try {
       // Convert schoolDays array [1,2,3,4,5] to boolean format expected by scheduleStore
       const scheduleData = {
@@ -191,14 +198,10 @@ export default function OnboardingScreen() {
       
       try {
         const subscriptionInfo = await useSubscriptionStore.getState().checkSubscription();
-        const redirectToSubscribe =
-          !subscriptionInfo.hasAccess ||
-          subscriptionInfo.subscriptionStatus === 'expired';
-
-        if (redirectToSubscribe) {
-          router.replace('/subscribe');
-        } else {
+        if (subscriptionInfo.canEnterApp) {
           router.replace('/(tabs)');
+        } else {
+          router.replace('/subscribe');
         }
       } catch (error) {
         console.error('Subscription check failed after onboarding:', error);
@@ -343,7 +346,7 @@ export default function OnboardingScreen() {
             
             {/* Helper text */}
             <Text style={styles.helperText}>
-              Don't worry! You can add more students anytime from the Students tab.
+              Don't worry! You can add more students anytime from Home.
             </Text>
             
             {/* Add Student Button */}
@@ -615,7 +618,9 @@ export default function OnboardingScreen() {
         onSave={handleSubjectsModalSave}
         onSubjectsUpdated={handleSubjectsUpdated}
       />
-    </View>  );
+      <SubscribeToEditNudge {...subscribeNudgeProps} />
+    </View>
+  );
 }
 
 // Helper component

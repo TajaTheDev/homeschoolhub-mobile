@@ -3,7 +3,9 @@
  * View and edit ALL lessons across all students and dates
  */
 
+import SubscribeToEditNudge from '@/components/SubscribeToEditNudge';
 import EmptyState from '@/components/ui/EmptyState';
+import { useSubscriptionAccess } from '@/hooks/useSubscriptionAccess';
 import Skeleton from '@/components/ui/Skeleton';
 import Colors from '@/constants/Colors';
 import { useSnackbar } from '@/contexts/SnackbarContext';
@@ -63,6 +65,7 @@ export default function AllLessonsScreen() {
 
   const { lessons, fetchLessons, loading, deleteLessons, toggleCompleteOptimistic } = useLessonStore();
   const { students } = useStudentStore();
+  const { requireEdit, subscribeNudgeProps } = useSubscriptionAccess();
 
   useFocusEffect(
     useCallback(() => {
@@ -214,6 +217,10 @@ export default function AllLessonsScreen() {
 
   // Delete selected lessons (multi-select)
   const handleDeleteSelected = () => {
+    if (!requireEdit('delete lessons')) {
+      return;
+    }
+
     const count = selectedLessonIds.length;
     
     Alert.alert(
@@ -255,6 +262,10 @@ export default function AllLessonsScreen() {
 
   // Delete all filtered lessons (bulk operation)
   const handleDeleteAllFiltered = () => {
+    if (!requireEdit('delete lessons')) {
+      return;
+    }
+
     const count = filteredLessons.length;
     const lessonIds = filteredLessons.map(l => l.id);
     
@@ -772,6 +783,9 @@ export default function AllLessonsScreen() {
                         style={styles.completionToggle}
                         onPress={(e) => {
                           e.stopPropagation(); // Prevent triggering parent TouchableOpacity
+                          if (!requireEdit('complete lessons')) {
+                            return;
+                          }
                           const willBeCompleted = !item.completed;
                           toggleCompleteOptimistic(item.id);
                           showSnackbar(
@@ -946,6 +960,7 @@ export default function AllLessonsScreen() {
           onSave={handleCloseModal}
         />
       </Suspense>
+      <SubscribeToEditNudge {...subscribeNudgeProps} />
     </SafeAreaView>
   );
 }

@@ -2,6 +2,7 @@
  * Reading log store — per-student book tracking.
  */
 
+import { canMutateSubscriptionData, subscriptionEditBlockedResult } from '@/lib/subscriptionEditGuard';
 import { LESSON_PHOTOS_BUCKET, deleteStorageObject } from '@/lib/photoStorage';
 import { supabase } from '@/lib/supabase/client';
 import type { Tables, TablesInsert, TablesUpdate } from '@/types/database.generated';
@@ -75,6 +76,10 @@ export const useReadingLogStore = create<ReadingLogStore>((set, get) => ({
   },
 
   addBook: async (studentId, fields) => {
+    if (!canMutateSubscriptionData()) {
+      return subscriptionEditBlockedResult();
+    }
+
     try {
       const payload: TablesInsert<'reading_log'> = {
         student_id: studentId,
@@ -115,6 +120,10 @@ export const useReadingLogStore = create<ReadingLogStore>((set, get) => ({
   },
 
   updateBook: async (id, fields) => {
+    if (!canMutateSubscriptionData()) {
+      return subscriptionEditBlockedResult();
+    }
+
     const previousBooks = get().books;
 
     try {
@@ -180,6 +189,10 @@ export const useReadingLogStore = create<ReadingLogStore>((set, get) => ({
   },
 
   deleteBook: async (id) => {
+    if (!canMutateSubscriptionData()) {
+      return subscriptionEditBlockedResult();
+    }
+
     const previousBooks = get().books;
     const bookToDelete = previousBooks.find((book) => book.id === id);
 

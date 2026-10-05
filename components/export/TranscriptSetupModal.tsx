@@ -190,7 +190,7 @@ export default function TranscriptSetupModal({
               style={styles.textInput}
               value={studentFullName}
               onChangeText={setStudentFullName}
-              placeholder="Kutaj Williams"
+              placeholder="e.g. Jane Smith"
               placeholderTextColor={Colors.ui.textLight}
               editable={!loading}
             />

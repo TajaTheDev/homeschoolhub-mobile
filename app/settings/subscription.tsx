@@ -279,7 +279,7 @@ export default function SubscriptionScreen() {
           <View style={styles.featuresList}>
             <View style={styles.featureItem}>
               <Check size={20} color={Colors.accent[500]} />
-              <Text style={styles.featureText}>Track up to 5 students</Text>
+              <Text style={styles.featureText}>Unlimited students</Text>
             </View>
             <View style={styles.featureItem}>
               <Check size={20} color={Colors.accent[500]} />
@@ -318,7 +318,7 @@ export default function SubscriptionScreen() {
 
         <View style={styles.finePrint}>
           <Text style={styles.finePrintText}>
-            • 30-day free trial, no credit card required
+            • 7-day free trial, no credit card required
           </Text>
           <Text style={styles.finePrintText}>
             • Cancel anytime from App Store settings

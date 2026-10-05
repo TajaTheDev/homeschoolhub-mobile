@@ -3,6 +3,7 @@
  * Manages student data and their subjects with Supabase operations
  */
 
+import { canMutateSubscriptionData, subscriptionEditBlockedResult } from '@/lib/subscriptionEditGuard';
 import { supabase } from '@/lib/supabase/client';
 import { cacheData, getCachedData, isOnline } from '@/lib/offline';
 import type { Student, StudentSubject } from '@/types';
@@ -150,6 +151,10 @@ export const useStudentStore = create<StudentState>((set, get) => ({
   },
 
   addStudent: async (studentData) => {
+    if (!canMutateSubscriptionData()) {
+      return subscriptionEditBlockedResult();
+    }
+
     set({ loading: true });
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -192,6 +197,10 @@ export const useStudentStore = create<StudentState>((set, get) => ({
   },
 
   updateStudent: async (id, updates) => {
+    if (!canMutateSubscriptionData()) {
+      return subscriptionEditBlockedResult();
+    }
+
     set({ loading: true });
     try {
       const updateData: any = { ...updates };
@@ -227,6 +236,10 @@ export const useStudentStore = create<StudentState>((set, get) => ({
   },
 
   deleteStudent: async (id) => {
+    if (!canMutateSubscriptionData()) {
+      return subscriptionEditBlockedResult();
+    }
+
     set({ loading: true });
     try {
       const { error } = await supabase.from('students').delete().eq('id', id);
@@ -249,6 +262,10 @@ export const useStudentStore = create<StudentState>((set, get) => ({
   },
 
   addSubject: async (subject, options) => {
+    if (!canMutateSubscriptionData()) {
+      return subscriptionEditBlockedResult();
+    }
+
     const skipRefetch = options?.skipRefetch ?? false;
 
     if (!skipRefetch) {
@@ -305,6 +322,10 @@ export const useStudentStore = create<StudentState>((set, get) => ({
   },
 
   ensureSubjectEnrolled: async (studentId, subject) => {
+    if (!canMutateSubscriptionData()) {
+      return subscriptionEditBlockedResult();
+    }
+
     try {
       const { error } = await supabase.from('student_subjects').upsert(
         {
@@ -337,6 +358,10 @@ export const useStudentStore = create<StudentState>((set, get) => ({
   },
 
   updateSubject: async (id, updates) => {
+    if (!canMutateSubscriptionData()) {
+      return subscriptionEditBlockedResult();
+    }
+
     set({ loading: true });
     try {
       const { error } = await supabase
@@ -369,6 +394,10 @@ export const useStudentStore = create<StudentState>((set, get) => ({
   },
 
   deleteSubject: async (id, options) => {
+    if (!canMutateSubscriptionData()) {
+      return subscriptionEditBlockedResult();
+    }
+
     const skipRefetch = options?.skipRefetch ?? false;
 
     if (!skipRefetch) {

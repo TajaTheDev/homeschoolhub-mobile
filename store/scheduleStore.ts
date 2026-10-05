@@ -1,3 +1,4 @@
+import { canMutateSubscriptionData } from '@/lib/subscriptionEditGuard';
 import { supabase } from '@/lib/supabase';
 import { SchoolBreak, SchoolSchedule } from '@/types/database';
 import { format } from 'date-fns';
@@ -68,6 +69,10 @@ export const useScheduleStore = create<ScheduleStore>((set, get) => ({
   },
 
   updateSchedule: async (updates) => {
+    if (!canMutateSubscriptionData()) {
+      return;
+    }
+
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
@@ -121,6 +126,10 @@ export const useScheduleStore = create<ScheduleStore>((set, get) => ({
   },
 
   addBreak: async (breakData) => {
+    if (!canMutateSubscriptionData()) {
+      return;
+    }
+
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
@@ -139,6 +148,10 @@ export const useScheduleStore = create<ScheduleStore>((set, get) => ({
   },
 
   updateBreak: async (breakId, breakData) => {
+    if (!canMutateSubscriptionData()) {
+      return;
+    }
+
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
@@ -158,6 +171,10 @@ export const useScheduleStore = create<ScheduleStore>((set, get) => ({
   },
 
   deleteBreak: async (id) => {
+    if (!canMutateSubscriptionData()) {
+      return;
+    }
+
     const { error } = await supabase
       .from('school_breaks')
       .delete()

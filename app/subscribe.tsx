@@ -110,7 +110,7 @@ export default function SubscribeScreen() {
     const isNowSubscribed =
       info?.subscriptionStatus === 'active' || (await checkProStatus());
 
-    if (isNowSubscribed || info?.hasAccess) {
+    if (isNowSubscribed || info?.canEdit) {
       setHasSubscription(true);
       setShowCelebration(true);
     }

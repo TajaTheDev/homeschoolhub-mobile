@@ -4,7 +4,9 @@
  * Matching onboarding aesthetic with vibrant colors and pill-style badges
  */
 
+import SubscribeToEditNudge from '@/components/SubscribeToEditNudge';
 import PhotoGalleryModal from '@/components/lessons/PhotoGalleryModal';
+import { useSubscriptionAccess } from '@/hooks/useSubscriptionAccess';
 import PhotoGallery from '@/components/lessons/PhotoGallery';
 import LessonModal from '@/components/lessons/LessonModal';
 import Avatar from '@/components/ui/Avatar';
@@ -110,6 +112,7 @@ export default function CalendarScreen() {
   const { getSchoolDays } = useScheduleStore();
   const { breaks, isBreakDay, fetchBreaks } = useBreakStore();
   const { attendance, hasAttendanceForDate, fetchAttendance } = useAttendanceStore();
+  const { canEdit, requireEdit, subscribeNudgeProps } = useSubscriptionAccess();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [showConfetti, setShowConfetti] = useState(false);
@@ -244,6 +247,10 @@ export default function CalendarScreen() {
   };
 
   const handleLessonComplete = (lessonId: string, isCurrentlyComplete: boolean) => {
+    if (!requireEdit('complete lessons')) {
+      return;
+    }
+
     const newStatus = !isCurrentlyComplete;
     
     // Show confetti if marking complete
@@ -898,8 +905,11 @@ export default function CalendarScreen() {
                   <Text style={styles.emptyDayIcon}>📅</Text>
                   <Text style={styles.emptyDayText}>No lessons scheduled</Text>
                   <TouchableOpacity
-                    style={styles.addLessonButton}
+                    style={[styles.addLessonButton, !canEdit && { opacity: 0.55 }]}
                     onPress={() => {
+                      if (!requireEdit('add lessons')) {
+                        return;
+                      }
                       setShowDayLessonsModal(false);
                       const dateToPass = selectedEmptyDate;
                       setSelectedEmptyDate(null);
@@ -953,6 +963,7 @@ export default function CalendarScreen() {
         initialIndex={selectedPhotoIndex}
         onClose={() => setShowDayPhotoGallery(false)}
       />
+      <SubscribeToEditNudge {...subscribeNudgeProps} />
     </SafeAreaView>
   );
 }

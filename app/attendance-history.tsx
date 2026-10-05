@@ -11,7 +11,9 @@ import {
 import { useRouter } from 'expo-router';
 import { ArrowLeft, Calendar, Users, TrendingUp } from 'lucide-react-native';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
+import SubscribeToEditNudge from '@/components/SubscribeToEditNudge';
 import Colors from '@/constants/Colors';
+import { useSubscriptionAccess } from '@/hooks/useSubscriptionAccess';
 import { useAttendanceStore } from '@/store/attendanceStore';
 import { useStudentStore } from '@/store/studentStore';
 import AttendanceModal from '@/components/attendance/AttendanceModal';
@@ -21,6 +23,7 @@ export default function AttendanceHistoryScreen() {
   const router = useRouter();
   const { attendance, fetchAttendance } = useAttendanceStore();
   const { students } = useStudentStore();
+  const { requireEdit, subscribeNudgeProps } = useSubscriptionAccess();
   
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [showAttendanceModal, setShowAttendanceModal] = useState(false);
@@ -90,6 +93,9 @@ export default function AttendanceHistoryScreen() {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
+            if (!requireEdit('delete attendance')) {
+              return;
+            }
             const result = await useAttendanceStore.getState().deleteAttendanceForDate(date);
             if (result.success) {
               Alert.alert('Deleted', 'Attendance record removed');
@@ -367,6 +373,7 @@ export default function AttendanceHistoryScreen() {
           }}
         />
       )}
+      <SubscribeToEditNudge {...subscribeNudgeProps} />
     </View>
   );
 }
