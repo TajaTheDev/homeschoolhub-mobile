@@ -6,6 +6,7 @@ import SubscribeToEditNudge from '@/components/SubscribeToEditNudge';
 import Colors from '@/constants/Colors';
 import { useSubscriptionAccess } from '@/hooks/useSubscriptionAccess';
 import { useStudentStore } from '@/store/studentStore';
+import { ORDERED_GRADE_LEVELS } from '@/lib/gradeLevels';
 import type { GradeLevel, StudentColor } from '@/types';
 import { useRouter } from 'expo-router';
 import { ArrowLeft } from 'lucide-react-native';
@@ -21,23 +22,6 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-
-const GRADE_LEVELS: GradeLevel[] = [
-  'Pre-K',
-  'Kindergarten',
-  '1st',
-  '2nd',
-  '3rd',
-  '4th',
-  '5th',
-  '6th',
-  '7th',
-  '8th',
-  '9th',
-  '10th',
-  '11th',
-  '12th',
-];
 
 const STUDENT_COLORS: StudentColor[] = ['purple', 'blue', 'green', 'pink', 'orange'];
 
@@ -134,7 +118,7 @@ export default function AddStudentScreen() {
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Grade Level</Text>
             <View style={styles.gradeGrid}>
-              {GRADE_LEVELS.map((gradeLevel) => (
+              {ORDERED_GRADE_LEVELS.map((gradeLevel) => (
                 <TouchableOpacity
                   key={gradeLevel}
                   style={[

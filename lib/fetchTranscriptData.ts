@@ -6,12 +6,15 @@ import { supabase } from '@/lib/supabase/client';
 import type { Tables } from '@/types/database.generated';
 
 type LessonCompletionRow = Tables<'lesson_completions'>;
+type SchoolYearArchiveRow = Tables<'school_year_archives'>;
 
 type ManualLessonRow = {
+  id: string;
   subject: string;
   date: string;
   title: string;
   grade: string | null;
+  schoolYearArchiveId: string | null;
 };
 
 type MergedCompletedLesson = {
@@ -30,11 +33,51 @@ export type TranscriptSubjectRow = {
   gradedCount: number;
 };
 
+export type TranscriptSectionSummary = {
+  totalLessons: number;
+  weightedAverage: string | null;
+};
+
+/** @deprecated Legacy single-range transcript shape; cumulative export uses TranscriptYearSection. */
 export type TranscriptData = {
   subjects: TranscriptSubjectRow[];
-  summary: {
-    totalLessons: number;
-    weightedAverage: string | null;
+  summary: TranscriptSectionSummary;
+};
+
+export type TranscriptYearSection = {
+  /** Archive row id, or null for the active (not yet archived) school year. */
+  archiveId: string | null;
+  /** e.g. school_year_label or "Current school year". */
+  label: string;
+  /** Grade for this block; null means not recorded (see warnings). */
+  gradeLevel: string | null;
+  startDate: string | null;
+  endDate: string | null;
+  isCurrentYear: boolean;
+  subjects: TranscriptSubjectRow[];
+  summary: TranscriptSectionSummary;
+};
+
+export type MissingGradeArchive = {
+  archiveId: string;
+  schoolYearLabel: string;
+};
+
+export type CumulativeTranscriptData = {
+  sections: TranscriptYearSection[];
+  warnings: string[];
+  /** Archives in this export missing grade_level (for backfill preflight). */
+  missingGradeArchives: MissingGradeArchive[];
+};
+
+export type FetchCumulativeTranscriptOptions = {
+  /**
+   * When set, include only sections whose school-year date range overlaps this window.
+   * Default: full cumulative (no filter).
+   */
+  dateRangeFilter?: {
+    startDate: string;
+    endDate: string;
   };
 };
 
@@ -104,7 +147,6 @@ async function fetchAllLessonPlanNames(
     return {};
   }
 
-  // Pick the newest name we see per subject
   const map: Record<string, string | null> = {};
   (data ?? []).forEach((plan) => {
     if (map[plan.subject] !== undefined) return;
@@ -132,7 +174,7 @@ function mergeDedupeKey(subject: string, date: string): string {
 
 function mergeCompletedLessons(
   completions: LessonCompletionRow[],
-  manualLessons: ManualLessonRow[]
+  manualLessons: Array<Omit<ManualLessonRow, 'id' | 'schoolYearArchiveId'>>
 ): MergedCompletedLesson[] {
   const map = new Map<string, MergedCompletedLesson>();
 
@@ -160,91 +202,12 @@ function mergeCompletedLessons(
   });
 }
 
-async function fetchCompletedManualLessons(
-  studentId: string,
-  startDate: string,
-  endDate: string
-): Promise<ManualLessonRow[]> {
-  const byLessonId = new Map<string, ManualLessonRow>();
-
-  const { data: junctionData, error: junctionError } = await supabase
-    .from('lessons')
-    .select(
-      'id, subject, title, date, grade_value, grade_type, lesson_students!inner(student_id)'
-    )
-    .eq('lesson_students.student_id', studentId)
-    .eq('completed', true)
-    .gte('date', startDate)
-    .lte('date', endDate);
-
-  if (junctionError) {
-    throw new Error(junctionError.message);
-  }
-
-  (junctionData ?? []).forEach((lesson) => {
-    byLessonId.set(lesson.id, {
-      subject: lesson.subject,
-      date: lesson.date,
-      title: lesson.title,
-      grade: formatLessonGrade(lesson.grade_value, lesson.grade_type),
-    });
-  });
-
-  const { data: directData, error: directError } = await supabase
-    .from('lessons')
-    .select('id, subject, title, date, grade_value, grade_type')
-    .eq('student_id', studentId)
-    .eq('completed', true)
-    .gte('date', startDate)
-    .lte('date', endDate);
-
-  if (directError) {
-    throw new Error(directError.message);
-  }
-
-  (directData ?? []).forEach((lesson) => {
-    if (byLessonId.has(lesson.id)) return;
-    byLessonId.set(lesson.id, {
-      subject: lesson.subject,
-      date: lesson.date,
-      title: lesson.title,
-      grade: formatLessonGrade(lesson.grade_value, lesson.grade_type),
-    });
-  });
-
-  return Array.from(byLessonId.values());
-}
-
-/**
- * Fetches transcript data for a student within a school year date range.
- */
-export async function fetchTranscriptData(
-  studentId: string,
-  startDate: string,
-  endDate: string
-): Promise<TranscriptData> {
-  const { data: completionsRaw, error } = await supabase
-    .from('lesson_completions')
-    .select('*')
-    .eq('student_id', studentId)
-    .gte('date', startDate)
-    .lte('date', endDate)
-    .neq('status', 'planned')
-    .order('date', { ascending: true });
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  const completions = completionsRaw ?? [];
-  const manualLessons = await fetchCompletedManualLessons(studentId, startDate, endDate);
-  const mergedLessons = mergeCompletedLessons(completions, manualLessons);
-
+function buildSubjectRowsFromMerged(
+  mergedLessons: MergedCompletedLesson[],
+  curriculumBySubject: Record<string, string | null>
+): { subjects: TranscriptSubjectRow[]; summary: TranscriptSectionSummary } {
   const mergedSubjects = [...new Set(mergedLessons.map((row) => row.subject))];
-  const curriculumBySubject = await fetchAllLessonPlanNames(studentId);
   const planSubjects = Object.keys(curriculumBySubject);
-
-  // Include subjects from merged lessons, lesson_plans, and lessons-only subjects with no plan.
   const subjects = Array.from(new Set([...mergedSubjects, ...planSubjects]));
 
   const bySubject = new Map<string, MergedCompletedLesson[]>();
@@ -275,7 +238,6 @@ export async function fetchTranscriptData(
     .sort((a, b) => a.subject.localeCompare(b.subject));
 
   const totalLessons = subjectRows.reduce((sum, row) => sum + row.lessonsCompleted, 0);
-
   const numericSubjects = subjectRows.filter((row) => row.numericAverage !== null);
   const totalGradedForWeight = numericSubjects.reduce((sum, row) => sum + row.gradedCount, 0);
 
@@ -290,9 +252,303 @@ export async function fetchTranscriptData(
 
   return {
     subjects: subjectRows,
-    summary: {
-      totalLessons,
-      weightedAverage,
-    },
+    summary: { totalLessons, weightedAverage },
+  };
+}
+
+function dateWithinInclusive(date: string, startDate: string | null, endDate: string | null): boolean {
+  if (!startDate || !endDate) {
+    return false;
+  }
+  return date >= startDate && date <= endDate;
+}
+
+function sectionOverlapsFilter(
+  sectionStart: string | null,
+  sectionEnd: string | null,
+  filterStart: string,
+  filterEnd: string
+): boolean {
+  if (!sectionStart || !sectionEnd) {
+    return true;
+  }
+  return sectionStart <= filterEnd && sectionEnd >= filterStart;
+}
+
+async function fetchCompletedManualLessonsForStudent(
+  studentId: string
+): Promise<ManualLessonRow[]> {
+  const byLessonId = new Map<string, ManualLessonRow>();
+
+  const { data: junctionData, error: junctionError } = await supabase
+    .from('lessons')
+    .select(
+      'id, subject, title, date, grade_value, grade_type, school_year_archive_id, lesson_students!inner(student_id)'
+    )
+    .eq('lesson_students.student_id', studentId)
+    .eq('completed', true);
+
+  if (junctionError) {
+    throw new Error(junctionError.message);
+  }
+
+  (junctionData ?? []).forEach((lesson) => {
+    byLessonId.set(lesson.id, {
+      id: lesson.id,
+      subject: lesson.subject,
+      date: lesson.date,
+      title: lesson.title,
+      grade: formatLessonGrade(lesson.grade_value, lesson.grade_type),
+      schoolYearArchiveId: lesson.school_year_archive_id ?? null,
+    });
+  });
+
+  const { data: directData, error: directError } = await supabase
+    .from('lessons')
+    .select('id, subject, title, date, grade_value, grade_type, school_year_archive_id')
+    .eq('student_id', studentId)
+    .eq('completed', true);
+
+  if (directError) {
+    throw new Error(directError.message);
+  }
+
+  (directData ?? []).forEach((lesson) => {
+    if (byLessonId.has(lesson.id)) return;
+    byLessonId.set(lesson.id, {
+      id: lesson.id,
+      subject: lesson.subject,
+      date: lesson.date,
+      title: lesson.title,
+      grade: formatLessonGrade(lesson.grade_value, lesson.grade_type),
+      schoolYearArchiveId: lesson.school_year_archive_id ?? null,
+    });
+  });
+
+  return Array.from(byLessonId.values());
+}
+
+async function fetchCompletedManualLessons(
+  studentId: string,
+  startDate: string,
+  endDate: string
+): Promise<Array<Omit<ManualLessonRow, 'id' | 'schoolYearArchiveId'>>> {
+  const all = await fetchCompletedManualLessonsForStudent(studentId);
+  return all
+    .filter((row) => row.date >= startDate && row.date <= endDate)
+    .map(({ subject, date, title, grade }) => ({ subject, date, title, grade }));
+}
+
+/**
+ * Fetches transcript data for a student within a school year date range.
+ */
+export async function fetchTranscriptData(
+  studentId: string,
+  startDate: string,
+  endDate: string
+): Promise<TranscriptData> {
+  const { data: completionsRaw, error } = await supabase
+    .from('lesson_completions')
+    .select('*')
+    .eq('student_id', studentId)
+    .gte('date', startDate)
+    .lte('date', endDate)
+    .neq('status', 'planned')
+    .order('date', { ascending: true });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const completions = completionsRaw ?? [];
+  const manualLessons = await fetchCompletedManualLessons(studentId, startDate, endDate);
+  const mergedLessons = mergeCompletedLessons(completions, manualLessons);
+  const curriculumBySubject = await fetchAllLessonPlanNames(studentId);
+  const { subjects, summary } = buildSubjectRowsFromMerged(mergedLessons, curriculumBySubject);
+
+  return { subjects, summary };
+}
+
+const CURRENT_YEAR_LABEL = 'Current school year';
+
+/**
+ * Fetches cumulative transcript data grouped by archived school years plus the active year.
+ * Read-only: no database writes.
+ */
+export async function fetchCumulativeTranscriptData(
+  studentId: string,
+  options: FetchCumulativeTranscriptOptions = {}
+): Promise<CumulativeTranscriptData> {
+  const [archivesResult, studentResult, completionsResult, manualLessons, curriculumBySubject] =
+    await Promise.all([
+      supabase
+        .from('school_year_archives')
+        .select('*')
+        .eq('student_id', studentId)
+        .order('start_date', { ascending: true }),
+      supabase
+        .from('students')
+        .select('grade, school_year_start_date')
+        .eq('id', studentId)
+        .single(),
+      supabase
+        .from('lesson_completions')
+        .select('*')
+        .eq('student_id', studentId)
+        .neq('status', 'planned')
+        .order('date', { ascending: true }),
+      fetchCompletedManualLessonsForStudent(studentId),
+      fetchAllLessonPlanNames(studentId),
+    ]);
+
+  if (archivesResult.error) {
+    throw new Error(archivesResult.error.message);
+  }
+  if (studentResult.error) {
+    throw new Error(studentResult.error.message);
+  }
+  if (completionsResult.error) {
+    throw new Error(completionsResult.error.message);
+  }
+
+  const archives = (archivesResult.data ?? []) as SchoolYearArchiveRow[];
+  const studentGrade = studentResult.data?.grade?.trim() ?? '';
+  const schoolYearStartDate = studentResult.data?.school_year_start_date ?? null;
+  const allCompletions = completionsResult.data ?? [];
+
+  /** Manual lessons assigned via legacy date fallback (still null archive_id in DB). */
+  const legacyFallbackLessonIds = new Set<string>();
+
+  const sections: TranscriptYearSection[] = [];
+
+  for (const archive of archives) {
+    const archiveCompletions = allCompletions.filter(
+      (row) => row.school_year_archive_id === archive.id
+    );
+
+    const taggedManuals = manualLessons.filter(
+      (row) => row.schoolYearArchiveId === archive.id
+    );
+
+    const legacyManuals = manualLessons.filter((row) => {
+      if (row.schoolYearArchiveId !== null) {
+        return false;
+      }
+      if (legacyFallbackLessonIds.has(row.id)) {
+        return false;
+      }
+      if (!dateWithinInclusive(row.date, archive.start_date, archive.end_date)) {
+        return false;
+      }
+      legacyFallbackLessonIds.add(row.id);
+      return true;
+    });
+
+    const manualForMerge = [...taggedManuals, ...legacyManuals].map(
+      ({ subject, date, title, grade }) => ({ subject, date, title, grade })
+    );
+
+    const mergedLessons = mergeCompletedLessons(archiveCompletions, manualForMerge);
+    const { subjects, summary } = buildSubjectRowsFromMerged(
+      mergedLessons,
+      curriculumBySubject
+    );
+
+    sections.push({
+      archiveId: archive.id,
+      label: archive.school_year_label,
+      gradeLevel: archive.grade_level?.trim() || null,
+      startDate: archive.start_date,
+      endDate: archive.end_date,
+      isCurrentYear: false,
+      subjects,
+      summary,
+    });
+  }
+
+  if (studentGrade) {
+    const currentCompletions = allCompletions.filter(
+      (row) => row.school_year_archive_id === null
+    );
+
+    const currentManuals = manualLessons.filter((row) => {
+      if (row.schoolYearArchiveId !== null) {
+        return false;
+      }
+      if (legacyFallbackLessonIds.has(row.id)) {
+        return false;
+      }
+      if (schoolYearStartDate && row.date < schoolYearStartDate) {
+        return false;
+      }
+      return true;
+    });
+
+    const manualForMerge = currentManuals.map(({ subject, date, title, grade }) => ({
+      subject,
+      date,
+      title,
+      grade,
+    }));
+
+    const mergedLessons = mergeCompletedLessons(currentCompletions, manualForMerge);
+    const { subjects, summary } = buildSubjectRowsFromMerged(
+      mergedLessons,
+      curriculumBySubject
+    );
+
+    sections.push({
+      archiveId: null,
+      label: CURRENT_YEAR_LABEL,
+      gradeLevel: studentGrade,
+      startDate: schoolYearStartDate,
+      endDate: null,
+      isCurrentYear: true,
+      subjects,
+      summary,
+    });
+  }
+
+  const filter = options.dateRangeFilter;
+  const filteredSections = filter
+    ? sections.filter((section) => {
+        if (section.isCurrentYear) {
+          const sectionStart = section.startDate ?? filter.startDate;
+          const sectionEnd = section.endDate ?? filter.endDate;
+          return sectionOverlapsFilter(sectionStart, sectionEnd, filter.startDate, filter.endDate);
+        }
+        return sectionOverlapsFilter(
+          section.startDate,
+          section.endDate,
+          filter.startDate,
+          filter.endDate
+        );
+      })
+    : sections;
+
+  const includedArchiveIds = new Set(
+    filteredSections
+      .map((section) => section.archiveId)
+      .filter((id): id is string => Boolean(id))
+  );
+
+  const missingGradeArchives: MissingGradeArchive[] = archives
+    .filter(
+      (archive) =>
+        includedArchiveIds.has(archive.id) && !archive.grade_level?.trim()
+    )
+    .map((archive) => ({
+      archiveId: archive.id,
+      schoolYearLabel: archive.school_year_label,
+    }));
+
+  const warnings = missingGradeArchives.map(
+    (item) => `School year "${item.schoolYearLabel}" has no grade level recorded.`
+  );
+
+  return {
+    sections: filteredSections,
+    warnings,
+    missingGradeArchives,
   };
 }

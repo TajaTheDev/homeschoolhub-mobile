@@ -2,6 +2,11 @@ import Button from '@/components/ui/Button';
 import Colors from '@/constants/Colors';
 import Typography from '@/constants/Typography';
 import {
+  END_SCHOOL_YEAR_NEXT_GRADE_CHIPS,
+  getSuggestedNextGrade,
+  ORDERED_GRADE_LEVELS,
+} from '@/lib/gradeLevels';
+import {
   defaultSchoolYearEndDate,
   defaultSchoolYearLabel,
   defaultSchoolYearStartDate,
@@ -20,21 +25,28 @@ import {
   View,
 } from 'react-native';
 
+export type EndSchoolYearConfirmValues = {
+  schoolYearLabel: string;
+  startDate: string;
+  endDate: string;
+  gradeLevel: string;
+  nextGrade: string;
+};
+
 type EndSchoolYearModalProps = {
   visible: boolean;
   studentName: string;
+  /** Current students.grade — prefills "this year" grade. */
+  studentGrade: string;
   loading?: boolean;
   onClose: () => void;
-  onConfirm: (values: {
-    schoolYearLabel: string;
-    startDate: string;
-    endDate: string;
-  }) => void;
+  onConfirm: (values: EndSchoolYearConfirmValues) => void;
 };
 
 export default function EndSchoolYearModal({
   visible,
   studentName,
+  studentGrade,
   loading = false,
   onClose,
   onConfirm,
@@ -42,15 +54,22 @@ export default function EndSchoolYearModal({
   const [schoolYearLabel, setSchoolYearLabel] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [gradeThisYear, setGradeThisYear] = useState('');
+  const [gradeNextYear, setGradeNextYear] = useState('');
+  const [showValidation, setShowValidation] = useState(false);
 
   useEffect(() => {
     if (!visible) return;
 
     const label = defaultSchoolYearLabel();
+    const currentGrade = studentGrade.trim();
     setSchoolYearLabel(label);
     setStartDate(defaultSchoolYearStartDate(label));
     setEndDate(defaultSchoolYearEndDate());
-  }, [visible]);
+    setGradeThisYear(currentGrade);
+    setGradeNextYear(getSuggestedNextGrade(currentGrade));
+    setShowValidation(false);
+  }, [visible, studentGrade]);
 
   const handleLabelChange = (value: string) => {
     setSchoolYearLabel(value);
@@ -62,7 +81,17 @@ export default function EndSchoolYearModal({
 
   const handleConfirm = () => {
     const trimmedLabel = schoolYearLabel.trim();
-    if (!trimmedLabel || !startDate.trim() || !endDate.trim()) {
+    const trimmedThisYear = gradeThisYear.trim();
+    const trimmedNextYear = gradeNextYear.trim();
+
+    if (
+      !trimmedLabel ||
+      !startDate.trim() ||
+      !endDate.trim() ||
+      !trimmedThisYear ||
+      !trimmedNextYear
+    ) {
+      setShowValidation(true);
       return;
     }
 
@@ -70,8 +99,29 @@ export default function EndSchoolYearModal({
       schoolYearLabel: trimmedLabel,
       startDate: startDate.trim(),
       endDate: endDate.trim(),
+      gradeLevel: trimmedThisYear,
+      nextGrade: trimmedNextYear,
     });
   };
+
+  const gradesValid = gradeThisYear.trim().length > 0 && gradeNextYear.trim().length > 0;
+  const canConfirm =
+    schoolYearLabel.trim().length > 0 &&
+    startDate.trim().length > 0 &&
+    endDate.trim().length > 0 &&
+    gradesValid;
+
+  const renderGradeChip = (label: string, selected: boolean, onPress: () => void) => (
+    <TouchableOpacity
+      key={label}
+      style={[styles.gradeChip, selected && styles.gradeChipSelected]}
+      onPress={onPress}
+      disabled={loading}
+      activeOpacity={0.7}
+    >
+      <Text style={[styles.gradeChipText, selected && styles.gradeChipTextSelected]}>{label}</Text>
+    </TouchableOpacity>
+  );
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
@@ -130,6 +180,42 @@ export default function EndSchoolYearModal({
               autoCapitalize="none"
               editable={!loading}
             />
+
+            <Text style={styles.label}>What grade was {studentName} in this year?</Text>
+            <View style={styles.gradeChipGrid}>
+              {ORDERED_GRADE_LEVELS.map((g) =>
+                renderGradeChip(g, gradeThisYear.trim() === g, () => setGradeThisYear(g))
+              )}
+            </View>
+            <TextInput
+              style={styles.input}
+              value={gradeThisYear}
+              onChangeText={setGradeThisYear}
+              placeholder="Or enter a custom grade"
+              placeholderTextColor={Colors.ui.textLight}
+              editable={!loading}
+            />
+            {showValidation && !gradeThisYear.trim() ? (
+              <Text style={styles.validationText}>Enter the grade for this school year.</Text>
+            ) : null}
+
+            <Text style={styles.label}>What grade next year?</Text>
+            <View style={styles.gradeChipGrid}>
+              {END_SCHOOL_YEAR_NEXT_GRADE_CHIPS.map((g) =>
+                renderGradeChip(g, gradeNextYear.trim() === g, () => setGradeNextYear(g))
+              )}
+            </View>
+            <TextInput
+              style={styles.input}
+              value={gradeNextYear}
+              onChangeText={setGradeNextYear}
+              placeholder="Or enter a custom grade (e.g. Graduated)"
+              placeholderTextColor={Colors.ui.textLight}
+              editable={!loading}
+            />
+            {showValidation && !gradeNextYear.trim() ? (
+              <Text style={styles.validationText}>Enter the grade for next year.</Text>
+            ) : null}
           </ScrollView>
 
           <View style={styles.actions}>
@@ -145,7 +231,7 @@ export default function EndSchoolYearModal({
               title="End School Year"
               onPress={handleConfirm}
               loading={loading}
-              disabled={loading || !schoolYearLabel.trim()}
+              disabled={loading || !canConfirm}
               style={styles.confirmButton}
             />
           </View>
@@ -168,7 +254,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background.card,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    maxHeight: '85%',
+    maxHeight: '92%',
     paddingBottom: Platform.OS === 'ios' ? 24 : 16,
   },
   header: {
@@ -186,7 +272,7 @@ const styles = StyleSheet.create({
     color: Colors.ui.text,
   },
   scroll: {
-    maxHeight: 360,
+    maxHeight: 520,
   },
   scrollContent: {
     padding: 20,
@@ -212,6 +298,38 @@ const styles = StyleSheet.create({
     ...Typography.body,
     color: Colors.ui.text,
     backgroundColor: Colors.ui.background,
+  },
+  gradeChipGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  gradeChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: Colors.ui.border,
+    backgroundColor: Colors.ui.background,
+  },
+  gradeChipSelected: {
+    borderColor: Colors.brand[600],
+    backgroundColor: Colors.brand[50],
+  },
+  gradeChipText: {
+    ...Typography.caption,
+    color: Colors.ui.text,
+  },
+  gradeChipTextSelected: {
+    color: Colors.brand[700],
+    fontWeight: '600',
+  },
+  validationText: {
+    ...Typography.caption,
+    color: Colors.ui.error,
+    marginTop: 2,
   },
   actions: {
     flexDirection: 'row',

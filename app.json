@@ -2,7 +2,7 @@
   "expo": {
     "name": "HomeschoolHub",
     "slug": "homeschoolhub",
-    "version": "1.1.12",
+    "version": "1.1.13",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -25,7 +25,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.tajamoxey.homeschoolhub",
-      "buildNumber": "55",
+      "buildNumber": "56",
       "infoPlist": {
         "UIRequiresFullScreen": true,
         "UISupportedInterfaceOrientations": [
@@ -52,7 +52,7 @@
       },
       "icon": "./assets/icon.png",
       "package": "com.tajamoxey.homeschoolhub",
-      "versionCode": 55,
+      "versionCode": 56,
       "permissions": [
         "android.permission.RECEIVE_BOOT_COMPLETED",
         "android.permission.VIBRATE",

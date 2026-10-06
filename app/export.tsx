@@ -11,11 +11,16 @@ import {
 import { useRouter } from 'expo-router';
 import { ArrowLeft, Share2, FileText, Award, Calendar, BookOpen, Sparkles, GraduationCap } from 'lucide-react-native';
 import PdfExportSetupModal, { type PdfExportMode } from '@/components/export/PdfExportSetupModal';
+import TranscriptGradeBackfillModal from '@/components/export/TranscriptGradeBackfillModal';
 import TranscriptSetupModal, { type TranscriptGenerateParams } from '@/components/export/TranscriptSetupModal';
 import { fetchReadingLogExportData, fetchYearInReviewData } from '@/lib/fetchPdfExportData';
-import { fetchTranscriptData } from '@/lib/fetchTranscriptData';
+import {
+  fetchCumulativeTranscriptData,
+  type CumulativeTranscriptData,
+} from '@/lib/fetchTranscriptData';
+import { updateSchoolYearArchiveGradeLevel } from '@/lib/schoolYearArchive';
 import { generateReadingLogPdf } from '@/utils/readingLogPdfGenerator';
-import { generateTranscriptPdf } from '@/utils/transcriptPdfGenerator';
+import { generateCumulativeTranscriptPdf } from '@/utils/transcriptPdfGenerator';
 import { generateYearInReviewPdf } from '@/utils/yearInReviewPdfGenerator';
 import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns';
 import Colors from '@/constants/Colors';
@@ -40,6 +45,10 @@ export default function ExportScreen() {
   const [dateRange, setDateRange] = useState<DateRange>('this_month');
   const [pdfModalMode, setPdfModalMode] = useState<PdfExportMode | null>(null);
   const [showTranscriptModal, setShowTranscriptModal] = useState(false);
+  const [transcriptBackfill, setTranscriptBackfill] = useState<{
+    params: TranscriptGenerateParams;
+    data: CumulativeTranscriptData;
+  } | null>(null);
   
   // Calculate date range
   const getDateRange = () => {
@@ -124,37 +133,113 @@ export default function ExportScreen() {
     }
   };
 
+  const buildTranscriptFetchOptions = (params: TranscriptGenerateParams) => {
+    if (params.limitToDateRange && params.startDate && params.endDate) {
+      return {
+        dateRangeFilter: {
+          startDate: params.startDate,
+          endDate: params.endDate,
+        },
+      };
+    }
+    return {};
+  };
+
+  const completeTranscriptExport = async (
+    params: TranscriptGenerateParams,
+    data: CumulativeTranscriptData
+  ) => {
+    const student = students.find((s) => s.id === params.studentId);
+    if (!student) {
+      Alert.alert('Error', 'Student not found');
+      return;
+    }
+
+    const pdfUri = await generateCumulativeTranscriptPdf({
+      studentFullName: params.studentFullName,
+      schoolName: params.schoolName,
+      data,
+    });
+
+    await sharePdf(pdfUri, `${student.name} - Academic Transcript`);
+    setShowTranscriptModal(false);
+    setTranscriptBackfill(null);
+    Alert.alert('Success!', `Transcript generated for ${student.name}`);
+  };
+
   const handleGenerateTranscript = async (params: TranscriptGenerateParams) => {
     setExportingType('transcript');
     try {
-      const student = students.find((s) => s.id === params.studentId);
-      if (!student) {
-        Alert.alert('Error', 'Student not found');
+      const data = await fetchCumulativeTranscriptData(
+        params.studentId,
+        buildTranscriptFetchOptions(params)
+      );
+
+      if (data.missingGradeArchives.length > 0) {
+        setTranscriptBackfill({ params, data });
+        setExportingType(null);
         return;
       }
 
-      const data = await fetchTranscriptData(
-        params.studentId,
-        params.startDate,
-        params.endDate
-      );
-      const pdfUri = await generateTranscriptPdf({
-        studentFullName: params.studentFullName,
-        schoolName: params.schoolName,
-        gradeLevel: params.gradeLevel,
-        startDate: params.startDate,
-        endDate: params.endDate,
-        data,
-      });
-
-      await sharePdf(pdfUri, `${student.name} - Academic Transcript`);
-      setShowTranscriptModal(false);
-      Alert.alert('Success!', `Transcript generated for ${student.name}`);
+      await completeTranscriptExport(params, data);
     } catch (error: unknown) {
       console.error('Transcript export error:', error);
       Alert.alert(
         'Error',
         error instanceof Error ? error.message : 'Failed to generate transcript'
+      );
+    } finally {
+      setExportingType(null);
+    }
+  };
+
+  const handleTranscriptBackfillExportAnyway = async () => {
+    if (!transcriptBackfill) return;
+    setExportingType('transcript');
+    try {
+      await completeTranscriptExport(transcriptBackfill.params, transcriptBackfill.data);
+    } catch (error: unknown) {
+      console.error('Transcript export error:', error);
+      Alert.alert(
+        'Error',
+        error instanceof Error ? error.message : 'Failed to generate transcript'
+      );
+    } finally {
+      setExportingType(null);
+    }
+  };
+
+  const handleTranscriptBackfillSaveAndExport = async (
+    gradesByArchiveId: Record<string, string>
+  ) => {
+    if (!transcriptBackfill) return;
+    setExportingType('transcript');
+    try {
+      const updates = Object.entries(gradesByArchiveId);
+      for (const [archiveId, gradeLevel] of updates) {
+        await updateSchoolYearArchiveGradeLevel(archiveId, gradeLevel);
+      }
+
+      const data = await fetchCumulativeTranscriptData(
+        transcriptBackfill.params.studentId,
+        buildTranscriptFetchOptions(transcriptBackfill.params)
+      );
+
+      if (data.missingGradeArchives.length > 0) {
+        setTranscriptBackfill({ params: transcriptBackfill.params, data });
+        Alert.alert(
+          'Grades saved',
+          'Some school years still need a grade. Add them or choose Export anyway.'
+        );
+        return;
+      }
+
+      await completeTranscriptExport(transcriptBackfill.params, data);
+    } catch (error: unknown) {
+      console.error('Transcript backfill error:', error);
+      Alert.alert(
+        'Error',
+        error instanceof Error ? error.message : 'Failed to save grades or generate transcript'
       );
     } finally {
       setExportingType(null);
@@ -666,13 +751,26 @@ export default function ExportScreen() {
       <TranscriptSetupModal
         visible={showTranscriptModal}
         students={students}
-        loading={exportingType === 'transcript'}
+        loading={exportingType === 'transcript' && !transcriptBackfill}
         onClose={() => {
           if (exportingType !== 'transcript') {
             setShowTranscriptModal(false);
           }
         }}
         onGenerate={handleGenerateTranscript}
+      />
+
+      <TranscriptGradeBackfillModal
+        visible={transcriptBackfill !== null}
+        items={transcriptBackfill?.data.missingGradeArchives ?? []}
+        loading={exportingType === 'transcript'}
+        onClose={() => {
+          if (exportingType !== 'transcript') {
+            setTranscriptBackfill(null);
+          }
+        }}
+        onExportAnyway={handleTranscriptBackfillExportAnyway}
+        onSaveGradesAndExport={handleTranscriptBackfillSaveAndExport}
       />
     </View>
   );

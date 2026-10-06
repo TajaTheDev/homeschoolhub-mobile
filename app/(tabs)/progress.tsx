@@ -484,6 +484,8 @@ export default function ProgressScreen() {
     schoolYearLabel: string;
     startDate: string;
     endDate: string;
+    gradeLevel: string;
+    nextGrade: string;
   }) => {
     if (!selectedStudentId) return;
 
@@ -506,6 +508,8 @@ export default function ProgressScreen() {
         schoolYearLabel: values.schoolYearLabel,
         startDate: values.startDate,
         endDate: values.endDate,
+        gradeLevel: values.gradeLevel,
+        nextGrade: values.nextGrade,
         summary,
       });
 
@@ -1214,6 +1218,7 @@ export default function ProgressScreen() {
         <EndSchoolYearModal
           visible={showEndSchoolYearModal}
           studentName={selectedStudent?.name || 'Student'}
+          studentGrade={selectedStudent?.grade ?? ''}
           loading={archivingSchoolYear}
           onClose={() => {
             if (!archivingSchoolYear) {

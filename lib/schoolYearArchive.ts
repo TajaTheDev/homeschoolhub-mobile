@@ -31,6 +31,10 @@ export type ArchiveSchoolYearParams = {
   schoolYearLabel: string;
   startDate: string;
   endDate: string;
+  /** Grade the student was in during the year being archived (user confirmed). */
+  gradeLevel: string;
+  /** Grade for the upcoming school year; written to students.grade (user confirmed). */
+  nextGrade: string;
   summary: SchoolYearArchiveSummary;
 };
 
@@ -110,12 +114,20 @@ export async function buildArchiveSummary(
 export async function archiveSchoolYear(
   params: ArchiveSchoolYearParams
 ): Promise<SchoolYearArchiveRow> {
+  const gradeLevel = params.gradeLevel.trim();
+  const nextGrade = params.nextGrade.trim();
+  if (!gradeLevel || !nextGrade) {
+    throw new Error('Grade level and next year grade are required.');
+  }
+
   const { data, error } = await supabase
     .rpc('archive_school_year', {
       p_student_id: params.studentId,
       p_school_year_label: params.schoolYearLabel.trim(),
       p_start_date: params.startDate,
       p_end_date: params.endDate,
+      p_grade_level: gradeLevel,
+      p_next_grade: nextGrade,
       p_summary: params.summary,
     })
     .single();
@@ -129,4 +141,26 @@ export async function archiveSchoolYear(
   }
 
   return data;
+}
+
+/**
+ * Updates grade_level on an archived school year (export backfill / user correction).
+ */
+export async function updateSchoolYearArchiveGradeLevel(
+  archiveId: string,
+  gradeLevel: string
+): Promise<void> {
+  const trimmed = gradeLevel.trim();
+  if (!trimmed) {
+    throw new Error('Grade level is required.');
+  }
+
+  const { error } = await supabase
+    .from('school_year_archives')
+    .update({ grade_level: trimmed })
+    .eq('id', archiveId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
 }

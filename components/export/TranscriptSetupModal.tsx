@@ -10,6 +10,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -18,11 +19,12 @@ import {
 
 export type TranscriptGenerateParams = {
   studentId: string;
-  startDate: string;
-  endDate: string;
   studentFullName: string;
   schoolName: string;
-  gradeLevel: string;
+  /** When false, export includes all recorded school years (default). */
+  limitToDateRange: boolean;
+  startDate?: string;
+  endDate?: string;
 };
 
 type TranscriptSetupModalProps = {
@@ -51,21 +53,21 @@ export default function TranscriptSetupModal({
   onGenerate,
 }: TranscriptSetupModalProps) {
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
+  const [limitToDateRange, setLimitToDateRange] = useState(false);
   const [startDate, setStartDate] = useState(getDefaultSchoolYearStart);
   const [endDate, setEndDate] = useState(getDefaultSchoolYearEnd);
   const [studentFullName, setStudentFullName] = useState('');
   const [schoolName, setSchoolName] = useState('');
-  const [gradeLevel, setGradeLevel] = useState('');
   const [activePicker, setActivePicker] = useState<'start' | 'end' | null>(null);
 
   useEffect(() => {
     if (!visible) return;
 
+    setLimitToDateRange(false);
     setStartDate(getDefaultSchoolYearStart());
     setEndDate(getDefaultSchoolYearEnd());
     setStudentFullName('');
     setSchoolName('');
-    setGradeLevel('');
     setActivePicker(null);
 
     if (students.length === 1) {
@@ -82,11 +84,11 @@ export default function TranscriptSetupModal({
     if (!selectedStudentId) return;
     onGenerate({
       studentId: selectedStudentId,
-      startDate: format(startDate, 'yyyy-MM-dd'),
-      endDate: format(endDate, 'yyyy-MM-dd'),
       studentFullName: studentFullName.trim(),
       schoolName: schoolName.trim(),
-      gradeLevel: gradeLevel.trim(),
+      limitToDateRange,
+      startDate: limitToDateRange ? format(startDate, 'yyyy-MM-dd') : undefined,
+      endDate: limitToDateRange ? format(endDate, 'yyyy-MM-dd') : undefined,
     });
   };
 
@@ -148,7 +150,8 @@ export default function TranscriptSetupModal({
             <View style={styles.sheetHeaderText}>
               <Text style={styles.sheetTitle}>Academic Transcript</Text>
               <Text style={styles.sheetSubtitle}>
-                Choose a student and school year for a formal transcript PDF.
+                Cumulative transcript PDF with a section per school year. Grade levels come from
+                your archived years and current student grade — not entered here.
               </Text>
             </View>
             <TouchableOpacity onPress={onClose} disabled={loading}>
@@ -195,32 +198,6 @@ export default function TranscriptSetupModal({
               editable={!loading}
             />
 
-            <Text style={[styles.filterLabel, styles.fieldLabelSpaced]}>School year</Text>
-            <TouchableOpacity
-              style={styles.dateButton}
-              onPress={() => setActivePicker('start')}
-              disabled={loading}
-              activeOpacity={0.7}
-            >
-              <CalendarIcon size={20} color={Colors.brand[600]} />
-              <View style={styles.dateButtonContent}>
-                <Text style={styles.dateButtonLabel}>School year start</Text>
-                <Text style={styles.dateButtonText}>{format(startDate, 'MMMM d, yyyy')}</Text>
-              </View>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.dateButton, styles.dateButtonSpaced]}
-              onPress={() => setActivePicker('end')}
-              disabled={loading}
-              activeOpacity={0.7}
-            >
-              <CalendarIcon size={20} color={Colors.brand[600]} />
-              <View style={styles.dateButtonContent}>
-                <Text style={styles.dateButtonLabel}>School year end</Text>
-                <Text style={styles.dateButtonText}>{format(endDate, 'MMMM d, yyyy')}</Text>
-              </View>
-            </TouchableOpacity>
-
             <Text style={[styles.filterLabel, styles.fieldLabelSpaced]}>School name</Text>
             <TextInput
               style={styles.textInput}
@@ -231,15 +208,51 @@ export default function TranscriptSetupModal({
               editable={!loading}
             />
 
-            <Text style={[styles.filterLabel, styles.fieldLabelSpaced]}>Grade level</Text>
-            <TextInput
-              style={styles.textInput}
-              value={gradeLevel}
-              onChangeText={setGradeLevel}
-              placeholder="9th Grade"
-              placeholderTextColor={Colors.ui.textLight}
-              editable={!loading}
-            />
+            <View style={styles.toggleRow}>
+              <View style={styles.toggleTextBlock}>
+                <Text style={styles.filterLabel}>Limit to date range</Text>
+                <Text style={styles.toggleHint}>
+                  Off by default — includes all recorded school years. Turn on to export only years
+                  that overlap this range.
+                </Text>
+              </View>
+              <Switch
+                value={limitToDateRange}
+                onValueChange={setLimitToDateRange}
+                disabled={loading}
+                trackColor={{ false: Colors.ui.border, true: Colors.brand[300] }}
+                thumbColor={limitToDateRange ? Colors.brand[600] : '#f4f3f4'}
+              />
+            </View>
+
+            {limitToDateRange ? (
+              <>
+                <TouchableOpacity
+                  style={[styles.dateButton, styles.fieldLabelSpaced]}
+                  onPress={() => setActivePicker('start')}
+                  disabled={loading}
+                  activeOpacity={0.7}
+                >
+                  <CalendarIcon size={20} color={Colors.brand[600]} />
+                  <View style={styles.dateButtonContent}>
+                    <Text style={styles.dateButtonLabel}>Range start</Text>
+                    <Text style={styles.dateButtonText}>{format(startDate, 'MMMM d, yyyy')}</Text>
+                  </View>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.dateButton, styles.dateButtonSpaced]}
+                  onPress={() => setActivePicker('end')}
+                  disabled={loading}
+                  activeOpacity={0.7}
+                >
+                  <CalendarIcon size={20} color={Colors.brand[600]} />
+                  <View style={styles.dateButtonContent}>
+                    <Text style={styles.dateButtonLabel}>Range end</Text>
+                    <Text style={styles.dateButtonText}>{format(endDate, 'MMMM d, yyyy')}</Text>
+                  </View>
+                </TouchableOpacity>
+              </>
+            ) : null}
 
             <TouchableOpacity
               style={[styles.generateButton, !canGenerate && styles.generateButtonDisabled]}
@@ -255,19 +268,21 @@ export default function TranscriptSetupModal({
         </Pressable>
       </Pressable>
 
-      {renderDatePicker('start', startDate, setStartDate)}
-      {renderDatePicker(
-        'end',
-        endDate,
-        (date) => {
-          if (date < startDate) {
-            setEndDate(startDate);
-          } else {
-            setEndDate(date);
-          }
-        },
-        startDate
-      )}
+      {limitToDateRange ? renderDatePicker('start', startDate, setStartDate) : null}
+      {limitToDateRange
+        ? renderDatePicker(
+            'end',
+            endDate,
+            (date) => {
+              if (date < startDate) {
+                setEndDate(startDate);
+              } else {
+                setEndDate(date);
+              }
+            },
+            startDate
+          )
+        : null}
     </Modal>
   );
 }
@@ -345,6 +360,22 @@ const styles = StyleSheet.create({
   },
   filterChipTextActive: {
     color: 'white',
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 20,
+    gap: 12,
+  },
+  toggleTextBlock: {
+    flex: 1,
+  },
+  toggleHint: {
+    fontSize: 12,
+    color: Colors.ui.textLight,
+    lineHeight: 17,
+    marginTop: 2,
   },
   dateButton: {
     flexDirection: 'row',

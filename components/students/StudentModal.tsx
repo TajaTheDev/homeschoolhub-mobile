@@ -4,6 +4,7 @@ import { useSubscriptionAccess } from '@/hooks/useSubscriptionAccess';
 import Avatar from '@/components/ui/Avatar';
 import Colors from '@/constants/Colors';
 import { useStudentStore } from '@/store/studentStore';
+import { ORDERED_GRADE_LEVELS } from '@/lib/gradeLevels';
 import { GradeLevel, Student, StudentColor } from '@/types';
 import { Trash2, X } from 'lucide-react-native';
 import React, { useEffect, useRef, useState } from 'react';
@@ -27,8 +28,6 @@ interface StudentModalProps {
   onClose: () => void;
   onSave: () => void;
 }
-
-const GRADES: GradeLevel[] = ['Pre-K', 'Kindergarten', '1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th', '11th', '12th'];
 
 const COLORS: { name: StudentColor; color: string }[] = [
   { name: 'purple', color: Colors.student.purple },
@@ -254,7 +253,7 @@ export default function StudentModal({ visible, student, onClose, onSave }: Stud
             <View style={styles.section}>
               <Text style={styles.label}>Grade</Text>
               <View style={styles.gradeGrid}>
-                {GRADES.map((g) => (
+                {ORDERED_GRADE_LEVELS.map((g) => (
                   <TouchableOpacity
                     key={g}
                     style={[

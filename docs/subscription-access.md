@@ -10,6 +10,10 @@ The app uses `accessLevel` on `SubscriptionInfo` from `store/subscriptionStore.t
 
 Routing sends **`locked`** users to `/subscribe`. **`readonly`** users reach `/(tabs)` and may export; writes are gated in the UI (`requireEdit` + store guards) and at call sites (Phase 4).
 
+## `user_subscriptions` (not access source of truth)
+
+The **`user_subscriptions`** table is **not** the trial/access source of truth. It is only used by **`lib/revenuecat.ts`** to store the RevenueCat customer ID mapping (`user_id` → `revenuecat_customer_id`). Trial and subscription access live in **`user_trials`** + RevenueCat entitlements. **Do not** write access/trial state to `user_subscriptions`. Its `subscription_status` / `trial_*` columns are legacy and unused.
+
 ## UI gating (Phase 4)
 
 - **`hooks/useSubscriptionAccess`** — `requireEdit('<action>')` with short action labels; **`SubscribeToEditNudge`** renders `Subscribe to {action}`.
