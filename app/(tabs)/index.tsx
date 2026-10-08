@@ -2,6 +2,7 @@
  * Main Dashboard Screen
  */
 
+import FoundingLifetimeBanner from '@/components/FoundingLifetimeBanner';
 import SubscribeToEditNudge from '@/components/SubscribeToEditNudge';
 import TrialBanner from '@/components/TrialBanner';
 import { useSubscriptionAccess } from '@/hooks/useSubscriptionAccess';
@@ -693,6 +694,7 @@ export default function Dashboard() {
             showsVerticalScrollIndicator={false}
           >
         <TrialBanner />
+        <FoundingLifetimeBanner />
         {/* Header Section */}
         <View style={styles.headerContainer}>
           {/* 1. Name and Date Section - At TOP */}

@@ -18,6 +18,12 @@ const REVENUECAT_API_KEYS = {
 // Entitlement identifier
 const PRO_ENTITLEMENT_ID = 'pro';
 
+/** RevenueCat offering id for the limited founding lifetime deal. */
+export const FOUNDING_OFFERING_IDENTIFIER = 'founding';
+
+/** Store product id for the one-time founding lifetime purchase (grants `pro`). */
+export const FOUNDING_LIFETIME_PRODUCT_ID = 'founding_lifetime';
+
 let revenueCatConfigured = false;
 let pendingSupabaseUserId: string | null = null;
 let authSyncRegistered = false;
@@ -270,34 +276,144 @@ export const checkProStatus = async (): Promise<boolean> => {
 };
 
 /**
+ * Localized price label from a RevenueCat package (never hardcode store prices).
+ */
+export function formatPackagePrice(pkg: PurchasesPackage): string {
+  return pkg.product.priceString;
+}
+
+/**
+ * Loads all RevenueCat offerings, or null in Expo Go / on failure.
+ */
+async function fetchPurchasesOfferings() {
+  if (isDevelopmentMode()) {
+    return null;
+  }
+
+  try {
+    return await Purchases.getOfferings();
+  } catch (error) {
+    console.error('❌ Error fetching offerings:', error);
+    return null;
+  }
+}
+
+/**
+ * The separate "founding" offering (not offerings.current). Null when toggled off in RevenueCat.
+ */
+export async function getFoundingOffering(): Promise<PurchasesOffering | null> {
+  const offerings = await fetchPurchasesOfferings();
+  if (!offerings) {
+    return null;
+  }
+
+  return offerings.all[FOUNDING_OFFERING_IDENTIFIER] ?? null;
+}
+
+/**
+ * Finds the founding lifetime package by store product id within an offering.
+ */
+export function findFoundingLifetimePackage(
+  offering: PurchasesOffering | null
+): PurchasesPackage | null {
+  if (!offering) {
+    return null;
+  }
+
+  return (
+    offering.availablePackages.find(
+      (pkg) => pkg.product.identifier === FOUNDING_LIFETIME_PRODUCT_ID
+    ) ?? null
+  );
+}
+
+/**
+ * Founding lifetime package when the founding offering is live; null otherwise.
+ */
+export async function getFoundingLifetimePackage(): Promise<PurchasesPackage | null> {
+  const offering = await getFoundingOffering();
+  return findFoundingLifetimePackage(offering);
+}
+
+/**
+ * True when the user has an active auto-renewing subscription (monthly/annual),
+ * not founding lifetime alone.
+ */
+export async function hasActiveRecurringProSubscription(): Promise<boolean> {
+  if (isDevelopmentMode()) {
+    return false;
+  }
+
+  const identified = await ensureRevenueCatUserIdentified();
+  if (!identified) {
+    return false;
+  }
+
+  try {
+    const customerInfo = await Purchases.getCustomerInfo();
+
+    if (
+      customerInfo.activeSubscriptions.some(
+        (productId) => productId !== FOUNDING_LIFETIME_PRODUCT_ID
+      )
+    ) {
+      return true;
+    }
+
+    const pro = customerInfo.entitlements.active[PRO_ENTITLEMENT_ID];
+    if (!pro) {
+      return false;
+    }
+
+    if (pro.productIdentifier === FOUNDING_LIFETIME_PRODUCT_ID) {
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Error checking recurring subscription:', error);
+    return false;
+  }
+}
+
+/**
+ * Opens the platform store subscription management page.
+ */
+export async function openStoreSubscriptionManagement(): Promise<boolean> {
+  const { Linking } = await import('react-native');
+  const url =
+    Platform.OS === 'ios'
+      ? 'https://apps.apple.com/account/subscriptions'
+      : 'https://play.google.com/store/account/subscriptions';
+
+  try {
+    const canOpen = await Linking.canOpenURL(url);
+    if (!canOpen) {
+      return false;
+    }
+    await Linking.openURL(url);
+    return true;
+  } catch (error) {
+    console.error('Could not open subscription management URL:', error);
+    return false;
+  }
+}
+
+/**
  * Get available subscription offerings
  * @returns Promise<PurchasesOffering | null>
  * Returns null in development/Expo Go
  */
 export const getOfferings = async (): Promise<PurchasesOffering | null> => {
-  if (isDevelopmentMode()) {
-        return null;
+  const offerings = await fetchPurchasesOfferings();
+  if (!offerings?.current) {
+    if (offerings && offerings.current === null) {
+      console.warn('⚠️ No current offering found');
+    }
+    return null;
   }
 
-  try {
-        
-    const offerings = await Purchases.getOfferings();
-    
-    if (offerings.current !== null) {
-      const packages = offerings.current.availablePackages;
-      
-                  packages.forEach(pkg => {
-              });
-      
-      return offerings.current;
-    }
-    
-    console.warn('⚠️ No current offering found');
-    return null;
-  } catch (error) {
-    console.error('❌ Error fetching offerings:', error);
-    return null;
-  }
+  return offerings.current;
 };
 
 /**

@@ -781,6 +781,27 @@ export default function ProgressScreen() {
         </TouchableOpacity>
       ) : null}
 
+      {selectedStudentId && studentSubjects.length > 0 ? (
+        <View style={styles.endSchoolYearBlock}>
+          <TouchableOpacity
+            style={styles.endSchoolYearButton}
+            onPress={() => {
+              if (!requireEdit('archive school years')) {
+                return;
+              }
+              setShowEndSchoolYearModal(true);
+            }}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.endSchoolYearButtonText}>End school year</Text>
+          </TouchableOpacity>
+          <Text style={styles.endSchoolYearHelper}>
+            Archive this year&apos;s records and move {selectedStudent?.name ?? 'this student'} to
+            the next grade — your data is kept.
+          </Text>
+        </View>
+      ) : null}
+
       {/* No Lessons Empty State */}
       {studentLessons.length === 0 ? (
         <EmptyState
@@ -1025,16 +1046,6 @@ export default function ProgressScreen() {
           })}
           </>
         )}
-
-        {selectedStudentId && studentSubjects.length > 0 ? (
-          <TouchableOpacity
-            style={styles.endSchoolYearButton}
-            onPress={() => setShowEndSchoolYearModal(true)}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.endSchoolYearButtonText}>End school year</Text>
-          </TouchableOpacity>
-        ) : null}
       </View>
 
           {/* Recent Activity Section */}
@@ -1516,18 +1527,29 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     marginBottom: 12,
   },
+  endSchoolYearBlock: {
+    marginTop: 12,
+    marginBottom: 8,
+  },
   endSchoolYearButton: {
-    marginTop: 4,
-    paddingVertical: 14,
-    borderRadius: 12,
+    alignSelf: 'flex-start',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: Colors.brand[300],
-    alignItems: 'center',
-    backgroundColor: Colors.brand[50],
+    borderColor: Colors.ui.border,
+    backgroundColor: Colors.background.card,
   },
   endSchoolYearButtonText: {
-    ...Typography.label,
-    color: Colors.brand[700],
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.ui.text,
+  },
+  endSchoolYearHelper: {
+    ...Typography.caption,
+    color: Colors.ui.textLight,
+    marginTop: 6,
+    lineHeight: 18,
   },
   activityCard: {
     backgroundColor: '#FFFFFF',

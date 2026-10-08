@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -15,7 +16,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import {
   BookOpen,
   Camera,
-  Check,
   Crown,
   Gift,
   Heart,
@@ -25,10 +25,24 @@ import {
 } from 'lucide-react-native';
 import { presentCustomerCenter } from '@/components/subscription/CustomerCenter';
 import Colors from '@/constants/Colors';
+import { FOUNDING_PRICING_URGENCY_COPY } from '@/constants/foundingOffer';
 import Typography from '@/constants/Typography';
-import { checkProStatus, PAYWALL_RESULT, presentPaywall as presentRevenueCatPaywall } from '@/lib/revenuecat';
+import {
+  checkProStatus,
+  formatPackagePrice,
+  getFoundingLifetimePackage,
+  getOfferings,
+  hasActiveRecurringProSubscription,
+  openStoreSubscriptionManagement,
+  purchasePackage,
+  restorePurchases,
+} from '@/lib/revenuecat';
 import { useSubscription } from '@/contexts/SubscriptionContext';
 import { useSubscriptionStore } from '@/store/subscriptionStore';
+import type { PurchasesPackage } from 'react-native-purchases';
+
+const LIFETIME_FOOTNOTE_COPY =
+  'Already subscribed? After purchasing, cancel your subscription in your store settings to stop future charges.';
 
 const PREMIUM_FEATURES = [
   { icon: Users, label: 'Unlimited students' },
@@ -38,16 +52,50 @@ const PREMIUM_FEATURES = [
   { icon: Sparkles, label: 'Export & Sharing' },
 ];
 
+function isAnnualPackage(pkg: PurchasesPackage): boolean {
+  return (
+    pkg.identifier === '$rc_annual' ||
+    pkg.packageType === 'ANNUAL' ||
+    pkg.identifier.toLowerCase().includes('annual') ||
+    pkg.identifier.toLowerCase().includes('yearly')
+  );
+}
+
+function isMonthlyPackage(pkg: PurchasesPackage): boolean {
+  return (
+    pkg.identifier === '$rc_monthly' ||
+    pkg.packageType === 'MONTHLY' ||
+    pkg.identifier.toLowerCase().includes('monthly')
+  );
+}
+
+function billingPeriodSuffix(pkg: PurchasesPackage): string {
+  if (isAnnualPackage(pkg)) return '/year';
+  if (isMonthlyPackage(pkg)) return '/month';
+  return '';
+}
+
 export default function SubscribeScreen() {
   const router = useRouter();
   const confettiRef = useRef<any>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(24)).current;
   const [loading, setLoading] = useState(true);
+  const [packagesLoading, setPackagesLoading] = useState(true);
+  const [packagesError, setPackagesError] = useState<string | null>(null);
+  const [monthlyPackage, setMonthlyPackage] = useState<PurchasesPackage | null>(null);
+  const [annualPackage, setAnnualPackage] = useState<PurchasesPackage | null>(null);
+  const [foundingLifetimePackage, setFoundingLifetimePackage] =
+    useState<PurchasesPackage | null>(null);
   const [showCelebration, setShowCelebration] = useState(false);
   const [hasSubscription, setHasSubscription] = useState(false);
+  const [purchasing, setPurchasing] = useState(false);
+  const [restoring, setRestoring] = useState(false);
   const { refreshSubscriptionStatus } = useSubscription();
   const { subscriptionInfo, updateSubscriptionStatus } = useSubscriptionStore();
+
+  const isPaidPro = subscriptionInfo?.subscriptionStatus === 'active';
+  const showFoundingLifetimeCard = Boolean(foundingLifetimePackage) && !isPaidPro;
 
   const isTrialExpired =
     subscriptionInfo?.subscriptionStatus === 'expired' ||
@@ -71,9 +119,61 @@ export default function SubscribeScreen() {
     ]).start();
   }, [fadeAnim, slideAnim]);
 
-  useEffect(() => {
-    loadSubscriptionStatus();
+  const loadSubscriptionStatus = useCallback(async () => {
+    try {
+      await updateSubscriptionStatus();
+      const info = useSubscriptionStore.getState().subscriptionInfo;
+      setHasSubscription(info?.subscriptionStatus === 'active');
+    } catch (error) {
+      console.error('Subscription check error:', error);
+      setHasSubscription(false);
+    }
+  }, [updateSubscriptionStatus]);
+
+  const loadPackages = useCallback(async () => {
+    setPackagesLoading(true);
+    setPackagesError(null);
+
+    try {
+      const [currentOffering, foundingPkg] = await Promise.all([
+        getOfferings(),
+        getFoundingLifetimePackage(),
+      ]);
+
+      setFoundingLifetimePackage(foundingPkg);
+
+      if (!currentOffering?.availablePackages.length) {
+        setMonthlyPackage(null);
+        setAnnualPackage(null);
+        if (!foundingPkg) {
+          setPackagesError(
+            'Subscription plans are unavailable right now. Pull down and try again, or check back shortly.'
+          );
+        }
+        return;
+      }
+
+      const packages = currentOffering.availablePackages;
+      setMonthlyPackage(packages.find(isMonthlyPackage) ?? null);
+      setAnnualPackage(packages.find(isAnnualPackage) ?? null);
+    } catch (error) {
+      console.error('Offerings load error:', error);
+      setPackagesError('Could not load plan prices. Tap Try again below.');
+      setMonthlyPackage(null);
+      setAnnualPackage(null);
+    } finally {
+      setPackagesLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    const bootstrap = async () => {
+      setLoading(true);
+      await Promise.all([loadSubscriptionStatus(), loadPackages()]);
+      setLoading(false);
+    };
+    void bootstrap();
+  }, [loadPackages, loadSubscriptionStatus]);
 
   useEffect(() => {
     if (!loading && !showCelebration) {
@@ -87,20 +187,6 @@ export default function SubscribeScreen() {
       return () => clearTimeout(timer);
     }
   }, [showCelebration]);
-
-  const loadSubscriptionStatus = async () => {
-    try {
-      setLoading(true);
-      await updateSubscriptionStatus();
-      const info = useSubscriptionStore.getState().subscriptionInfo;
-      setHasSubscription(info?.subscriptionStatus === 'active');
-    } catch (error) {
-      console.error('Subscription check error:', error);
-      setHasSubscription(false);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleSubscribeSuccess = async () => {
     await refreshSubscriptionStatus();
@@ -116,26 +202,133 @@ export default function SubscribeScreen() {
     }
   };
 
-  const presentPaywall = async () => {
-    try {
-      const result = await presentRevenueCatPaywall();
+  const showLifetimeDoubleBillingAlert = () => {
+    const storeName = Platform.OS === 'ios' ? 'App Store' : 'Google Play';
+    Alert.alert(
+      'You now have lifetime access!',
+      `You still have an active subscription that will keep charging you. Cancel it in your ${storeName} settings to stop future charges — your lifetime access stays regardless.`,
+      [
+        {
+          text: 'Manage subscriptions',
+          onPress: () => {
+            void openStoreSubscriptionManagement();
+          },
+        },
+        { text: 'OK', style: 'cancel' },
+      ]
+    );
+  };
 
-      if (
-        result === PAYWALL_RESULT.PURCHASED ||
-        result === PAYWALL_RESULT.RESTORED
-      ) {
+  const handlePackagePurchase = async (pkg: PurchasesPackage | null) => {
+    if (!pkg || purchasing) {
+      return;
+    }
+
+    setPurchasing(true);
+    try {
+      const result = await purchasePackage(pkg);
+
+      if (result.success) {
         await handleSubscribeSuccess();
+        return;
       }
+
+      if (result.cancelled) {
+        return;
+      }
+
+      Alert.alert('Purchase failed', result.error ?? 'Please try again.');
     } catch (error: unknown) {
-      console.error('Paywall error:', error);
-      const err = error as { message?: string; readableErrorMessage?: string };
+      console.error('Purchase error:', error);
       Alert.alert(
-        'Cannot Show Paywall',
-        err?.message ||
-          err?.readableErrorMessage ||
-          'Unable to show subscription options. Please try again.',
-        [{ text: 'OK' }]
+        'Purchase failed',
+        error instanceof Error ? error.message : 'Please try again.'
       );
+    } finally {
+      setPurchasing(false);
+    }
+  };
+
+  const handleLifetimePurchase = async () => {
+    if (!foundingLifetimePackage || purchasing) {
+      return;
+    }
+
+    setPurchasing(true);
+    try {
+      const hadRecurringSubscription = await hasActiveRecurringProSubscription();
+      const result = await purchasePackage(foundingLifetimePackage);
+
+      if (result.success) {
+        await handleSubscribeSuccess();
+        if (hadRecurringSubscription) {
+          showLifetimeDoubleBillingAlert();
+        }
+        return;
+      }
+
+      if (result.cancelled) {
+        return;
+      }
+
+      Alert.alert('Purchase failed', result.error ?? 'Please try again.');
+    } catch (error: unknown) {
+      console.error('Lifetime purchase error:', error);
+      Alert.alert(
+        'Purchase failed',
+        error instanceof Error ? error.message : 'Please try again.'
+      );
+    } finally {
+      setPurchasing(false);
+    }
+  };
+
+  const handlePrimarySubscribe = async () => {
+    const preferred = annualPackage ?? monthlyPackage;
+    if (!preferred) {
+      Alert.alert(
+        'Plans unavailable',
+        'Subscription options could not be loaded. Please try again in a moment.'
+      );
+      return;
+    }
+    await handlePackagePurchase(preferred);
+  };
+
+  const handleRestorePurchases = async () => {
+    if (restoring || purchasing) {
+      return;
+    }
+
+    setRestoring(true);
+    try {
+      const result = await restorePurchases();
+
+      if (result.success && result.hasProAccess) {
+        await handleSubscribeSuccess();
+        return;
+      }
+
+      if (result.success) {
+        Alert.alert(
+          'Restore purchases',
+          'No previous purchases found to restore.'
+        );
+        return;
+      }
+
+      Alert.alert(
+        'Restore purchases',
+        'We couldn’t restore purchases right now. Please try again in a moment.'
+      );
+    } catch (error: unknown) {
+      console.error('Restore purchases error:', error);
+      Alert.alert(
+        'Restore purchases',
+        'We couldn’t restore purchases right now. Please try again in a moment.'
+      );
+    } finally {
+      setRestoring(false);
     }
   };
 
@@ -206,36 +399,130 @@ export default function SubscribeScreen() {
     transform: [{ translateY: slideAnim }],
   };
 
+  const renderSubscriptionPlanCard = (
+    pkg: PurchasesPackage,
+    options: { title: string; recommended?: boolean; subscribeLabel: string }
+  ) => (
+    <TouchableOpacity
+      key={pkg.identifier}
+      style={[
+        styles.planCard,
+        options.recommended && styles.planCardRecommended,
+        (purchasing || restoring) && styles.planCardDisabled,
+      ]}
+      onPress={() => handlePackagePurchase(pkg)}
+      disabled={purchasing || restoring}
+      activeOpacity={0.9}
+    >
+      {options.recommended ? (
+        <Text style={styles.recommendedBadge}>RECOMMENDED</Text>
+      ) : null}
+      <Text style={styles.planTitle}>{options.title}</Text>
+      <Text style={styles.planPrice}>
+        {formatPackagePrice(pkg)}
+        {billingPeriodSuffix(pkg) ? (
+          <Text style={styles.planPeriod}>{billingPeriodSuffix(pkg)}</Text>
+        ) : null}
+      </Text>
+      <View style={[styles.planButton, options.recommended && styles.planButtonRecommended]}>
+        <Text style={styles.planButtonText}>{options.subscribeLabel}</Text>
+      </View>
+    </TouchableOpacity>
+  );
+
+  const renderFoundingLifetimeCard = (subscribeLabel: string) => {
+    if (!showFoundingLifetimeCard || !foundingLifetimePackage) {
+      return null;
+    }
+
+    return (
+      <TouchableOpacity
+        style={[
+          styles.planCard,
+          styles.lifetimePlanCard,
+          (purchasing || restoring) && styles.planCardDisabled,
+        ]}
+        onPress={handleLifetimePurchase}
+        disabled={purchasing || restoring}
+        activeOpacity={0.9}
+      >
+        <Text style={styles.lifetimeBadge}>FOUNDING MEMBER</Text>
+        <Text style={styles.planTitle}>Lifetime Access</Text>
+        <Text style={styles.planPrice}>{formatPackagePrice(foundingLifetimePackage)}</Text>
+        <Text style={styles.lifetimeSubtitle}>
+          One-time payment, lifetime access, no recurring charges.
+        </Text>
+        <Text style={styles.lifetimeUrgency}>{FOUNDING_PRICING_URGENCY_COPY}</Text>
+        <View style={styles.planButton}>
+          <Text style={styles.planButtonText}>
+            {purchasing ? 'Processing…' : subscribeLabel}
+          </Text>
+        </View>
+        <Text style={styles.lifetimeFootnote}>{LIFETIME_FOOTNOTE_COPY}</Text>
+      </TouchableOpacity>
+    );
+  };
+
   const renderPlanCards = (subscribeLabel: string) => (
     <View style={styles.plansContainer}>
-      <TouchableOpacity
-        style={styles.planCard}
-        onPress={presentPaywall}
-        activeOpacity={0.9}
-      >
-        <Text style={styles.planTitle}>Premium Monthly</Text>
-        <Text style={styles.planPrice}>
-          $4.99<Text style={styles.planPeriod}>/month</Text>
-        </Text>
-        <View style={styles.planButton}>
-          <Text style={styles.planButtonText}>{subscribeLabel}</Text>
+      {packagesLoading ? (
+        <View style={styles.packagesLoadingRow}>
+          <ActivityIndicator size="small" color={Colors.brand[500]} />
+          <Text style={styles.packagesLoadingText}>Loading plan prices…</Text>
         </View>
-      </TouchableOpacity>
+      ) : null}
+
+      {!packagesLoading && packagesError ? (
+        <View style={styles.packagesErrorBox}>
+          <Text style={styles.packagesErrorText}>{packagesError}</Text>
+          <TouchableOpacity
+            style={styles.paywallFallbackButton}
+            onPress={() => void loadPackages()}
+            disabled={packagesLoading}
+          >
+            <Text style={styles.paywallFallbackButtonText}>Try again</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
+      {!packagesLoading && monthlyPackage
+        ? renderSubscriptionPlanCard(monthlyPackage, {
+            title: 'Premium Monthly',
+            subscribeLabel,
+          })
+        : null}
+
+      {!packagesLoading && annualPackage
+        ? renderSubscriptionPlanCard(annualPackage, {
+            title: 'Premium Yearly',
+            recommended: true,
+            subscribeLabel,
+          })
+        : null}
+
+      {!packagesLoading && !monthlyPackage && !annualPackage && !packagesError ? (
+        <TouchableOpacity
+          style={styles.paywallFallbackButton}
+          onPress={() => void loadPackages()}
+          disabled={packagesLoading}
+        >
+          <Text style={styles.paywallFallbackButtonText}>Reload plans</Text>
+        </TouchableOpacity>
+      ) : null}
+
+      {!packagesLoading ? renderFoundingLifetimeCard('Get Lifetime Access') : null}
 
       <TouchableOpacity
-        style={[styles.planCard, styles.planCardRecommended]}
-        onPress={presentPaywall}
-        activeOpacity={0.9}
+        style={styles.restorePurchasesButton}
+        onPress={() => void handleRestorePurchases()}
+        disabled={purchasing || restoring}
+        activeOpacity={0.7}
       >
-        <Text style={styles.recommendedBadge}>RECOMMENDED</Text>
-        <Text style={styles.planTitle}>Premium Yearly</Text>
-        <Text style={styles.planPrice}>
-          $49.99<Text style={styles.planPeriod}>/year</Text>
-        </Text>
-        <Text style={styles.planSavings}>Save 17%</Text>
-        <View style={[styles.planButton, styles.planButtonRecommended]}>
-          <Text style={styles.planButtonText}>{subscribeLabel}</Text>
-        </View>
+        {restoring ? (
+          <ActivityIndicator size="small" color={Colors.brand[600]} />
+        ) : (
+          <Text style={styles.restorePurchasesButtonText}>Restore Purchases</Text>
+        )}
       </TouchableOpacity>
     </View>
   );
@@ -328,12 +615,23 @@ export default function SubscribeScreen() {
             {renderPlanCards('Subscribe Now')}
 
             <TouchableOpacity
-              style={styles.primarySubscribeButton}
-              onPress={presentPaywall}
+              style={[
+                styles.primarySubscribeButton,
+                (purchasing ||
+                  restoring ||
+                  (!annualPackage && !monthlyPackage)) &&
+                  styles.primarySubscribeButtonDisabled,
+              ]}
+              onPress={handlePrimarySubscribe}
+              disabled={
+                purchasing || restoring || (!annualPackage && !monthlyPackage)
+              }
               activeOpacity={0.88}
             >
               <Gift size={22} color="#FFFFFF" />
-              <Text style={styles.primarySubscribeButtonText}>Subscribe & Keep Access</Text>
+              <Text style={styles.primarySubscribeButtonText}>
+                {purchasing ? 'Processing…' : 'Subscribe & Keep Access'}
+              </Text>
             </TouchableOpacity>
 
             <Text style={styles.disclaimer}>
@@ -468,6 +766,9 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 6,
   },
+  primarySubscribeButtonDisabled: {
+    opacity: 0.5,
+  },
   primarySubscribeButtonText: {
     fontSize: 18,
     fontWeight: '700',
@@ -546,6 +847,9 @@ const styles = StyleSheet.create({
   planCardRecommended: {
     borderColor: Colors.brand[500],
   },
+  planCardDisabled: {
+    opacity: 0.6,
+  },
   recommendedBadge: {
     position: 'absolute',
     top: -12,
@@ -600,6 +904,81 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: 'white',
   },
+  packagesLoadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingVertical: 16,
+  },
+  packagesLoadingText: {
+    fontSize: 14,
+    color: Colors.ui.textLight,
+  },
+  packagesErrorBox: {
+    backgroundColor: Colors.brand[50],
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: Colors.brand[200],
+    gap: 12,
+  },
+  packagesErrorText: {
+    fontSize: 14,
+    color: Colors.ui.text,
+    lineHeight: 20,
+  },
+  paywallFallbackButton: {
+    borderWidth: 1,
+    borderColor: Colors.brand[400],
+    borderRadius: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    backgroundColor: 'white',
+  },
+  paywallFallbackButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: Colors.brand[700],
+  },
+  lifetimePlanCard: {
+    borderColor: Colors.secondary[400],
+    backgroundColor: Colors.background.light,
+  },
+  lifetimeBadge: {
+    alignSelf: 'center',
+    backgroundColor: Colors.secondary[500],
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: 'bold',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginBottom: 8,
+  },
+  lifetimeSubtitle: {
+    fontSize: 14,
+    color: Colors.ui.text,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 8,
+  },
+  lifetimeUrgency: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.brand[700],
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  lifetimeFootnote: {
+    ...Typography.caption,
+    color: Colors.ui.textLight,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginTop: 12,
+  },
   featuresList: {
     width: '100%',
     backgroundColor: 'white',
@@ -650,6 +1029,18 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: 'center',
     lineHeight: 20,
+  },
+  restorePurchasesButton: {
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 8,
+    minHeight: 44,
+  },
+  restorePurchasesButtonText: {
+    ...Typography.body,
+    color: Colors.brand[600],
+    fontSize: 15,
+    fontWeight: '600',
   },
   celebrationContainer: {
     flex: 1,
